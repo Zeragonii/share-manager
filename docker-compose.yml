@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    image: share-manager:0.1.0
+    image: ${SHARE_MANAGER_IMAGE:-ghcr.io/zeragonii/share-manager:latest}
     restart: unless-stopped
     depends_on:
       postgres:

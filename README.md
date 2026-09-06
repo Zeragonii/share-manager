@@ -17,6 +17,24 @@ A self-hosted customer, subscription and entitlement manager with Plex as the fi
 - Audit log for important management and reconciliation actions.
 - Health endpoint at `/health`.
 
+
+## Releases and container images
+
+The repository includes a GitHub Actions release workflow. `VERSION` is the source of truth.
+
+1. Change `VERSION` (for example from `0.1.0` to `0.1.1`) and push it to `main`.
+2. **Build and publish release** validates the version and creates `v0.1.1` if that tag does not already exist.
+3. The same workflow immediately builds multi-architecture `linux/amd64` + `linux/arm64` images, publishes them to GHCR, and creates a GitHub Release with generated notes.
+4. The image is tagged with the full version, major/minor, major, and `latest`.
+
+Tag creation and image publication intentionally happen in the same workflow. GitHub suppresses most follow-on workflow events caused by a repository `GITHUB_TOKEN`, so splitting automatic tag creation and release publication into separate workflows can result in the release workflow never running.
+
+The GHCR image name is derived from the GitHub repository at build time and forced to lowercase, avoiding invalid Docker references when the GitHub owner or repository has uppercase characters. No PAT is required: the workflow uses the repository `GITHUB_TOKEN` with `packages: write`.
+
+GitHub Container Registry package visibility is independent of repository visibility. For a public pullable image, after the first successful publish open the package in GitHub and set its visibility to **Public** once. Subsequent workflow releases remain available through the same package.
+
+`docker-compose.yml` defaults to `ghcr.io/zeragonii/share-manager:latest`. If the repository was created under a different name, set `SHARE_MANAGER_IMAGE` in `.env` to the image shown by the release workflow.
+
 ## Deploy in Portainer
 
 1. Extract/clone this repository on the Docker host, or build/publish the image and point the stack at it.
