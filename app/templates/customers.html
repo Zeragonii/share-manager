@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% block content %}
+<header><h1>Customers</h1><p>Link people to Plex identities, subscriptions and access states.</p></header>
+<section><h2>Add customer</h2><form method="post" class="grid-form"><label>Name<input name="name" required></label><label>Email<input name="email" type="email"></label><label>Plex username/email<input name="plex_username"></label><label>Notes<input name="notes"></label><button>Add customer</button></form></section>
+<section><h2>Managed customers</h2><div class="cards">{% for c in customers %}<article class="card"><div class="row between"><div><h3>{{ c.name }}</h3><div class="muted">{{ c.plex_username or 'No Plex account linked' }}</div></div><span class="badge {{ c.status }}">{{ c.status }}</span></div>
+<div class="subtle">{% set active_subs = c.subscriptions|selectattr('status','in',['active','grace'])|list %}{% if active_subs %}{{ active_subs[0].billing_tier.package.name }} · {{ active_subs[0].billing_tier.name }}{% else %}No active subscription{% endif %}</div>
+<form method="post" action="/customers/{{ c.id }}/subscribe" class="inline"><select name="billing_tier_id">{% for t in tiers %}<option value="{{ t.id }}">{{ t.package.name }} — {{ t.name }} (£{{ '%.2f'|format(t.price) }})</option>{% endfor %}</select><button>Assign</button></form>
+<div class="row"><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option>active</option><option>grace</option><option>suspended</option><option>cancelled</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary">Reconcile Plex</button></form></div>
+</article>{% else %}<p class="muted">No customers yet.</p>{% endfor %}</div></section>
+{% endblock %}

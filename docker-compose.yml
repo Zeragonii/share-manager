@@ -1,0 +1,37 @@
+services:
+  app:
+    build: .
+    image: share-manager:0.1.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://sharemanager:${DB_PASSWORD}@postgres:5432/sharemanager
+      APP_SECRET: ${APP_SECRET}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      RECONCILE_ON_ASSIGN: ${RECONCILE_ON_ASSIGN:-true}
+    ports:
+      - "8080:8080"
+    volumes:
+      - app_data:/data
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sharemanager
+      POSTGRES_USER: sharemanager
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sharemanager -d sharemanager"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  app_data:
+  postgres_data:

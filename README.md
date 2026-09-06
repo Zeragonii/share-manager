@@ -1,0 +1,105 @@
+# Share Manager v0.1.0
+
+A self-hosted customer, subscription and entitlement manager with Plex as the first supported access target.
+
+## What this first pass does
+
+- Runs as a one-stack Docker/Portainer deployment with bundled PostgreSQL.
+- Password-protected administrator UI.
+- Customer records with Plex identities and lifecycle states (`active`, `grace`, `suspended`, `cancelled`).
+- Packages separated cleanly from billing tiers.
+- Any package can have multiple billing tiers (for example £10/month and £100/year).
+- Plex integration test, library discovery and Plex-user import.
+- Package → Plex-library entitlement mapping from the UI.
+- Subscription assignment to customers.
+- Desired-state Plex reconciliation using Python-PlexAPI.
+- Manual payment ledger designed for future payment-provider adapters.
+- Audit log for important management and reconciliation actions.
+- Health endpoint at `/health`.
+
+## Deploy in Portainer
+
+1. Extract/clone this repository on the Docker host, or build/publish the image and point the stack at it.
+2. Copy `.env.example` to `.env` and change all secrets/passwords.
+3. Deploy `docker-compose.yml` as a stack.
+4. Open `http://<docker-host>:8080`.
+5. Sign in with `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
+6. Add the Plex integration under **Integrations** using a Plex server URL reachable from the container and a Plex token belonging to the server owner.
+7. Import Plex users.
+8. Create packages and billing tiers.
+9. Select the Plex libraries each package grants.
+10. Assign customers to billing tiers and reconcile.
+
+### Example environment
+
+```env
+DB_PASSWORD=use-a-long-random-value
+APP_SECRET=use-another-long-random-value
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-me
+RECONCILE_ON_ASSIGN=true
+```
+
+## Example package model
+
+`Package 1` may define Plex access to Movies + TV while having two billing tiers:
+
+- Monthly — £10 every 1 month
+- Annual — £100 every 1 year
+
+`Package 2` could grant Movies + TV + 4K libraries with £15/month and £150/year tiers. Billing terms do not duplicate or define the actual access rules.
+
+## Reconciliation behaviour
+
+For each enabled Plex integration, Share Manager calculates the libraries the customer should currently have from active subscriptions.
+
+- `active` / `grace`: package library entitlements are applied.
+- `suspended` / `cancelled`: no library sections are shared.
+- `exempt`: reconciliation intentionally skips the customer.
+- no linked Plex identity: reconciliation intentionally skips the customer.
+
+The implementation calls Python-PlexAPI `updateFriend()`, using the desired section list or `removeSections=True` when the desired set is empty.
+
+## Persistence and backups
+
+The important persistent state is the named Docker volume `postgres_data`. `app_data` is reserved for future application-side persistent data/imports.
+
+Back up the PostgreSQL database like any other PostgreSQL service. Do **not** rely on backing up the application container filesystem.
+
+## Security notes
+
+This is a first-pass homelab/admin application, not an internet-facing SaaS product. Put it behind your normal authenticated reverse proxy/VPN if exposing it beyond your LAN. The Plex token is currently stored in the application database so the reconciliation worker can use it. A future hardening milestone should encrypt integration secrets at rest and support secret rotation.
+
+Change the default admin password **before first deployment**.
+
+## Planned next milestone
+
+- CSV import from an existing payment spreadsheet.
+- Proper subscription periods, due dates and grace-period calculation.
+- Payment → subscription-state automation.
+- Editable/deletable customer/package/payment records.
+- Payment source/provider adapter interface and webhook event model.
+- Tautulli adapter and activity metadata.
+- Notification adapters.
+- Background scheduled reconciliation.
+- Database migrations (Alembic) instead of `create_all` once schema changes begin shipping.
+- Integration-secret encryption at rest.
+
+## Development
+
+Python 3.12 is the target runtime. For a quick local SQLite development run:
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+export DATABASE_URL=sqlite:///./sharemanager.db
+export APP_SECRET=dev-secret
+export ADMIN_PASSWORD=dev-password
+python -m app.init_db
+uvicorn app.main:app --reload --port 8080
+```
+
+## Version
+
+`0.1.0` — foundation + Plex entitlement first pass.

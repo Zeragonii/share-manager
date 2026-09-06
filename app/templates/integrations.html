@@ -1,0 +1,5 @@
+{% extends 'base.html' %}{% block content %}
+<header><h1>Integrations</h1><p>Connect entitlement targets. Plex is supported in this first pass.</p></header>
+<section><h2>Add Plex server</h2><form method="post" action="/integrations/plex" class="grid-form"><label>Friendly name<input name="name" placeholder="Main Plex" required></label><label>Server URL<input name="base_url" placeholder="http://192.168.1.100:32400" required></label><label>Plex token<input name="token" type="password" required></label><button>Connect & test</button></form></section>
+<section><h2>Connected integrations</h2><div class="cards">{% for i,libs,error in integrations %}<article class="card"><div class="row between"><h3>{{ i.name }}</h3><span class="badge">{{ i.kind }}</span></div><div class="muted">{{ i.base_url }}</div>{% if error %}<div class="alert error">{{ error }}</div>{% else %}<p>{{ libs|length }} libraries discovered.</p>{% endif %}<form method="post" action="/integrations/{{ i.id }}/import-users"><button>Import Plex users</button></form></article>{% else %}<p class="muted">No integrations connected.</p>{% endfor %}</div></section>
+{% endblock %}

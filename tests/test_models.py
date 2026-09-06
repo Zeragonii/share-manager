@@ -1,0 +1,18 @@
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.db import Base
+from app.models import Package, BillingTier, Customer, Subscription
+
+
+def test_package_tiers_and_subscription_relationships():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    db = Session()
+    package = Package(name="Package 1")
+    tier = BillingTier(name="Monthly", price=10, interval_unit="month", interval_count=1, package=package)
+    customer = Customer(name="Example")
+    db.add_all([package, tier, customer]); db.flush()
+    subscription = Subscription(customer_id=customer.id, billing_tier_id=tier.id)
+    db.add(subscription); db.commit()
+    assert subscription.billing_tier.package.name == "Package 1"
