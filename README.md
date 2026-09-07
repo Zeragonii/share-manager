@@ -2,7 +2,7 @@
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
-## v0.2.1 highlights
+## v0.2.2 highlights
 
 - Package and billing-tier management, including per-tier grace periods.
 - Customer subscriptions with explicit start/current-period dates.

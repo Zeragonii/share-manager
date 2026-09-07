@@ -21,6 +21,9 @@
 @media(max-width:700px){.billing-date-form,.subscription-assign,.payment-form{grid-template-columns:1fr}.billing-stats{grid-template-columns:repeat(2,1fr)}}
 .subscription-assign .assign-date{display:grid;gap:3px;font-size:10px}.subscription-assign .assign-date input{padding:8px 9px}
 
-/* v0.2.1: keep customer management vertically scannable and payment duration compact. */
-.customer-list{grid-template-columns:1fr}
+/* v0.2.2: retain the original customer tile grid; stack subscription controls inside each tile. */
+.customer-list{grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
+.customer-list .subscription-assign{grid-template-columns:1fr;align-items:stretch}
+.customer-list .subscription-assign button{width:100%}
 .payment-period-preview{margin-top:10px;padding:9px 11px;border:1px solid var(--line);border-radius:7px;background:#0e141d;font-size:12px}
+@media(max-width:900px){.customer-list{grid-template-columns:1fr}}

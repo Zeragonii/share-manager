@@ -1,4 +1,4 @@
-# Share Manager Architecture — v0.2.1
+# Share Manager Architecture — v0.2.2
 
 ## Core model
 
