@@ -8,9 +8,12 @@ class PlexIntegration:
 
     Suspension removes the share to this PMS explicitly. Reactivation must not rely
     only on ``account.user(username)`` because Plex may stop returning that user once
-    their final server share is removed. Share Manager therefore prefers the stored
-    Plex account ID when recreating a share, with username/email invitation as a
-    fallback for older/manual customer records.
+    their final server share is removed.
+
+    When restoring access, Share Manager creates the Plex invitation using the
+    username/email form of ``inviteFriend()`` and supplies the desired sections in the
+    invitation itself. This is important: a pending invite is a legitimate state and
+    should not require a second reconciliation after acceptance just to add sections.
     """
 
     def __init__(self, base_url: str, token: str):
@@ -69,6 +72,40 @@ class PlexIntegration:
                 continue
         return None
 
+    @staticmethod
+    def _find_pending_invite(account: MyPlexAccount, machine_identifier: str, *identifiers):
+        """Find a sent pending invitation for this user/server, if one exists."""
+        wanted = {str(value).lower() for value in identifiers if value not in (None, "")}
+        if not wanted:
+            return None
+        try:
+            invites = account.pendingInvites(includeSent=True, includeReceived=False)
+        except Exception:
+            # Pending-invite discovery is a guard against duplicate invitations, not
+            # a prerequisite for normal reconciliation. Let the invite call surface
+            # any authoritative Plex error instead of masking it here.
+            return None
+
+        for invite in invites:
+            candidates = {
+                str(value).lower()
+                for value in (
+                    getattr(invite, "id", None),
+                    getattr(invite, "username", None),
+                    getattr(invite, "email", None),
+                    getattr(invite, "friendlyName", None),
+                )
+                if value not in (None, "")
+            }
+            if not wanted.intersection(candidates):
+                continue
+            servers = getattr(invite, "servers", [])
+            if callable(servers):
+                servers = servers()
+            if any(getattr(server, "machineIdentifier", None) == machine_identifier for server in servers):
+                return invite
+        return None
+
     def _remove_server_share(self, account: MyPlexAccount, user, server: PlexServer) -> None:
         """Remove access to this server without removing the Plex account itself."""
         share = self._server_share(user, server.machineIdentifier)
@@ -98,10 +135,23 @@ class PlexIntegration:
         plex_user_id: str | None = None,
         email: str | None = None,
     ) -> None:
-        """Recreate a server share for a user who is no longer visible in account.users()."""
+        """Create a server invitation with the desired libraries already attached.
+
+        PlexAPI's inviteFriend() accepts a username/email string without first
+        resolving it through account.user(). That makes it suitable for users whose
+        last server share was removed during suspension. More importantly, it sends
+        the requested section IDs as part of the invite, so accepting the invitation
+        should immediately grant the intended package libraries.
+        """
+        target = email or plex_username
+        if target:
+            account.inviteFriend(user=target, server=server, sections=sections)
+            return
+
+        # Very old/manual records may theoretically contain only a Plex numeric ID.
+        # Retain a best-effort fallback, although normal synced users always have a
+        # username/email available and therefore use inviteFriend() above.
         if plex_user_id:
-            # This mirrors the POST branch used by PlexAPI.updateFriend() for a
-            # known user without a share, but uses the ID persisted during sync.
             section_ids = account._getSectionIds(server.machineIdentifier, sections)
             params = {
                 "server_id": server.machineIdentifier,
@@ -115,12 +165,7 @@ class PlexIntegration:
             account.query(url, account._session.post, json=params, headers=headers)
             return
 
-        # Legacy/manual customer records may pre-date stored Plex IDs. PlexAPI's
-        # inviteFriend accepts a Plex username or email directly.
-        target = email or plex_username
-        if not target:
-            raise RuntimeError("Cannot restore Plex access: no Plex user ID, username, or email is stored")
-        account.inviteFriend(user=target, server=server, sections=sections)
+        raise RuntimeError("Cannot restore Plex access: no Plex user ID, username, or email is stored")
 
     def _verify_shared_libraries(
         self,
@@ -131,7 +176,7 @@ class PlexIntegration:
     ) -> None:
         refreshed = self._find_user(account, *identifiers)
         if refreshed is None:
-            raise RuntimeError("Plex server share was created but the user is still not visible via plex.tv")
+            raise RuntimeError("Plex server share is missing after applying libraries")
 
         share = self._server_share(refreshed, machine_identifier)
         if share is None:
@@ -150,21 +195,40 @@ class PlexIntegration:
         library_names: list[str],
         plex_user_id: str | None = None,
         email: str | None = None,
-    ):
+    ) -> dict:
+        """Apply desired Plex access and return a truthful reconciliation state.
+
+        Returned ``state`` values:
+        - ``removed``: no share exists for this server.
+        - ``invited``: a new Plex invitation was sent with desired libraries attached.
+        - ``pending``: an existing server invitation is awaiting acceptance.
+        - ``applied``: an accepted share exists and its libraries were verified.
+        """
         account = self.account()
         server = self.server()
         identifiers = (plex_user_id, plex_username, email)
         user = self._find_user(account, *identifiers)
 
         if not library_names:
-            # If Plex no longer lists the user, their share is already absent.
             if user is not None:
                 self._remove_server_share(account, user, server)
-            return
+            return {"state": "removed", "libraries": []}
 
         sections = [server.library.section(name) for name in library_names]
+        share = self._server_share(user, server.machineIdentifier) if user is not None else None
 
-        if user is None:
+        if share is None and self._find_pending_invite(account, server.machineIdentifier, *identifiers) is not None:
+            return {"state": "pending", "libraries": list(library_names)}
+
+        # A pending invitation is already carrying the desired entitlement from the
+        # initial invite. Do not spam another invite or pretend access is verified.
+        if share is not None and getattr(share, "pending", False):
+            return {"state": "pending", "libraries": list(library_names)}
+
+        # If no accepted share exists, create an invitation containing the desired
+        # libraries. We deliberately do not try to verify usable access until the
+        # recipient accepts it.
+        if share is None:
             self._create_server_share(
                 account,
                 server,
@@ -173,12 +237,13 @@ class PlexIntegration:
                 plex_user_id=plex_user_id,
                 email=email,
             )
-        else:
-            account.updateFriend(user=user, server=server, sections=sections)
+            return {"state": "invited", "libraries": list(library_names)}
 
+        account.updateFriend(user=user, server=server, sections=sections)
         self._verify_shared_libraries(
             account,
             identifiers,
             server.machineIdentifier,
             set(library_names),
         )
+        return {"state": "applied", "libraries": list(library_names)}

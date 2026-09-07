@@ -1,4 +1,4 @@
-# Share Manager v0.1.0
+# Share Manager v0.1.10
 
 A self-hosted customer, subscription and entitlement manager with Plex as the first supported access target.
 
@@ -154,3 +154,10 @@ uvicorn app.main:app --reload --port 8080
 - Fixed Plex suspension/reconciliation when the desired library set is empty.
 - Suspended/cancelled users now have their share to the configured Plex server explicitly removed while preserving the Plex friend relationship.
 - Plex entitlement changes are verified against fresh plex.tv share state before Share Manager reports success.
+
+## v0.1.10
+
+- Reactivation now creates Plex invitations using `inviteFriend()` with the desired package libraries attached to the invitation itself.
+- Pending Plex invitations are treated as an expected intermediate state rather than a reconciliation failure.
+- Reconciliation audit logs now distinguish between an invitation being sent/pending and accepted access being applied and verified.
+- Reactivation no longer requires a second manual reconcile merely to attach package libraries after invite acceptance.
