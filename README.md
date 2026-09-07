@@ -135,3 +135,9 @@ uvicorn app.main:app --reload --port 8080
 - Billing tiers now render as compact summary rows with per-tier edit controls.
 - Plex entitlements render as library chips until the library editor is opened.
 - Package deletion moved into the package editor/danger area.
+
+### v0.1.6
+- Restored the Packages page to the original v0.1 minimalist layout.
+- Added a small per-tier Edit control for price, interval, count and name.
+- Retained guarded tier/package deletion and live-only subscription counts.
+- Retained all backend fixes and existing data model behavior from v0.1.5.
