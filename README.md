@@ -149,7 +149,7 @@ uvicorn app.main:app --reload --port 8080
 - Tiers/packages with current subscriptions remain protected from deletion.
 
 
-## v0.1.8
+## v0.1.9
 
 - Fixed Plex suspension/reconciliation when the desired library set is empty.
 - Suspended/cancelled users now have their share to the configured Plex server explicitly removed while preserving the Plex friend relationship.

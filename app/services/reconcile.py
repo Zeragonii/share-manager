@@ -27,7 +27,12 @@ def reconcile_customer(db: Session, customer: Customer) -> list[str]:
                     desired.add(entitlement.resource_name)
 
         client = PlexIntegration(integration.base_url, integration.secret)
-        client.apply_libraries(customer.plex_username, sorted(desired))
+        client.apply_libraries(
+            customer.plex_username,
+            sorted(desired),
+            plex_user_id=customer.plex_user_id,
+            email=customer.email,
+        )
         detail = f"Applied {len(desired)} Plex libraries via {integration.name}: {', '.join(sorted(desired)) or 'none'}"
         db.add(AuditLog(action="plex.reconcile", target_type="customer", target_id=str(customer.id), detail=detail))
         messages.append(detail)

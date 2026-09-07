@@ -1,14 +1,16 @@
+from plexapi.exceptions import NotFound
 from plexapi.myplex import MyPlexAccount
 from plexapi.server import PlexServer
 
 
 class PlexIntegration:
-    """Thin wrapper around PlexAPI for Share Manager's entitlement operations.
+    """Thin wrapper around PlexAPI for Share Manager entitlement operations.
 
-    PlexAPI's ``updateFriend(removeSections=True)`` currently has an edge case where
-    an existing server share plus an empty sections list becomes a no-op.  For a
-    suspended customer we therefore remove the *server share* explicitly and then
-    verify the result against a fresh plex.tv user record.
+    Suspension removes the share to this PMS explicitly. Reactivation must not rely
+    only on ``account.user(username)`` because Plex may stop returning that user once
+    their final server share is removed. Share Manager therefore prefers the stored
+    Plex account ID when recreating a share, with username/email invitation as a
+    fallback for older/manual customer records.
     """
 
     def __init__(self, base_url: str, token: str):
@@ -45,44 +47,92 @@ class PlexIntegration:
 
     @staticmethod
     def _server_share(user, machine_identifier: str):
-        """Return this user's share for one specific PMS, if present."""
         return next(
             (share for share in user.servers if share.machineIdentifier == machine_identifier),
             None,
         )
 
+    @staticmethod
+    def _find_user(account: MyPlexAccount, *identifiers):
+        """Resolve a currently visible Plex user using any stored identity value."""
+        seen = set()
+        for identifier in identifiers:
+            if identifier in (None, ""):
+                continue
+            identifier = str(identifier)
+            if identifier.lower() in seen:
+                continue
+            seen.add(identifier.lower())
+            try:
+                return account.user(identifier)
+            except NotFound:
+                continue
+        return None
+
     def _remove_server_share(self, account: MyPlexAccount, user, server: PlexServer) -> None:
-        """Remove access to this server without removing the Plex friend relationship."""
+        """Remove access to this server without removing the Plex account itself."""
         share = self._server_share(user, server.machineIdentifier)
         if share is None:
-            # Desired state already achieved.
             return
 
-        # This is the same endpoint PlexAPI uses when it successfully removes a
-        # server share, but calling it directly avoids the empty-sections branch
-        # in updateFriend() that can otherwise silently do nothing.
         url = account.FRIENDSERVERS.format(
             machineId=server.machineIdentifier,
             serverId=share.id,
         )
         account.query(url, account._session.delete)
 
-        # Never report success unless plex.tv now agrees that the share is gone.
-        refreshed = account.user(user.id)
-        if self._server_share(refreshed, server.machineIdentifier) is not None:
+        # The user can disappear from /api/users after their final share is removed.
+        # If they remain visible, verify that this PMS is no longer attached.
+        refreshed = self._find_user(account, user.id, user.username, user.email, user.title)
+        if refreshed is not None and self._server_share(refreshed, server.machineIdentifier) is not None:
             raise RuntimeError(
                 f"Plex reported success but server access still exists for {user.title}"
             )
 
+    def _create_server_share(
+        self,
+        account: MyPlexAccount,
+        server: PlexServer,
+        sections,
+        plex_username: str,
+        plex_user_id: str | None = None,
+        email: str | None = None,
+    ) -> None:
+        """Recreate a server share for a user who is no longer visible in account.users()."""
+        if plex_user_id:
+            # This mirrors the POST branch used by PlexAPI.updateFriend() for a
+            # known user without a share, but uses the ID persisted during sync.
+            section_ids = account._getSectionIds(server.machineIdentifier, sections)
+            params = {
+                "server_id": server.machineIdentifier,
+                "shared_server": {
+                    "library_section_ids": section_ids,
+                    "invited_id": int(plex_user_id),
+                },
+            }
+            headers = {"Content-Type": "application/json"}
+            url = account.FRIENDINVITE.format(machineId=server.machineIdentifier)
+            account.query(url, account._session.post, json=params, headers=headers)
+            return
+
+        # Legacy/manual customer records may pre-date stored Plex IDs. PlexAPI's
+        # inviteFriend accepts a Plex username or email directly.
+        target = email or plex_username
+        if not target:
+            raise RuntimeError("Cannot restore Plex access: no Plex user ID, username, or email is stored")
+        account.inviteFriend(user=target, server=server, sections=sections)
+
     def _verify_shared_libraries(
         self,
         account: MyPlexAccount,
-        user_id,
+        identifiers,
         machine_identifier: str,
         expected_names: set[str],
     ) -> None:
-        """Verify a library update using fresh plex.tv share state."""
-        refreshed = account.user(user_id)
+        refreshed = self._find_user(account, *identifiers)
+        if refreshed is None:
+            raise RuntimeError("Plex server share was created but the user is still not visible via plex.tv")
+
         share = self._server_share(refreshed, machine_identifier)
         if share is None:
             raise RuntimeError("Plex server share is missing after applying libraries")
@@ -94,20 +144,41 @@ class PlexIntegration:
                 f"expected {sorted(expected_names)}, got {sorted(actual)}"
             )
 
-    def apply_libraries(self, plex_username: str, library_names: list[str]):
+    def apply_libraries(
+        self,
+        plex_username: str,
+        library_names: list[str],
+        plex_user_id: str | None = None,
+        email: str | None = None,
+    ):
         account = self.account()
         server = self.server()
-        user = account.user(plex_username)
+        identifiers = (plex_user_id, plex_username, email)
+        user = self._find_user(account, *identifiers)
 
         if not library_names:
-            self._remove_server_share(account, user, server)
+            # If Plex no longer lists the user, their share is already absent.
+            if user is not None:
+                self._remove_server_share(account, user, server)
             return
 
         sections = [server.library.section(name) for name in library_names]
-        account.updateFriend(user=user, server=server, sections=sections)
+
+        if user is None:
+            self._create_server_share(
+                account,
+                server,
+                sections,
+                plex_username=plex_username,
+                plex_user_id=plex_user_id,
+                email=email,
+            )
+        else:
+            account.updateFriend(user=user, server=server, sections=sections)
+
         self._verify_shared_libraries(
             account,
-            user.id,
+            identifiers,
             server.machineIdentifier,
             set(library_names),
         )
