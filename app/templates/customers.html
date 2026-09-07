@@ -12,7 +12,7 @@
   <div class="subtle"><strong>{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}</strong><br>
     <span class="muted billing-summary">
       Started {{ sub.started_at.strftime('%Y-%m-%d') }} ·
-      {% if sub.current_period_end %}Paid through {{ sub.current_period_end.strftime('%Y-%m-%d') }} · Grace until {{ sub.grace_until.strftime('%Y-%m-%d') if sub.grace_until else '—' }}{% else %}Billing dates not initialised{% endif %}
+      {% if sub.current_period_end %}Paid through {{ sub.current_period_end.strftime('%Y-%m-%d') }} · Grace until {{ sub.grace_until.strftime('%Y-%m-%d') if sub.grace_until else '—' }}{% else %}Billing dates not initialised{% endif %}{% if sub.manual_access_end %}<br><strong>Manual access end: {{ sub.manual_access_end.strftime('%Y-%m-%d') }}</strong>{% endif %}
     </span>
   </div>
   <div class="row compact-card-actions">
@@ -23,6 +23,8 @@
     <form method="post" action="/subscriptions/{{ sub.id }}/billing-dates" class="grid-form billing-date-form">
       <label>Period / subscription start<input type="date" name="start_date" value="{{ (sub.current_period_start or sub.started_at).strftime('%Y-%m-%d') }}" required></label>
       <label>Paid through <span class="muted">(blank = calculate from tier)</span><input type="date" name="period_end" value="{{ sub.current_period_end.strftime('%Y-%m-%d') if sub.current_period_end else '' }}"></label>
+      <label>Manual access end <span class="muted">(optional hard override)</span><input type="date" name="manual_access_end" value="{{ sub.manual_access_end.strftime('%Y-%m-%d') if sub.manual_access_end else '' }}"></label>
+      <div class="muted">While set, this date overrides paid-through and grace for access enforcement. Clear it to return to normal billing rules.</div>
       <button>Save dates</button>
     </form>
   </div>

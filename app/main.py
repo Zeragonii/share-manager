@@ -29,7 +29,7 @@ from .models import (
 )
 from .integrations.plex import PlexIntegration
 from .security import logged_in, make_session, valid_credentials
-from .services.billing import apply_payment, apply_subscription_credit, initialize_subscription_period, process_billing
+from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
 from .services.reconcile import reconcile_customer
 from .version import APP_VERSION
 
@@ -290,6 +290,7 @@ def edit_subscription_dates(
     subscription_id: int,
     start_date: str = Form(...),
     period_end: str = Form(""),
+    manual_access_end: str = Form(""),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -300,19 +301,29 @@ def edit_subscription_dates(
         return RedirectResponse("/customers?error=Subscription+not+found", status_code=303)
     start = _parse_date(start_date)
     end = _parse_date(period_end)
+    override_end = _parse_date(manual_access_end)
     if end and end <= start:
         return RedirectResponse("/customers?error=Paid-through+date+must+be+after+the+period+start", status_code=303)
     initialize_subscription_period(sub, start, end)
+    sub.manual_access_end = override_end
+    desired = desired_billing_status(sub, datetime.utcnow()) or "active"
+    sub.status = desired
     if not sub.customer.exempt:
-        sub.customer.status = "active"
+        sub.customer.status = desired
     db.add(AuditLog(
         actor=settings.admin_username,
         action="subscription.dates",
         target_type="subscription",
         target_id=str(sub.id),
-        detail=f"starts {start:%Y-%m-%d}; paid through {sub.current_period_end:%Y-%m-%d}; grace until {sub.grace_until:%Y-%m-%d}",
+        detail=(f"starts {start:%Y-%m-%d}; paid through {sub.current_period_end:%Y-%m-%d}; grace until {sub.grace_until:%Y-%m-%d}; manual access end {sub.manual_access_end:%Y-%m-%d}" if sub.manual_access_end else f"starts {start:%Y-%m-%d}; paid through {sub.current_period_end:%Y-%m-%d}; grace until {sub.grace_until:%Y-%m-%d}; manual access end cleared"),
     ))
     db.commit()
+    if settings.reconcile_on_assign and sub.customer.plex_username and not sub.customer.exempt:
+        try:
+            reconcile_customer(db, sub.customer)
+        except Exception as exc:
+            db.add(AuditLog(action="plex.reconcile.error", target_type="customer", target_id=str(sub.customer.id), detail=str(exc)))
+            db.commit()
     return RedirectResponse("/customers?notice=Billing+dates+updated", status_code=303)
 
 

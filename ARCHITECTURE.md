@@ -45,3 +45,8 @@ v0.2 performs additive schema migration at container startup. Existing v0.1 subs
 
 ### v0.2.5
 Customer cards now resolve their subscription centrally in Python instead of duplicating subscription-state filtering in the template. Complimentary access can also reactivate a customer on their most recent historical tier, so the Grant control is available for any customer with subscription history, not only customers whose current row happens to be in a specific live state.
+
+
+### Manual entitlement override
+
+`subscriptions.manual_access_end` is an optional hard access cutoff. It is intentionally separate from `current_period_end`: billing history remains truthful while operators retain fine-grained entitlement control. When present, automatic status calculation ignores grace and returns `active` before the override timestamp and `suspended` at/after it.

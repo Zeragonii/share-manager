@@ -94,6 +94,7 @@ class Subscription(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    manual_access_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     grace_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     customer: Mapped[Customer] = relationship(back_populates="subscriptions")
