@@ -75,7 +75,7 @@ Each subscription can optionally have a **Manual access until** date from the cu
 - Search and status filters can be combined without reloading the page.
 - Replaced the long Payments customer dropdown with a searchable customer picker that matches names, email addresses and Plex usernames while retaining billing-period previews.
 
-## v0.2.9 operations
+## v0.2.10 operations
 
 ### Payment maintenance
 Payments now have an **Edit** action. Amount, receipt date, source, reference and note can be corrected without changing the access period that was already granted. Billing-period count can also be changed, but only when that payment is the latest coverage event on the subscription; Share Manager then recalculates the current coverage end.

@@ -20,6 +20,7 @@
 {% for c in customers %}
 {% set sub = c.ui_subscription %}
 <article class="card customer-card" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}">
+  <div class="customer-card-main">
   <div class="row between"><div><h3>{{ c.name }}</h3><div class="muted">{{ c.plex_username or 'No Plex account linked' }}</div></div><span class="badge {{ 'exempt' if c.exempt else c.status }}">{{ 'exempt' if c.exempt else c.status }}</span></div>
   {% if sub %}
   <div class="subtle"><strong>{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}</strong><br>
@@ -37,7 +38,10 @@
   <div class="credit-summary muted">Latest complimentary credit: +{{ credits[0].billing_periods }} period{{ '' if credits[0].billing_periods == 1 else 's' }} · through {{ credits[0].coverage_end.strftime('%Y-%m-%d') }}{% if credits[0].reason %} · {{ credits[0].reason }}{% endif %}</div>
   {% endif %}
   {% else %}<div class="subtle">No subscription history yet — assign a package/tier before granting complimentary access.</div>{% endif %}
+  {% if c.exempt %}<div class="exempt-note">Automation is disabled for this customer. Billing records can still be maintained, but automatic status/Plex changes will leave them alone.</div>{% endif %}
+  </div>
 
+  <div class="customer-card-controls">
   <form method="post" action="/customers/{{ c.id }}/subscribe" class="subscription-assign">
     <select name="billing_tier_id">{% for t in tiers %}<option value="{{ t.id }}" {% if sub and sub.billing_tier_id == t.id %}selected{% endif %}>{{ t.package.name }} — {{ t.name }} (£{{ '%.2f'|format(t.price) }})</option>{% endfor %}</select>
     <label class="assign-date">Start date<input type="date" name="start_date" title="Subscription start date; defaults to today if blank"></label>
@@ -45,7 +49,7 @@
   </form>
 
   <div class="row customer-actions"><a class="button-link secondary small-action" href="/customers/{{ c.id }}/history">History</a><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option value="active" {% if not c.exempt and c.status == 'active' %}selected{% endif %}>active</option><option value="grace" {% if not c.exempt and c.status == 'grace' %}selected{% endif %}>grace</option><option value="suspended" {% if not c.exempt and c.status == 'suspended' %}selected{% endif %}>suspended</option><option value="cancelled" {% if not c.exempt and c.status == 'cancelled' %}selected{% endif %}>cancelled</option><option value="exempt" {% if c.exempt %}selected{% endif %}>exempt</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary" {% if c.exempt %}title="This customer is exempt; reconciliation will skip them."{% endif %}>Reconcile Plex</button></form></div>
-  {% if c.exempt %}<div class="exempt-note">Automation is disabled for this customer. Billing records can still be maintained, but automatic status/Plex changes will leave them alone.</div>{% endif %}
+  </div>
 </article>
 
 {% if sub %}
