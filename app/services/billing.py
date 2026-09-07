@@ -161,7 +161,18 @@ def apply_subscription_credit(
         .first()
     )
     if not sub:
-        raise ValueError("Customer does not have an assigned subscription")
+        # A complimentary grant may intentionally bring a former subscriber
+        # back onto their most recent tier. Historical rows therefore remain a
+        # valid tier source even though ordinary reconciliation ignores them.
+        sub = (
+            db.query(Subscription)
+            .options(joinedload(Subscription.billing_tier))
+            .filter(Subscription.customer_id == customer.id)
+            .order_by(Subscription.id.desc())
+            .first()
+        )
+    if not sub:
+        raise ValueError("Customer has never been assigned a subscription tier")
 
     tier = sub.billing_tier
     if sub.current_period_end:

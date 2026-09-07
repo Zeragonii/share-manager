@@ -167,6 +167,16 @@ def customers(request: Request, error: str | None = None, notice: str | None = N
         joinedload(Customer.subscriptions).joinedload(Subscription.billing_tier).joinedload(BillingTier.package),
         joinedload(Customer.credits),
     ).order_by(Customer.name).all()
+    # Resolve the subscription shown/acted on by the customer card in Python,
+    # rather than duplicating lifecycle rules in Jinja. Prefer a currently
+    # assigned row, but retain the most recent historical tier as a fallback
+    # so complimentary access can reactivate a former subscriber.
+    for customer in rows:
+        ordered = sorted(customer.subscriptions, key=lambda sub: sub.id, reverse=True)
+        customer.ui_subscription = next(
+            (sub for sub in ordered if sub.status in ASSIGNED_SUBSCRIPTION_STATES),
+            ordered[0] if ordered else None,
+        )
     tiers = db.query(BillingTier).options(joinedload(BillingTier.package)).filter(
         BillingTier.active == True, BillingTier.package.has(active=True)  # noqa: E712
     ).order_by(BillingTier.package_id, BillingTier.price).all()

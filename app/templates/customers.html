@@ -5,8 +5,7 @@
 <section><h2>Add customer</h2><form method="post" class="grid-form"><label>Name<input name="name" required></label><label>Email<input name="email" type="email"></label><label>Plex username/email<input name="plex_username"></label><label>Notes<input name="notes"></label><button>Add customer</button></form></section>
 <section><h2>Managed customers</h2><div class="cards customer-list">
 {% for c in customers %}
-{% set assigned = c.subscriptions|selectattr('status','in',['active','grace','suspended'])|list %}
-{% set sub = assigned|sort(attribute='id', reverse=true)|first if assigned else none %}
+{% set sub = c.ui_subscription %}
 <article class="card">
   <div class="row between"><div><h3>{{ c.name }}</h3><div class="muted">{{ c.plex_username or 'No Plex account linked' }}</div></div><span class="badge {{ 'exempt' if c.exempt else c.status }}">{{ 'exempt' if c.exempt else c.status }}</span></div>
   {% if sub %}
@@ -40,7 +39,7 @@
   {% if credits %}
   <div class="credit-summary muted">Latest complimentary credit: +{{ credits[0].billing_periods }} period{{ '' if credits[0].billing_periods == 1 else 's' }} · through {{ credits[0].coverage_end.strftime('%Y-%m-%d') }}{% if credits[0].reason %} · {{ credits[0].reason }}{% endif %}</div>
   {% endif %}
-  {% else %}<div class="subtle">No assigned subscription</div>{% endif %}
+  {% else %}<div class="subtle">No subscription history yet — assign a package/tier before granting complimentary access.</div>{% endif %}
 
   <form method="post" action="/customers/{{ c.id }}/subscribe" class="subscription-assign">
     <select name="billing_tier_id">{% for t in tiers %}<option value="{{ t.id }}" {% if sub and sub.billing_tier_id == t.id %}selected{% endif %}>{{ t.package.name }} — {{ t.name }} (£{{ '%.2f'|format(t.price) }})</option>{% endfor %}</select>

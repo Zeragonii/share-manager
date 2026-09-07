@@ -55,6 +55,10 @@ Payment-provider integrations can later feed this same payment model without cha
 
 ## Complimentary access
 
-v0.2.4 adds complimentary subscription credits for grandfathered users, donor recognition, goodwill extensions, and other non-cash access grants. On a managed customer card, choose **Grant complimentary access**, enter the number of billing periods and an optional reason. The current billing tier defines the period length (for example, three periods on a monthly tier grants three months; one period on an annual tier grants one year).
+v0.2.5 adds complimentary subscription credits for grandfathered users, donor recognition, goodwill extensions, and other non-cash access grants. On a managed customer card, choose **Grant complimentary access**, enter the number of billing periods and an optional reason. The current billing tier defines the period length (for example, three periods on a monthly tier grants three months; one period on an annual tier grants one year).
 
 Complimentary access is deliberately separate from the payments ledger. Each grant records its period count, coverage start/end, reason, grant date and actor, without creating a fake £0 payment or inflating revenue. Grants made before expiry or during grace extend from the existing expiry; grants made after grace has elapsed start from the grant date. A grant reactivates the subscription and triggers Plex reconciliation when automation is enabled.
+
+
+### v0.2.5
+Customer cards now resolve their subscription centrally in Python instead of duplicating subscription-state filtering in the template. Complimentary access can also reactivate a customer on their most recent historical tier, so the Grant control is available for any customer with subscription history, not only customers whose current row happens to be in a specific live state.

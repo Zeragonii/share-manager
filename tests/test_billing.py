@@ -145,3 +145,29 @@ def test_complimentary_credit_does_not_create_payment():
     db.commit()
     assert db.query(Payment).count() == 0
     assert db.query(SubscriptionCredit).count() == 1
+
+
+def test_complimentary_credit_reactivates_most_recent_cancelled_subscription():
+    from app.services.billing import apply_subscription_credit
+    db, customer, sub = make_db(grace=3)
+    sub.status = "cancelled"
+    sub.cancelled_at = datetime(2026, 10, 2)
+    customer.status = "cancelled"
+    db.commit()
+
+    credit = apply_subscription_credit(
+        db,
+        customer=customer,
+        periods=2,
+        granted_at=datetime(2026, 10, 10),
+        reason="Grandfathered donor",
+        granted_by="admin",
+    )
+    db.commit()
+
+    assert credit.subscription_id == sub.id
+    assert credit.coverage_start == datetime(2026, 10, 10)
+    assert credit.coverage_end == datetime(2026, 12, 10)
+    assert sub.status == "active"
+    assert sub.cancelled_at is None
+    assert customer.status == "active"
