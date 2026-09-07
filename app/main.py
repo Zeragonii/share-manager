@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
 from decimal import Decimal
+from urllib.parse import quote_plus
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -24,10 +25,11 @@ from .models import (
     Payment,
     PaymentSource,
     Subscription,
+    SubscriptionCredit,
 )
 from .integrations.plex import PlexIntegration
 from .security import logged_in, make_session, valid_credentials
-from .services.billing import apply_payment, initialize_subscription_period, process_billing
+from .services.billing import apply_payment, apply_subscription_credit, initialize_subscription_period, process_billing
 from .services.reconcile import reconcile_customer
 from .version import APP_VERSION
 
@@ -163,11 +165,12 @@ def customers(request: Request, error: str | None = None, notice: str | None = N
         return gate
     rows = db.query(Customer).options(
         joinedload(Customer.subscriptions).joinedload(Subscription.billing_tier).joinedload(BillingTier.package),
+        joinedload(Customer.credits),
     ).order_by(Customer.name).all()
     tiers = db.query(BillingTier).options(joinedload(BillingTier.package)).filter(
         BillingTier.active == True, BillingTier.package.has(active=True)  # noqa: E712
     ).order_by(BillingTier.package_id, BillingTier.price).all()
-    return render(request, "customers.html", customers=rows, tiers=tiers, error=error, notice=notice)
+    return render(request, "customers.html", customers=rows, tiers=tiers, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"))
 
 
 @app.post("/customers")
@@ -301,6 +304,58 @@ def edit_subscription_dates(
     ))
     db.commit()
     return RedirectResponse("/customers?notice=Billing+dates+updated", status_code=303)
+
+
+@app.post("/customers/{customer_id}/credits")
+def grant_subscription_credit(
+    request: Request,
+    customer_id: int,
+    billing_periods: int = Form(...),
+    granted_date: str = Form(""),
+    reason: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return RedirectResponse("/customers?error=Customer+not+found", status_code=303)
+    granted_at = _parse_date(granted_date, datetime.utcnow())
+    try:
+        credit = apply_subscription_credit(
+            db,
+            customer=customer,
+            periods=billing_periods,
+            granted_at=granted_at,
+            reason=reason,
+            granted_by=settings.admin_username,
+        )
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/customers?error={quote_plus(str(exc))}", status_code=303)
+
+    tier = credit.subscription.billing_tier
+    db.add(AuditLog(
+        actor=settings.admin_username,
+        action="subscription.credit",
+        target_type="subscription_credit",
+        target_id=str(credit.id),
+        detail=(
+            f"{credit.billing_periods} complimentary {tier.name} period(s); "
+            f"coverage {credit.coverage_start:%Y-%m-%d} -> {credit.coverage_end:%Y-%m-%d}; "
+            f"reason: {credit.reason or 'not specified'}"
+        ),
+    ))
+    db.commit()
+
+    if settings.reconcile_on_assign and customer.plex_username and not customer.exempt:
+        try:
+            reconcile_customer(db, customer)
+        except Exception as exc:
+            db.add(AuditLog(action="credit.reconcile.error", target_type="customer", target_id=str(customer.id), detail=str(exc)))
+            db.commit()
+    return RedirectResponse("/customers?notice=Complimentary+access+granted", status_code=303)
 
 
 @app.post("/customers/{customer_id}/reconcile")
@@ -656,7 +711,6 @@ def add_payment(
         )
     except (ValueError, TypeError) as exc:
         db.rollback()
-        from urllib.parse import quote_plus
         return RedirectResponse(f"/payments?error={quote_plus(str(exc))}", status_code=303)
     detail = f"£{amount} via {source} on {paid:%Y-%m-%d}"
     if payment.subscription_id:

@@ -37,3 +37,7 @@ Exempt customers remain outside automatic status/Plex enforcement.
 ## Upgrade safety
 
 v0.2 performs additive schema migration at container startup. Existing v0.1 subscriptions with a NULL `current_period_end` are intentionally skipped by automatic billing until an administrator initialises their dates.
+
+## Complimentary subscription credits (v0.2.4)
+
+`subscription_credits` records non-cash entitlement extensions separately from `payments`. A credit belongs to a customer and subscription and stores the number of tier billing periods granted, coverage start/end, reason, grant timestamp, and actor. This preserves financial reporting while allowing grandfathered or goodwill access to use the same renewal/grace semantics as paid coverage.

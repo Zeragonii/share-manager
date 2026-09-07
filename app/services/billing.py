@@ -12,6 +12,7 @@ from ..models import (
     Customer,
     Payment,
     Subscription,
+    SubscriptionCredit,
 )
 
 
@@ -133,6 +134,66 @@ def apply_payment(
     db.flush()
     return payment
 
+
+
+def apply_subscription_credit(
+    db: Session,
+    *,
+    customer: Customer,
+    periods: int,
+    granted_at: datetime,
+    reason: str | None,
+    granted_by: str,
+) -> SubscriptionCredit:
+    """Grant complimentary billing periods without creating a fake payment."""
+    periods = int(periods)
+    if periods < 1:
+        raise ValueError("Complimentary periods must be at least 1")
+
+    sub = (
+        db.query(Subscription)
+        .options(joinedload(Subscription.billing_tier))
+        .filter(
+            Subscription.customer_id == customer.id,
+            Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES),
+        )
+        .order_by(Subscription.id.desc())
+        .first()
+    )
+    if not sub:
+        raise ValueError("Customer does not have an assigned subscription")
+
+    tier = sub.billing_tier
+    if sub.current_period_end:
+        cutoff = sub.grace_until or grace_end(sub.current_period_end, tier)
+        coverage_start = sub.current_period_end if granted_at <= cutoff else granted_at
+    else:
+        coverage_start = granted_at
+        sub.started_at = granted_at
+
+    coverage_end = add_billing_intervals(coverage_start, tier, periods)
+    credit = SubscriptionCredit(
+        customer_id=customer.id,
+        subscription=sub,
+        billing_periods=periods,
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+        reason=(reason or '').strip() or None,
+        granted_at=granted_at,
+        granted_by=granted_by,
+    )
+
+    sub.current_period_start = coverage_start
+    sub.current_period_end = coverage_end
+    sub.grace_until = grace_end(coverage_end, tier)
+    sub.status = "active"
+    sub.cancelled_at = None
+    if not customer.exempt:
+        customer.status = "active"
+
+    db.add(credit)
+    db.flush()
+    return credit
 
 def desired_billing_status(sub: Subscription, now: datetime) -> str | None:
     """Return automatic billing status, or None for subscriptions not initialised yet."""

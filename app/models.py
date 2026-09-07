@@ -17,6 +17,7 @@ class Customer(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     payments: Mapped[list["Payment"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    credits: Mapped[list["SubscriptionCredit"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
 
 
 class Package(Base):
@@ -98,6 +99,22 @@ class Subscription(Base):
     customer: Mapped[Customer] = relationship(back_populates="subscriptions")
     billing_tier: Mapped[BillingTier] = relationship(back_populates="subscriptions")
     payments: Mapped[list["Payment"]] = relationship(back_populates="subscription")
+    credits: Mapped[list["SubscriptionCredit"]] = relationship(back_populates="subscription")
+
+
+class SubscriptionCredit(Base):
+    __tablename__ = "subscription_credits"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"))
+    subscription_id: Mapped[int] = mapped_column(ForeignKey("subscriptions.id"))
+    billing_periods: Mapped[int] = mapped_column(Integer)
+    coverage_start: Mapped[datetime] = mapped_column(DateTime)
+    coverage_end: Mapped[datetime] = mapped_column(DateTime)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    granted_by: Mapped[str] = mapped_column(String(120), default="admin")
+    customer: Mapped[Customer] = relationship(back_populates="credits")
+    subscription: Mapped[Subscription] = relationship(back_populates="credits")
 
 
 class PaymentSource(Base):

@@ -91,3 +91,57 @@ def test_auto_period_calculation_requires_whole_multiple():
     import pytest
     with pytest.raises(ValueError, match="whole-number multiple"):
         apply_payment(db, customer=customer, amount=Decimal("25"), paid_at=datetime(2026, 9, 15), source="manual", external_reference=None, note=None, apply_to_subscription=True)
+
+
+def test_complimentary_credit_during_grace_extends_from_previous_expiry():
+    from app.services.billing import apply_subscription_credit
+    db, customer, sub = make_db(grace=3)
+    credit = apply_subscription_credit(
+        db,
+        customer=customer,
+        periods=3,
+        granted_at=datetime(2026, 10, 3),
+        reason="Grandfathered donor",
+        granted_by="admin",
+    )
+    db.commit()
+    assert credit.billing_periods == 3
+    assert credit.coverage_start == datetime(2026, 10, 1)
+    assert credit.coverage_end == datetime(2027, 1, 1)
+    assert sub.current_period_end == datetime(2027, 1, 1)
+    assert credit.reason == "Grandfathered donor"
+
+
+def test_complimentary_credit_after_grace_restarts_from_grant_date():
+    from app.services.billing import apply_subscription_credit
+    db, customer, sub = make_db(grace=3)
+    credit = apply_subscription_credit(
+        db,
+        customer=customer,
+        periods=2,
+        granted_at=datetime(2026, 10, 5),
+        reason=None,
+        granted_by="admin",
+    )
+    db.commit()
+    assert credit.coverage_start == datetime(2026, 10, 5)
+    assert credit.coverage_end == datetime(2026, 12, 5)
+    assert sub.status == "active"
+    assert customer.status == "active"
+
+
+def test_complimentary_credit_does_not_create_payment():
+    from app.models import Payment, SubscriptionCredit
+    from app.services.billing import apply_subscription_credit
+    db, customer, sub = make_db(grace=3)
+    apply_subscription_credit(
+        db,
+        customer=customer,
+        periods=1,
+        granted_at=datetime(2026, 9, 10),
+        reason="Courtesy month",
+        granted_by="admin",
+    )
+    db.commit()
+    assert db.query(Payment).count() == 0
+    assert db.query(SubscriptionCredit).count() == 1

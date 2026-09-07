@@ -36,3 +36,7 @@
 .source-add-form{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:8px;align-items:end;margin:12px 0}
 .source-list{display:grid;gap:7px}.source-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}.source-rename-form{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}.source-archived{opacity:.55}.source-help{font-size:11px;margin:10px 0 0}
 @media(max-width:650px){.source-add-form,.source-row,.source-rename-form{grid-template-columns:1fr}}
+
+/* v0.2.4 complimentary access */
+.compact-card-actions{flex-wrap:wrap;margin:10px 0}.complimentary-form{display:grid;grid-template-columns:110px 150px minmax(180px,1fr) auto;gap:8px;align-items:end}.complimentary-help,.credit-summary{font-size:11px}.complimentary-help{margin-top:9px}.credit-summary{margin:8px 0 2px;padding:7px 9px;border-left:2px solid var(--accent);background:#0e141d;border-radius:0 6px 6px 0}
+@media(max-width:700px){.complimentary-form{grid-template-columns:1fr}}

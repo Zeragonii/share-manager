@@ -16,7 +16,10 @@
       {% if sub.current_period_end %}Paid through {{ sub.current_period_end.strftime('%Y-%m-%d') }} · Grace until {{ sub.grace_until.strftime('%Y-%m-%d') if sub.grace_until else '—' }}{% else %}Billing dates not initialised{% endif %}
     </span>
   </div>
-  <button type="button" class="secondary small-action js-toggle" data-target="billing-edit-{{ sub.id }}">Edit billing</button>
+  <div class="row compact-card-actions">
+    <button type="button" class="secondary small-action js-toggle" data-target="billing-edit-{{ sub.id }}" data-open-label="Edit billing" data-close-label="Close">Edit billing</button>
+    <button type="button" class="secondary small-action js-toggle" data-target="credit-grant-{{ sub.id }}" data-open-label="Grant complimentary access" data-close-label="Close">Grant complimentary access</button>
+  </div>
   <div id="billing-edit-{{ sub.id }}" class="simple-editor billing-editor" hidden>
     <form method="post" action="/subscriptions/{{ sub.id }}/billing-dates" class="grid-form billing-date-form">
       <label>Period / subscription start<input type="date" name="start_date" value="{{ (sub.current_period_start or sub.started_at).strftime('%Y-%m-%d') }}" required></label>
@@ -24,6 +27,19 @@
       <button>Save dates</button>
     </form>
   </div>
+  <div id="credit-grant-{{ sub.id }}" class="simple-editor billing-editor" hidden>
+    <form method="post" action="/customers/{{ c.id }}/credits" class="complimentary-form">
+      <label>Billing periods<input type="number" name="billing_periods" min="1" step="1" value="1" required></label>
+      <label>Grant date<input type="date" name="granted_date" value="{{ today }}"></label>
+      <label>Reason<input name="reason" placeholder="e.g. Grandfathered donor"></label>
+      <button>Grant access</button>
+    </form>
+    <div class="muted complimentary-help">Uses the current tier interval: {{ sub.billing_tier.interval_count }} {{ sub.billing_tier.interval_unit }}{{ 's' if sub.billing_tier.interval_count != 1 else '' }} per period. Complimentary access is tracked separately from payments.</div>
+  </div>
+  {% set credits = c.credits|sort(attribute='granted_at', reverse=true) %}
+  {% if credits %}
+  <div class="credit-summary muted">Latest complimentary credit: +{{ credits[0].billing_periods }} period{{ '' if credits[0].billing_periods == 1 else 's' }} · through {{ credits[0].coverage_end.strftime('%Y-%m-%d') }}{% if credits[0].reason %} · {{ credits[0].reason }}{% endif %}</div>
+  {% endif %}
   {% else %}<div class="subtle">No assigned subscription</div>{% endif %}
 
   <form method="post" action="/customers/{{ c.id }}/subscribe" class="subscription-assign">
@@ -39,7 +55,7 @@
 <script>
 document.querySelectorAll('.js-toggle').forEach(button => button.addEventListener('click', () => {
   const target = document.getElementById(button.dataset.target); if (!target) return;
-  target.hidden = !target.hidden; button.textContent = target.hidden ? 'Edit billing' : 'Close';
+  target.hidden = !target.hidden; button.textContent = target.hidden ? (button.dataset.openLabel || 'Edit') : (button.dataset.closeLabel || 'Close');
 }));
 </script>
 {% endblock %}
