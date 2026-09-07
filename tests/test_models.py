@@ -36,3 +36,7 @@ def test_billing_tier_current_subscription_count_ignores_history():
     db.refresh(tier)
     assert len(tier.subscriptions) == 3
     assert tier.current_subscription_count == 1
+
+def test_archived_tier_is_not_currently_assignable_flag():
+    tier = BillingTier(package_id=1, name="Legacy", price=10, interval_unit="month", interval_count=1, active=False)
+    assert tier.active is False

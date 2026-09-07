@@ -23,15 +23,15 @@
     <button type="button" class="secondary small-action js-toggle" data-target="package-edit-{{ p.id }}">Edit package</button>
   </div>
 
-  <div id="package-edit-{{ p.id }}" class="simple-editor hidden">
+  <div id="package-edit-{{ p.id }}" class="simple-editor" hidden>
     <form method="post" action="/packages/{{ p.id }}/edit" class="grid-form">
       <label>Name<input name="name" value="{{ p.name }}" required></label>
       <label>Description<input name="description" value="{{ p.description or '' }}"></label>
       <button type="submit">Save</button>
     </form>
     <div class="simple-delete-row">
-      <span class="muted">Deleting is only allowed when no current subscriptions use this package.</span>
-      <form method="post" action="/packages/{{ p.id }}/delete" onsubmit="return confirm('Delete {{ p.name|e }}? This also removes its billing tiers and entitlement mappings.');">
+      <span class="muted">Packages with historical subscriptions are archived rather than erased.</span>
+      <form method="post" action="/packages/{{ p.id }}/delete" onsubmit="return confirm('Delete or archive {{ p.name|e }}?');">
         <button type="submit" class="danger small-action">Delete package</button>
       </form>
     </div>
@@ -43,14 +43,14 @@
       <table class="tier-table">
         <thead><tr><th>Name</th><th>Price</th><th>Interval</th><th></th></tr></thead>
         <tbody>
-        {% for t in p.billing_tiers %}
+        {% for t in p.billing_tiers if t.active %}
           <tr>
             <td>{{ t.name }}</td>
             <td>£{{ '%.2f'|format(t.price) }}</td>
             <td>{{ t.interval_count }} {{ t.interval_unit }}</td>
             <td class="tier-actions-cell"><button type="button" class="secondary small-action js-toggle" data-target="tier-edit-{{ t.id }}">Edit</button></td>
           </tr>
-          <tr id="tier-edit-{{ t.id }}" class="tier-edit-row hidden">
+          <tr id="tier-edit-{{ t.id }}" class="tier-edit-row" hidden>
             <td colspan="4">
               <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/edit" class="grid-form compact tier-inline-form">
                 <label>Name<input name="name" value="{{ t.name }}" required></label>
@@ -62,10 +62,12 @@
               <div class="tier-edit-footer">
                 {% if t.current_subscription_count %}
                   <span class="muted">Used by {{ t.current_subscription_count }} current subscription{% if t.current_subscription_count != 1 %}s{% endif %}.</span>
+                {% elif t.subscriptions %}
+                  <span class="muted">Not currently assigned. Delete will archive this tier because historical subscriptions reference it.</span>
                 {% else %}
                   <span class="muted">Not currently assigned.</span>
                 {% endif %}
-                <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/delete" onsubmit="return confirm('Delete billing tier {{ t.name|e }}?');">
+                <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/delete" onsubmit="return confirm('Delete or archive billing tier {{ t.name|e }}?');">
                   <button type="submit" class="danger small-action" {% if t.current_subscription_count %}disabled title="This tier is currently assigned"{% endif %}>Delete</button>
                 </form>
               </div>
@@ -79,7 +81,7 @@
 
       <form method="post" action="/packages/{{ p.id }}/tiers" class="grid-form compact">
         <label>Name<input name="name" placeholder="Monthly" required></label>
-        <label>Price<input name="price" type="number" step="0.01" required></label>
+        <label>Price<input name="price" type="number" min="0" step="0.01" required></label>
         <label>Interval<select name="interval_unit"><option value="month">month</option><option value="year">year</option><option value="week">week</option></select></label>
         <label>Count<input name="interval_count" type="number" min="1" value="1"></label>
         <button>Add tier</button>
@@ -111,7 +113,9 @@
 document.querySelectorAll('.js-toggle').forEach(button => {
   button.addEventListener('click', () => {
     const target = document.getElementById(button.dataset.target);
-    if (target) target.classList.toggle('hidden');
+    if (!target) return;
+    target.hidden = !target.hidden;
+    button.textContent = target.hidden ? (button.dataset.target.startsWith('tier-') ? 'Edit' : 'Edit package') : 'Close';
   });
 });
 

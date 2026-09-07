@@ -141,3 +141,9 @@ uvicorn app.main:app --reload --port 8080
 - Added a small per-tier Edit control for price, interval, count and name.
 - Retained guarded tier/package deletion and live-only subscription counts.
 - Retained all backend fixes and existing data model behavior from v0.1.5.
+
+### v0.1.7
+- Package/tier edit fields are hidden until their Edit button is pressed.
+- Static CSS is cache-busted using the application version.
+- Deleting a tier/package that has historical subscriptions archives it instead of violating subscription foreign-key history.
+- Tiers/packages with current subscriptions remain protected from deletion.

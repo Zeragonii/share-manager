@@ -121,6 +121,8 @@ def subscribe(request: Request, customer_id: int, billing_tier_id: int = Form(..
     if gate: return gate
     c = db.get(Customer, customer_id)
     tier = db.get(BillingTier, billing_tier_id)
+    if not c or not tier or not tier.active or not tier.package.active:
+        return RedirectResponse("/customers", status_code=303)
     existing = db.query(Subscription).filter(
         Subscription.customer_id == customer_id,
         Subscription.status.in_(CURRENT_SUBSCRIPTION_STATES),
@@ -157,7 +159,7 @@ def packages(request: Request, error: str | None = None, notice: str | None = No
     rows = db.query(Package).options(
         joinedload(Package.billing_tiers).joinedload(BillingTier.subscriptions),
         joinedload(Package.entitlements).joinedload(PackageEntitlement.integration),
-    ).order_by(Package.name).all()
+    ).filter(Package.active == True).order_by(Package.name).all()  # noqa: E712
     integrations = db.query(Integration).filter(Integration.enabled == True).all()  # noqa: E712
     selected = {}
     for package in rows:
@@ -202,13 +204,24 @@ def delete_package(request: Request, package_id: int, db: Session = Depends(get_
         return RedirectResponse("/packages?error=Package+not+found", status_code=303)
     assigned = sum(t.current_subscription_count for t in p.billing_tiers)
     if assigned:
-        return RedirectResponse(f"/packages?error=Cannot+delete+package%3A+it+is+used+by+{assigned}+subscription%28s%29", status_code=303)
+        return RedirectResponse(f"/packages?error=Cannot+delete+package%3A+it+is+used+by+{assigned}+current+subscription%28s%29", status_code=303)
     name = p.name
-    db.delete(p)
-    db.flush()
-    db.add(AuditLog(actor=settings.admin_username, action="package.delete", target_type="package", target_id=str(package_id), detail=name))
+    historical = sum(len(t.subscriptions) for t in p.billing_tiers)
+    if historical:
+        # Preserve referenced tiers/subscriptions for audit history. Archiving removes
+        # them from all live UI/assignment paths without violating FK constraints.
+        p.active = False
+        for tier in p.billing_tiers:
+            tier.active = False
+        action = "package.archive"
+        notice = "Package+archived%3B+historical+subscriptions+preserved"
+    else:
+        db.delete(p)
+        action = "package.delete"
+        notice = "Package+deleted"
+    db.add(AuditLog(actor=settings.admin_username, action=action, target_type="package", target_id=str(package_id), detail=name))
     db.commit()
-    return RedirectResponse("/packages?notice=Package+deleted", status_code=303)
+    return RedirectResponse(f"/packages?notice={notice}", status_code=303)
 
 @app.post("/packages/{package_id}/tiers")
 def add_tier(request: Request, package_id: int, name: str = Form(...), price: Decimal = Form(...), interval_unit: str = Form(...), interval_count: int = Form(1), db: Session = Depends(get_db)):
@@ -243,13 +256,21 @@ def delete_tier(request: Request, package_id: int, tier_id: int, db: Session = D
     if not t:
         return RedirectResponse("/packages?error=Billing+tier+not+found", status_code=303)
     if t.current_subscription_count:
-        return RedirectResponse(f"/packages?error=Cannot+delete+billing+tier%3A+it+is+used+by+{t.current_subscription_count}+subscription%28s%29", status_code=303)
+        return RedirectResponse(f"/packages?error=Cannot+delete+billing+tier%3A+it+is+used+by+{t.current_subscription_count}+current+subscription%28s%29", status_code=303)
     name = t.name
-    db.delete(t)
-    db.flush()
-    db.add(AuditLog(actor=settings.admin_username, action="billing_tier.delete", target_type="billing_tier", target_id=str(tier_id), detail=name))
+    if t.subscriptions:
+        # Historical subscription rows must retain their billing_tier_id. Archive the
+        # tier rather than allowing SQLAlchemy to NULL a NOT NULL foreign key.
+        t.active = False
+        action = "billing_tier.archive"
+        notice = "Billing+tier+archived%3B+historical+subscriptions+preserved"
+    else:
+        db.delete(t)
+        action = "billing_tier.delete"
+        notice = "Billing+tier+deleted"
+    db.add(AuditLog(actor=settings.admin_username, action=action, target_type="billing_tier", target_id=str(tier_id), detail=name))
     db.commit()
-    return RedirectResponse("/packages?notice=Billing+tier+deleted", status_code=303)
+    return RedirectResponse(f"/packages?notice={notice}", status_code=303)
 
 @app.post("/packages/{package_id}/entitlements")
 def set_entitlements(request: Request, package_id: int, integration_id: int = Form(...), library_ids: list[str] = Form(default=[]), db: Session = Depends(get_db)):

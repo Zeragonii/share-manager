@@ -11,3 +11,6 @@
 
 /* v0.1.6 package page: restore the original minimalist v0.1 layout. */
 .package-simple-heading h2{margin-bottom:0}.package-simple-heading p{margin:5px 0 0}.small-action{padding:6px 10px;font-size:11px}.simple-editor{margin:12px 0 18px;padding:12px;border:1px solid var(--line);border-radius:8px;background:#0e141d}.simple-delete-row,.tier-edit-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}.simple-delete-row form,.tier-edit-footer form{margin:0}.tier-actions-cell{text-align:right;width:1%;white-space:nowrap}.tier-edit-row td{padding:0 11px 11px}.tier-inline-form{margin-top:10px}.tier-edit-footer{font-size:11px}.tier-edit-footer .danger:disabled{opacity:.45;cursor:not-allowed}.tier-table{margin-bottom:0}@media(max-width:900px){.package-simple-heading{align-items:flex-start}.simple-delete-row,.tier-edit-footer{align-items:flex-start;flex-direction:column}.tier-actions-cell{width:auto}}
+
+/* v0.1.7: edit controls are opt-in only. Native hidden attribute wins even with stale component rules. */
+[hidden]{display:none!important}
