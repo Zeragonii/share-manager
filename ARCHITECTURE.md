@@ -54,3 +54,10 @@ Customer cards now resolve their subscription centrally in Python instead of dup
 ## v0.2.8 UI filtering
 
 Customer status filtering and text search are intentionally client-side because the full customer collection is already rendered for management actions. Payment customer selection uses a searchable client-side picker while submitting the canonical numeric customer ID to the existing payment endpoint; no billing or persistence semantics changed in this release.
+
+## v0.2.9 operational controls
+
+- Payments support audited edit/void workflows. Coverage-affecting edits/voids are allowed only for the latest entitlement event so later payment/credit history cannot be silently invalidated.
+- `payments.voided_at` and `payments.voided_by` preserve deleted-payment provenance; voided rows are excluded from revenue calculations.
+- Customer history is assembled from subscription, payment, complimentary-credit and related audit events.
+- The application image carries PostgreSQL 17 client utilities and exposes an authenticated UI endpoint that produces custom-format `pg_dump` backups.

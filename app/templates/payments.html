@@ -61,9 +61,25 @@
   </div>
 </details>
 </section>
-<section><h2>Payment history</h2><table><thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Source</th><th>Periods</th><th>Coverage</th><th>Reference</th></tr></thead><tbody>
-{% for p in payments %}<tr><td>{{ p.paid_at.strftime('%Y-%m-%d') }}</td><td>{{ p.customer.name }}</td><td>£{{ '%.2f'|format(p.amount) }}</td><td>{{ p.source }}</td><td>{{ p.billing_periods if p.billing_periods else '—' }}</td><td>{% if p.coverage_end %}{{ p.coverage_start.strftime('%Y-%m-%d') }} → {{ p.coverage_end.strftime('%Y-%m-%d') }}{% else %}<span class="muted">Ledger only</span>{% endif %}</td><td>{{ p.external_reference or '' }}</td></tr>
-{% else %}<tr><td colspan="7" class="muted">No payments recorded.</td></tr>{% endfor %}</tbody></table></section>
+<section><h2>Payment history</h2><table><thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Source</th><th>Periods</th><th>Coverage</th><th>Reference</th><th></th></tr></thead><tbody>
+{% for p in payments %}<tr class="{% if p.voided_at %}payment-voided{% endif %}"><td>{{ p.paid_at.strftime('%Y-%m-%d') }}</td><td><a class="plain-link" href="/customers/{{ p.customer.id }}/history">{{ p.customer.name }}</a>{% if p.voided_at %}<span class="badge cancelled">deleted</span>{% endif %}</td><td>£{{ '%.2f'|format(p.amount) }}</td><td>{{ p.source }}</td><td>{{ p.billing_periods if p.billing_periods else '—' }}</td><td>{% if p.coverage_end %}{{ p.coverage_start.strftime('%Y-%m-%d') }} → {{ p.coverage_end.strftime('%Y-%m-%d') }}{% else %}<span class="muted">Ledger only</span>{% endif %}</td><td>{{ p.external_reference or '' }}</td><td class="payment-actions">{% if not p.voided_at %}<button type="button" class="secondary small-action" onclick="document.getElementById('payment-edit-{{ p.id }}').showModal()">Edit</button>{% endif %}</td></tr>
+{% else %}<tr><td colspan="8" class="muted">No payments recorded.</td></tr>{% endfor %}</tbody></table></section>
+{% for p in payments if not p.voided_at %}
+<dialog id="payment-edit-{{ p.id }}" class="customer-modal">
+  <div class="modal-heading"><div><h3>Edit payment · {{ p.customer.name }}</h3><span class="muted">Received {{ p.paid_at.strftime('%Y-%m-%d') }}{% if p.coverage_end %} · applied to subscription{% else %} · ledger only{% endif %}</span></div><button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()">×</button></div>
+  <form method="post" action="/payments/{{ p.id }}/edit" class="modal-form">
+    <label>Amount (£)<input name="amount" type="number" min="0" step="0.01" value="{{ '%.2f'|format(p.amount) }}" required></label>
+    <label>Payment received<input name="paid_at" type="date" value="{{ p.paid_at.strftime('%Y-%m-%d') }}" required></label>
+    <label>Source<select name="source" required>{% for source in payment_sources %}{% if source.active or source.name == p.source %}<option value="{{ source.name }}" {% if source.name == p.source %}selected{% endif %}>{{ source.name }}{% if not source.active %} (archived){% endif %}</option>{% endif %}{% endfor %}</select></label>
+    <label>Reference<input name="external_reference" value="{{ p.external_reference or '' }}"></label>
+    <label>Note<input name="note" value="{{ p.note or '' }}"></label>
+    <label>Billing periods<input name="billing_periods" type="number" min="1" step="1" value="{{ p.billing_periods or '' }}" {% if not p.subscription_id %}disabled{% endif %}></label>
+    <div class="modal-help muted">Changing amount, receipt date, source, reference or note corrects the ledger but does not rewrite already-granted coverage. Changing Billing periods recalculates coverage and is only allowed if this is the latest coverage event on the subscription.</div>
+    <div class="modal-actions split-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Save payment</button></div>
+  </form>
+  <form method="post" action="/payments/{{ p.id }}/delete" class="payment-delete-form" onsubmit="return confirm('Delete this payment? Applied payments can only be removed if they are the latest coverage event.');"><button class="danger" type="submit">Delete payment</button><span class="muted">Deleted payments remain in the audit trail and are excluded from revenue totals.</span></form>
+</dialog>
+{% endfor %}
 <script>
 (() => {
   const picker = document.getElementById('payment-customer-picker');
@@ -143,4 +159,5 @@
   refresh();
 })();
 </script>
+<script>document.querySelectorAll('dialog.customer-modal').forEach(dialog => dialog.addEventListener('click', event => { const r=dialog.getBoundingClientRect(); if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) dialog.close(); }));</script>
 {% endblock %}

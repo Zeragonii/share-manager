@@ -1,0 +1,15 @@
+{% extends 'base.html' %}{% block content %}
+<header><h1>Backups</h1><p>Download a point-in-time backup of Share Manager's database.</p></header>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<section>
+  <h2>Database backup</h2>
+  <p>The download is generated from the live PostgreSQL database using <code>pg_dump</code> in custom/compressed format. Creating it does not stop or modify Share Manager.</p>
+  <a class="button-link" href="/backups/database">Download database backup</a>
+  <div class="backup-note">
+    <strong>Restore</strong>
+    <p class="muted">Restore into an empty Share Manager database with:</p>
+    <pre>pg_restore --clean --if-exists --no-owner -d sharemanager share-manager-YYYYMMDD-HHMMSS.dump</pre>
+    <p class="muted">Stop the Share Manager app while restoring, and take a fresh backup first. Your Docker/Portainer environment variables and stack definition are not stored inside the database dump.</p>
+  </div>
+</section>
+{% endblock %}

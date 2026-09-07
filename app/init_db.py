@@ -26,6 +26,8 @@ add_column_if_missing("payments", "coverage_start", "TIMESTAMP NULL")
 add_column_if_missing("payments", "coverage_end", "TIMESTAMP NULL")
 add_column_if_missing("payments", "billing_periods", "INTEGER NULL")
 add_column_if_missing("payments", "created_at", "TIMESTAMP NULL")
+add_column_if_missing("payments", "voided_at", "TIMESTAMP NULL")
+add_column_if_missing("payments", "voided_by", "VARCHAR(120) NULL")
 
 # Backfill created_at for old payment rows after adding the nullable column.
 with engine.begin() as conn:

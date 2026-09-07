@@ -1,15 +1,20 @@
 import asyncio
+import os
+import subprocess
+import tempfile
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
 from decimal import Decimal
 from urllib.parse import quote_plus
 
 from fastapi import Depends, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func
+from starlette.background import BackgroundTask
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.engine import make_url
 
 from .config import settings
 from .db import get_db, SessionLocal
@@ -31,6 +36,7 @@ from .integrations.plex import PlexIntegration
 from .security import logged_in, make_session, valid_credentials
 from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
 from .services.reconcile import reconcile_customer
+from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .version import APP_VERSION
 
 
@@ -136,7 +142,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         Subscription.current_period_end >= now,
         Subscription.current_period_end <= now + timedelta(days=7),
     ).count()
-    revenue = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(Payment.paid_at >= month_start).scalar()
+    revenue = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(Payment.paid_at >= month_start, Payment.voided_at.is_(None)).scalar()
     stats = {
         "customers": db.query(Customer).count(),
         "active": db.query(Customer).filter(Customer.status == "active").count(),
@@ -749,6 +755,156 @@ def add_payment(
     if apply_to_subscription and not payment.subscription_id:
         return RedirectResponse("/payments?notice=Payment+recorded+as+ledger+only%3B+customer+has+no+assigned+subscription", status_code=303)
     return RedirectResponse("/payments?notice=Payment+recorded", status_code=303)
+
+
+@app.post("/payments/{payment_id}/edit")
+def edit_payment(
+    request: Request,
+    payment_id: int,
+    amount: Decimal = Form(...),
+    paid_at: str = Form(...),
+    source: str = Form(...),
+    external_reference: str = Form(""),
+    note: str = Form(""),
+    billing_periods: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    payment = db.query(Payment).options(joinedload(Payment.subscription).joinedload(Subscription.billing_tier)).filter(Payment.id == payment_id).first()
+    if not payment or payment.voided_at:
+        return RedirectResponse("/payments?error=Payment+not+found", status_code=303)
+    selected_source = db.query(PaymentSource).filter(PaymentSource.name == source).first()
+    if not selected_source:
+        return RedirectResponse("/payments?error=Payment+source+not+found", status_code=303)
+    try:
+        new_periods = int(billing_periods) if billing_periods.strip() else payment.billing_periods
+        if new_periods is not None and new_periods < 1:
+            raise ValueError("Billing periods must be at least 1")
+        coverage_change = bool(payment.subscription_id and payment.coverage_end and new_periods != payment.billing_periods)
+        if coverage_change and not payment_is_latest_coverage_event(db, payment):
+            raise ValueError("Coverage periods can only be changed on the latest applied payment for this subscription")
+        old = f"£{payment.amount} {payment.source} {payment.paid_at:%Y-%m-%d}; periods={payment.billing_periods or '-'}"
+        payment.amount = amount
+        payment.paid_at = _parse_date(paid_at)
+        payment.source = source
+        payment.external_reference = external_reference.strip() or None
+        payment.note = note.strip() or None
+        payment.billing_periods = new_periods
+        if coverage_change:
+            recalculate_after_latest_payment_change(db, payment)
+        db.add(AuditLog(actor=settings.admin_username, action="payment.edit", target_type="payment", target_id=str(payment.id), detail=f"{old} -> £{amount} {source} {payment.paid_at:%Y-%m-%d}; periods={payment.billing_periods or '-'}"))
+        db.commit()
+    except (ValueError, TypeError) as exc:
+        db.rollback()
+        return RedirectResponse(f"/payments?error={quote_plus(str(exc))}", status_code=303)
+    if coverage_change and payment.customer.plex_username and not payment.customer.exempt:
+        try:
+            process_billing(db)
+            reconcile_customer(db, payment.customer)
+        except Exception as exc:
+            db.add(AuditLog(action="payment.reconcile.error", target_type="customer", target_id=str(payment.customer_id), detail=str(exc)))
+            db.commit()
+    return RedirectResponse("/payments?notice=Payment+updated", status_code=303)
+
+
+@app.post("/payments/{payment_id}/delete")
+def delete_payment(request: Request, payment_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    payment = db.query(Payment).options(joinedload(Payment.subscription).joinedload(Subscription.billing_tier), joinedload(Payment.customer)).filter(Payment.id == payment_id).first()
+    if not payment or payment.voided_at:
+        return RedirectResponse("/payments?error=Payment+not+found", status_code=303)
+    if payment.subscription_id and payment.coverage_end and not payment_is_latest_coverage_event(db, payment):
+        return RedirectResponse("/payments?error=Applied+payments+can+only+be+deleted+when+they+are+the+latest+coverage+event", status_code=303)
+    if payment.subscription_id and payment.coverage_end:
+        rollback_voided_latest_payment(db, payment)
+    payment.voided_at = datetime.utcnow()
+    payment.voided_by = settings.admin_username
+    db.add(AuditLog(actor=settings.admin_username, action="payment.delete", target_type="payment", target_id=str(payment.id), detail=f"Voided £{payment.amount} via {payment.source} received {payment.paid_at:%Y-%m-%d}"))
+    db.commit()
+    if payment.subscription_id and payment.customer.plex_username and not payment.customer.exempt:
+        try:
+            process_billing(db)
+            reconcile_customer(db, payment.customer)
+        except Exception as exc:
+            db.add(AuditLog(action="payment.reconcile.error", target_type="customer", target_id=str(payment.customer_id), detail=str(exc)))
+            db.commit()
+    return RedirectResponse("/payments?notice=Payment+deleted", status_code=303)
+
+
+@app.get("/customers/{customer_id}/history", response_class=HTMLResponse)
+def customer_history(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    customer = db.query(Customer).options(
+        joinedload(Customer.subscriptions).joinedload(Subscription.billing_tier).joinedload(BillingTier.package),
+        joinedload(Customer.payments),
+        joinedload(Customer.credits).joinedload(SubscriptionCredit.subscription).joinedload(Subscription.billing_tier),
+    ).filter(Customer.id == customer_id).first()
+    if not customer:
+        return RedirectResponse("/customers?error=Customer+not+found", status_code=303)
+    events = []
+    for payment in customer.payments:
+        events.append({"when": payment.paid_at, "kind": "Payment" if not payment.voided_at else "Payment (deleted)", "detail": f"£{payment.amount:.2f} via {payment.source}" + (f" · {payment.billing_periods} period(s) · {payment.coverage_start:%Y-%m-%d} → {payment.coverage_end:%Y-%m-%d}" if payment.coverage_end else " · ledger only") + (f" · {payment.note}" if payment.note else ""), "voided": bool(payment.voided_at)})
+    for credit in customer.credits:
+        events.append({"when": credit.granted_at, "kind": "Complimentary access", "detail": f"+{credit.billing_periods} period(s) · {credit.coverage_start:%Y-%m-%d} → {credit.coverage_end:%Y-%m-%d}" + (f" · {credit.reason}" if credit.reason else ""), "voided": False})
+    for sub in customer.subscriptions:
+        events.append({"when": sub.started_at, "kind": "Subscription", "detail": f"{sub.billing_tier.package.name} / {sub.billing_tier.name} · {sub.status}", "voided": False})
+    subscription_ids = [str(sub.id) for sub in customer.subscriptions]
+    payment_ids = [str(payment.id) for payment in customer.payments]
+    log_filters = [
+        (AuditLog.target_type == "customer") & (AuditLog.target_id == str(customer.id)),
+    ]
+    if subscription_ids:
+        log_filters.append((AuditLog.target_type == "subscription") & AuditLog.target_id.in_(subscription_ids))
+    if payment_ids:
+        log_filters.append((AuditLog.target_type == "payment") & AuditLog.target_id.in_(payment_ids))
+    logs = db.query(AuditLog).filter(or_(*log_filters)).all()
+    for log in logs:
+        events.append({"when": log.created_at, "kind": log.action, "detail": log.detail or "", "voided": False})
+    events.sort(key=lambda item: item["when"], reverse=True)
+    return render(request, "customer_history.html", customer=customer, events=events)
+
+
+@app.get("/backups", response_class=HTMLResponse)
+def backups_page(request: Request, error: str | None = None, notice: str | None = None):
+    gate = auth(request)
+    if gate:
+        return gate
+    return render(request, "backups.html", error=error, notice=notice)
+
+
+@app.get("/backups/database")
+def download_database_backup(request: Request):
+    gate = auth(request)
+    if gate:
+        return gate
+    url = make_url(settings.database_url)
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    if url.get_backend_name() == "sqlite":
+        db_path = url.database
+        if not db_path or not os.path.exists(db_path):
+            return RedirectResponse("/backups?error=SQLite+database+file+not+found", status_code=303)
+        return FileResponse(db_path, filename=f"share-manager-{stamp}.sqlite", media_type="application/octet-stream")
+    fd, path = tempfile.mkstemp(prefix="share-manager-", suffix=".dump")
+    os.close(fd)
+    env = os.environ.copy()
+    if url.password:
+        env["PGPASSWORD"] = url.password
+    cmd = ["pg_dump", "--format=custom", "--no-owner", "--no-privileges", "--host", url.host or "localhost", "--port", str(url.port or 5432), "--username", url.username or "postgres", "--file", path, url.database or "postgres"]
+    try:
+        subprocess.run(cmd, env=env, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return RedirectResponse(f"/backups?error={quote_plus('Backup failed: ' + (exc.stderr or str(exc)))}", status_code=303)
+    return FileResponse(path, filename=f"share-manager-{stamp}.dump", media_type="application/octet-stream", background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
 
 
 @app.get("/api/integrations/{integration_id}/libraries")

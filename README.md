@@ -74,3 +74,24 @@ Each subscription can optionally have a **Manual access until** date from the cu
 - Added status filters for All, Active, Grace, Suspended, Cancelled and Exempt customers, with live counts.
 - Search and status filters can be combined without reloading the page.
 - Replaced the long Payments customer dropdown with a searchable customer picker that matches names, email addresses and Plex usernames while retaining billing-period previews.
+
+## v0.2.9 operations
+
+### Payment maintenance
+Payments now have an **Edit** action. Amount, receipt date, source, reference and note can be corrected without changing the access period that was already granted. Billing-period count can also be changed, but only when that payment is the latest coverage event on the subscription; Share Manager then recalculates the current coverage end.
+
+**Delete payment** is audit-safe rather than destructive. Ledger-only payments can be voided immediately. An applied payment can only be voided when it is the latest coverage event; Share Manager rolls the subscription back to the preceding payment/complimentary-credit coverage and reruns billing/Plex reconciliation. Voided payments remain visible in history and are excluded from dashboard revenue totals.
+
+### Customer history
+Each customer tile now has a **History** button. The timeline combines subscription assignments, payments (including voided ones), complimentary credits and relevant customer/subscription/payment audit events.
+
+### Database backups
+The **Backups** page can generate and download a PostgreSQL custom-format dump from the live database. The application image includes PostgreSQL 17 client tools so its `pg_dump` version matches the bundled PostgreSQL 17 service.
+
+A typical restore into the `sharemanager` database is:
+
+```bash
+pg_restore --clean --if-exists --no-owner -d sharemanager share-manager-YYYYMMDD-HHMMSS.dump
+```
+
+Stop the application container while restoring. The database backup contains Share Manager data, not your Portainer stack/environment variables, so keep a copy of those separately.

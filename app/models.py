@@ -141,6 +141,8 @@ class Payment(Base):
     billing_periods: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    voided_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     customer: Mapped[Customer] = relationship(back_populates="payments")
     subscription: Mapped[Subscription | None] = relationship(back_populates="payments")
 
