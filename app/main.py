@@ -567,6 +567,7 @@ def add_payment(
     external_reference: str = Form(""),
     note: str = Form(""),
     apply_to_subscription: bool = Form(False),
+    billing_periods: str = Form(""),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -576,19 +577,26 @@ def add_payment(
     if not customer:
         return RedirectResponse("/payments?error=Customer+not+found", status_code=303)
     paid = _parse_date(paid_at)
-    payment = apply_payment(
-        db,
-        customer=customer,
-        amount=amount,
-        paid_at=paid,
-        source=source,
-        external_reference=external_reference.strip() or None,
-        note=note.strip() or None,
-        apply_to_subscription=apply_to_subscription,
-    )
+    try:
+        periods_override = int(billing_periods) if billing_periods.strip() else None
+        payment = apply_payment(
+            db,
+            customer=customer,
+            amount=amount,
+            paid_at=paid,
+            source=source,
+            external_reference=external_reference.strip() or None,
+            note=note.strip() or None,
+            apply_to_subscription=apply_to_subscription,
+            billing_periods=periods_override,
+        )
+    except (ValueError, TypeError) as exc:
+        db.rollback()
+        from urllib.parse import quote_plus
+        return RedirectResponse(f"/payments?error={quote_plus(str(exc))}", status_code=303)
     detail = f"£{amount} via {source} on {paid:%Y-%m-%d}"
     if payment.subscription_id:
-        detail += f"; coverage {payment.coverage_start:%Y-%m-%d} -> {payment.coverage_end:%Y-%m-%d}"
+        detail += f"; {payment.billing_periods or 1} billing period(s); coverage {payment.coverage_start:%Y-%m-%d} -> {payment.coverage_end:%Y-%m-%d}"
     db.add(AuditLog(actor=settings.admin_username, action="payment.record", target_type="payment", target_id=str(payment.id), detail=detail))
     db.commit()
 

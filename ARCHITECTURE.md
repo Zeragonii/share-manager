@@ -1,10 +1,10 @@
-# Share Manager Architecture — v0.2
+# Share Manager Architecture — v0.2.1
 
 ## Core model
 
 `Customer -> Subscription -> BillingTier -> Package -> PackageEntitlement -> Integration`
 
-Payments are append-only ledger entries. An applied payment can reference a subscription and stores the exact `coverage_start` and `coverage_end` it purchased.
+Payments are append-only ledger entries. An applied payment can reference a subscription and stores the exact `coverage_start`, `coverage_end`, and number of `billing_periods` it purchased. The period count can be inferred from amount ÷ tier price or explicitly overridden by an administrator.
 
 ## Billing dates
 
@@ -20,7 +20,7 @@ Each BillingTier defines price, interval/count and `grace_period_days`.
 
 ### Renewal rule
 
-If payment is received on/before `grace_until`, the next coverage period begins at the previous `current_period_end`. If payment arrives after grace has elapsed, the next period begins on the payment date. This prevents grace days becoming free paid-service days.
+If payment is received on/before `grace_until`, purchased coverage begins at the previous `current_period_end`. If payment arrives after grace has elapsed, purchased coverage begins on the payment date. One or more complete tier intervals are then added according to the payment's resolved billing-period count. This prevents grace days becoming free paid-service days while supporting prepayment for multiple periods.
 
 ## State engine
 

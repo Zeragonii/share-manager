@@ -2,11 +2,13 @@
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
-## v0.2.0 highlights
+## v0.2.1 highlights
 
 - Package and billing-tier management, including per-tier grace periods.
 - Customer subscriptions with explicit start/current-period dates.
-- Manual payment ledger with payment-received date and coverage attribution.
+- Manual payment ledger with payment-received date, coverage attribution, and multi-period prepayments.
+- Payment duration can be auto-calculated from amount ÷ tier price or manually overridden.
+- Customer cards are displayed in one vertical column for easier scanning.
 - Renewal semantics:
   - first/fully-lapsed payment starts coverage on the payment date;
   - early/on-time payments extend from the existing expiry;
@@ -21,7 +23,7 @@ Share Manager is a Dockerised subscription, payment and entitlement manager. Ple
 
 The stack contains the app and PostgreSQL. Persistent data lives in named Docker volumes.
 
-Required environment values:
+Required environment values. In Portainer, add these under the stack's **Environment variables** section (the Compose file passes them into the app container):
 
 ```text
 DB_PASSWORD=<strong-random-value>
@@ -42,6 +44,11 @@ For each existing customer, open **Edit billing** and set the current period sta
 
 ## Recording payments
 
-An applied payment creates an immutable payment history row and advances the customer's current subscription by one billing interval. Untick **Apply to current subscription** when entering historical ledger data that should not alter current entitlement dates.
+An applied payment creates an immutable payment history row and advances the customer's current subscription by one or more billing periods.
+
+- Leave **Billing periods** blank to calculate automatically from `amount / tier price` (for example, £30 on a £10 monthly tier buys 3 monthly periods).
+- Enter **Billing periods** manually to override the calculation for discounts or special arrangements.
+- Automatic calculation requires a whole-number multiple of the tier price; otherwise the UI asks for a manual period count rather than guessing.
+- Untick **Apply to current subscription** when entering historical ledger data that should not alter current entitlement dates.
 
 Payment-provider integrations can later feed this same payment model without changing the subscription engine.

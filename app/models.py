@@ -112,6 +112,7 @@ class Payment(Base):
     paid_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     coverage_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     coverage_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    billing_periods: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     customer: Mapped[Customer] = relationship(back_populates="payments")

@@ -4,18 +4,50 @@
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
 <section><h2>Record payment</h2>
 <form method="post" class="grid-form payment-form">
-  <label>Customer<select name="customer_id" required>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
-  <label>Amount (£)<input name="amount" type="number" min="0" step="0.01" required></label>
+  <label>Customer<select name="customer_id" id="payment-customer" required>{% for c in customers %}{% set assigned = c.subscriptions|selectattr('status','in',['active','grace','suspended'])|list %}{% set sub = assigned|sort(attribute='id', reverse=true)|first if assigned else none %}<option value="{{ c.id }}" {% if sub %}data-tier-price="{{ sub.billing_tier.price }}" data-tier-name="{{ sub.billing_tier.package.name }} — {{ sub.billing_tier.name }}" data-tier-unit="{{ sub.billing_tier.interval_unit }}" data-tier-count="{{ sub.billing_tier.interval_count }}"{% endif %}>{{ c.name }}{% if sub %} — {{ sub.billing_tier.package.name }} / {{ sub.billing_tier.name }}{% endif %}</option>{% endfor %}</select></label>
+  <label>Amount (£)<input id="payment-amount" name="amount" type="number" min="0" step="0.01" required></label>
   <label>Payment received<input name="paid_at" type="date" value="{{ today }}" required></label>
   <label>Source<select name="source"><option>manual</option><option>bank_transfer</option><option>cash</option><option>paypal</option><option>stripe</option><option>other</option></select></label>
   <label>Reference<input name="external_reference"></label>
   <label>Note<input name="note"></label>
-  <label class="check apply-payment"><input name="apply_to_subscription" type="checkbox" value="true" checked> Apply to current subscription</label>
+  <label>Billing periods <span class="muted">(optional override)</span><input id="billing-periods" name="billing_periods" type="number" min="1" step="1" placeholder="Auto"></label>
+  <label class="check apply-payment"><input id="apply-payment" name="apply_to_subscription" type="checkbox" value="true" checked> Apply to current subscription</label>
   <button>Record payment</button>
 </form>
-<p class="muted payment-help">If paid before expiry or during grace, coverage continues from the previous expiry. If grace has already elapsed, coverage restarts from the payment date. Untick “Apply” when importing history that should not alter current coverage.</p>
+<div id="payment-period-preview" class="payment-period-preview muted"></div>
+<p class="muted payment-help">Leave Billing periods blank to calculate automatically from amount ÷ current tier price (for example £30 on a £10/month tier = 3 monthly periods). Enter a number manually to override that calculation, which is useful for discounts or special arrangements. If paid before expiry or during grace, all purchased periods extend from the previous expiry; after grace, they start from the payment date.</p>
 </section>
-<section><h2>Payment history</h2><table><thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Source</th><th>Coverage</th><th>Reference</th></tr></thead><tbody>
-{% for p in payments %}<tr><td>{{ p.paid_at.strftime('%Y-%m-%d') }}</td><td>{{ p.customer.name }}</td><td>£{{ '%.2f'|format(p.amount) }}</td><td>{{ p.source }}</td><td>{% if p.coverage_end %}{{ p.coverage_start.strftime('%Y-%m-%d') }} → {{ p.coverage_end.strftime('%Y-%m-%d') }}{% else %}<span class="muted">Ledger only</span>{% endif %}</td><td>{{ p.external_reference or '' }}</td></tr>
-{% else %}<tr><td colspan="6" class="muted">No payments recorded.</td></tr>{% endfor %}</tbody></table></section>
+<section><h2>Payment history</h2><table><thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Source</th><th>Periods</th><th>Coverage</th><th>Reference</th></tr></thead><tbody>
+{% for p in payments %}<tr><td>{{ p.paid_at.strftime('%Y-%m-%d') }}</td><td>{{ p.customer.name }}</td><td>£{{ '%.2f'|format(p.amount) }}</td><td>{{ p.source }}</td><td>{{ p.billing_periods if p.billing_periods else '—' }}</td><td>{% if p.coverage_end %}{{ p.coverage_start.strftime('%Y-%m-%d') }} → {{ p.coverage_end.strftime('%Y-%m-%d') }}{% else %}<span class="muted">Ledger only</span>{% endif %}</td><td>{{ p.external_reference or '' }}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">No payments recorded.</td></tr>{% endfor %}</tbody></table></section>
+<script>
+(() => {
+  const customer = document.getElementById('payment-customer');
+  const amount = document.getElementById('payment-amount');
+  const periods = document.getElementById('billing-periods');
+  const apply = document.getElementById('apply-payment');
+  const preview = document.getElementById('payment-period-preview');
+  function refresh() {
+    const opt = customer.options[customer.selectedIndex];
+    if (!apply.checked) { preview.textContent = 'Ledger only — this payment will not alter subscription coverage.'; return; }
+    if (!opt.dataset.tierPrice) { preview.textContent = 'This customer has no current subscription; payment will be ledger-only.'; return; }
+    const manual = parseInt(periods.value || '', 10);
+    const price = parseFloat(opt.dataset.tierPrice);
+    const paid = parseFloat(amount.value);
+    const count = parseInt(opt.dataset.tierCount || '1', 10);
+    const unit = opt.dataset.tierUnit || 'month';
+    const labelUnit = count === 1 ? unit : `${count} ${unit}s`;
+    if (manual > 0) { preview.textContent = `Manual: ${manual} × ${labelUnit} billing period${manual === 1 ? '' : 's'} on ${opt.dataset.tierName}.`; return; }
+    if (Number.isFinite(paid) && price > 0) {
+      const auto = paid / price;
+      if (Number.isInteger(auto) && auto >= 1) preview.textContent = `Auto: £${paid.toFixed(2)} buys ${auto} × ${labelUnit} billing period${auto === 1 ? '' : 's'} on ${opt.dataset.tierName}.`;
+      else preview.textContent = `£${paid.toFixed(2)} is not a whole multiple of the £${price.toFixed(2)} tier price — enter Billing periods manually.`;
+      return;
+    }
+    preview.textContent = `Auto calculation uses the current tier price (£${price.toFixed(2)}).`;
+  }
+  [customer, amount, periods, apply].forEach(el => el.addEventListener('input', refresh));
+  refresh();
+})();
+</script>
 {% endblock %}

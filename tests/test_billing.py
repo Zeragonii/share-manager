@@ -66,3 +66,28 @@ def test_uninitialised_v01_subscription_is_not_auto_suspended():
     db.refresh(sub); db.refresh(customer)
     assert sub.status == "active"
     assert customer.status == "active"
+
+
+def test_multi_period_payment_auto_calculates_from_amount():
+    db, customer, sub = make_db(grace=3)
+    payment = apply_payment(db, customer=customer, amount=Decimal("30"), paid_at=datetime(2026, 9, 15), source="manual", external_reference=None, note=None, apply_to_subscription=True)
+    db.commit()
+    assert payment.billing_periods == 3
+    assert payment.coverage_start == datetime(2026, 10, 1)
+    assert payment.coverage_end == datetime(2027, 1, 1)
+    assert sub.current_period_end == datetime(2027, 1, 1)
+
+
+def test_multi_period_payment_manual_override_allows_special_amount():
+    db, customer, sub = make_db(grace=3)
+    payment = apply_payment(db, customer=customer, amount=Decimal("25"), paid_at=datetime(2026, 9, 15), source="manual", external_reference=None, note=None, apply_to_subscription=True, billing_periods=3)
+    db.commit()
+    assert payment.billing_periods == 3
+    assert payment.coverage_end == datetime(2027, 1, 1)
+
+
+def test_auto_period_calculation_requires_whole_multiple():
+    db, customer, sub = make_db(grace=3)
+    import pytest
+    with pytest.raises(ValueError, match="whole-number multiple"):
+        apply_payment(db, customer=customer, amount=Decimal("25"), paid_at=datetime(2026, 9, 15), source="manual", external_reference=None, note=None, apply_to_subscription=True)

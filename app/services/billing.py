@@ -15,13 +15,45 @@ from ..models import (
 )
 
 
-def add_billing_interval(value: datetime, tier: BillingTier) -> datetime:
-    count = max(1, int(tier.interval_count or 1))
+def add_billing_intervals(value: datetime, tier: BillingTier, periods: int = 1) -> datetime:
+    periods = max(1, int(periods or 1))
+    count = max(1, int(tier.interval_count or 1)) * periods
     if tier.interval_unit == "week":
         return value + relativedelta(weeks=count)
     if tier.interval_unit == "year":
         return value + relativedelta(years=count)
     return value + relativedelta(months=count)
+
+
+def add_billing_interval(value: datetime, tier: BillingTier) -> datetime:
+    return add_billing_intervals(value, tier, 1)
+
+
+def payment_period_count(amount: Decimal, tier: BillingTier, requested_periods: int | None = None) -> int:
+    """Resolve how many billing periods a payment buys.
+
+    A manual period count wins, which lets an operator record discounts, prepayments,
+    or other arrangements without changing the tier price. With no override, the
+    amount must be an exact whole-number multiple of the tier price.
+    """
+    if requested_periods is not None:
+        periods = int(requested_periods)
+        if periods < 1:
+            raise ValueError("Billing periods must be at least 1")
+        return periods
+
+    price = Decimal(str(tier.price))
+    amount = Decimal(str(amount))
+    if price <= 0:
+        raise ValueError("Tier price must be greater than zero to calculate billing periods automatically")
+    ratio = amount / price
+    integral = ratio.to_integral_value()
+    if ratio != integral or integral < 1:
+        raise ValueError(
+            f"£{amount:.2f} is not a whole-number multiple of the £{price:.2f} tier price; "
+            "enter the number of billing periods manually"
+        )
+    return int(integral)
 
 
 def grace_end(period_end: datetime, tier: BillingTier) -> datetime:
@@ -49,6 +81,7 @@ def apply_payment(
     external_reference: str | None,
     note: str | None,
     apply_to_subscription: bool = True,
+    billing_periods: int | None = None,
 ) -> Payment:
     sub = (
         db.query(Subscription)
@@ -72,6 +105,7 @@ def apply_payment(
 
     if apply_to_subscription and sub:
         tier = sub.billing_tier
+        periods = payment_period_count(amount, tier, billing_periods)
         # Renewals paid before expiry OR during grace extend from the existing expiry.
         # Once grace has fully elapsed, a payment begins a fresh period from receipt.
         if sub.current_period_end:
@@ -82,10 +116,11 @@ def apply_payment(
             coverage_start = paid_at
             sub.started_at = paid_at
 
-        coverage_end = add_billing_interval(coverage_start, tier)
+        coverage_end = add_billing_intervals(coverage_start, tier, periods)
         payment.subscription = sub
         payment.coverage_start = coverage_start
         payment.coverage_end = coverage_end
+        payment.billing_periods = periods
         sub.current_period_start = coverage_start
         sub.current_period_end = coverage_end
         sub.grace_until = grace_end(coverage_end, tier)

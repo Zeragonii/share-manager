@@ -23,6 +23,7 @@ add_column_if_missing("subscriptions", "cancelled_at", "TIMESTAMP NULL")
 add_column_if_missing("payments", "subscription_id", "INTEGER NULL REFERENCES subscriptions(id)")
 add_column_if_missing("payments", "coverage_start", "TIMESTAMP NULL")
 add_column_if_missing("payments", "coverage_end", "TIMESTAMP NULL")
+add_column_if_missing("payments", "billing_periods", "INTEGER NULL")
 add_column_if_missing("payments", "created_at", "TIMESTAMP NULL")
 
 # Backfill created_at for old payment rows after adding the nullable column.
