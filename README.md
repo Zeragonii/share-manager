@@ -147,3 +147,10 @@ uvicorn app.main:app --reload --port 8080
 - Static CSS is cache-busted using the application version.
 - Deleting a tier/package that has historical subscriptions archives it instead of violating subscription foreign-key history.
 - Tiers/packages with current subscriptions remain protected from deletion.
+
+
+## v0.1.8
+
+- Fixed Plex suspension/reconciliation when the desired library set is empty.
+- Suspended/cancelled users now have their share to the configured Plex server explicitly removed while preserving the Plex friend relationship.
+- Plex entitlement changes are verified against fresh plex.tv share state before Share Manager reports success.
