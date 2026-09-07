@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 from ..models import ACCESS_SUBSCRIPTION_STATES, AuditLog, BillingTier, Customer, Integration, Subscription
 from ..integrations.plex import PlexIntegration
+from .notifications import notify_event
 
 ACTIVE_STATES = ACCESS_SUBSCRIPTION_STATES
 
@@ -64,5 +65,17 @@ def reconcile_customer(db: Session, customer: Customer) -> list[str]:
         action, detail = _result_detail(integration.name, result)
         db.add(AuditLog(action=action, target_type="customer", target_id=str(customer.id), detail=detail))
         messages.append(detail)
+        if action == "plex.invite":
+            db.flush()
+            db.commit()
+            notify_event(
+                db,
+                event="plex.invite_sent",
+                title="Plex invitation sent",
+                message=f"{customer.name}: {detail}",
+                target_type="customer",
+                target_id=str(customer.id),
+                data={"customer": customer.name, "integration": integration.name},
+            )
     db.commit()
     return messages

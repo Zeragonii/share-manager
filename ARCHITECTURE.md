@@ -1,4 +1,4 @@
-# Share Manager Architecture — v0.2.2
+# Share Manager Architecture — v0.3.0
 
 ## Core model
 
@@ -49,7 +49,7 @@ Customer cards now resolve their subscription centrally in Python instead of dup
 
 ### Manual entitlement override
 
-`subscriptions.manual_access_end` is an optional hard access cutoff. It is intentionally separate from `current_period_end`: billing history remains truthful while operators retain fine-grained entitlement control. When present, automatic status calculation ignores grace and returns `active` before the override timestamp and `suspended` at/after it.
+`subscriptions.manual_access_end` is a temporary access guarantee. It is intentionally separate from `current_period_end`: billing history remains truthful while operators retain fine-grained entitlement control. Before the override timestamp the subscription is forced active; after it expires, normal paid-through/grace billing logic resumes automatically.
 
 ## v0.2.8 UI filtering
 
@@ -61,3 +61,12 @@ Customer status filtering and text search are intentionally client-side because 
 - `payments.voided_at` and `payments.voided_by` preserve deleted-payment provenance; voided rows are excluded from revenue calculations.
 - Customer history is assembled from subscription, payment, complimentary-credit and related audit events.
 - The application image carries PostgreSQL 17 client utilities and exposes an authenticated UI endpoint that produces custom-format `pg_dump` backups.
+
+
+## v0.3.0 notification architecture
+
+`NotificationEndpoint` stores notification adapters independently of Plex entitlement integrations. Endpoint kinds are `home_assistant`, `discord`, and `webhook`; each endpoint stores its selected event set, minimum severity, enabled state, destination URL and adapter-specific secret/target fields.
+
+`NotificationDelivery` is an append-only delivery audit containing event, severity, title/message, success state, response code and a sanitized diagnostic. An optional `event_key` provides per-endpoint de-duplication for recurring conditions such as `subscription.due_soon`. Notification delivery failures are recorded but never allowed to roll back billing, payment, backup, or Plex state transitions.
+
+Home Assistant uses its authenticated REST service-call pipeline (`/api/services/notify/<service>`) with a Bearer long-lived access token, matching the Uptime Kuma integration pattern.

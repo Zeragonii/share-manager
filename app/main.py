@@ -5,7 +5,7 @@ import tempfile
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
 from decimal import Decimal
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
@@ -31,12 +31,15 @@ from .models import (
     PaymentSource,
     Subscription,
     SubscriptionCredit,
+    NotificationEndpoint,
+    NotificationDelivery,
 )
 from .integrations.plex import PlexIntegration
 from .security import logged_in, make_session, valid_credentials
 from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
 from .services.reconcile import reconcile_customer
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
+from .services.notifications import EVENT_DEFINITIONS, notify_event, send_test
 from .version import APP_VERSION
 
 
@@ -46,19 +49,71 @@ def _parse_date(value: str | None, fallback: datetime | None = None) -> datetime
     return datetime.strptime(value, "%Y-%m-%d")
 
 
+def _notify_reconcile_failure(db: Session, customer: Customer, exc: Exception) -> None:
+    db.add(AuditLog(action="plex.reconcile.error", target_type="customer", target_id=str(customer.id), detail=str(exc)))
+    db.commit()
+    notify_event(
+        db,
+        event="plex.reconcile_failed",
+        title="Plex reconciliation failed",
+        message=f"{customer.name}: {exc}",
+        target_type="customer",
+        target_id=str(customer.id),
+        data={"customer": customer.name},
+    )
+
+
+def _notify_due_soon(db: Session, now: datetime) -> None:
+    days = max(0, int(settings.notification_due_soon_days))
+    if days <= 0:
+        return
+    cutoff = now + timedelta(days=days)
+    due = db.query(Subscription).options(
+        joinedload(Subscription.customer),
+        joinedload(Subscription.billing_tier).joinedload(BillingTier.package),
+    ).filter(
+        Subscription.status == "active",
+        Subscription.current_period_end.is_not(None),
+        Subscription.current_period_end > now,
+        Subscription.current_period_end <= cutoff,
+    ).all()
+    for sub in due:
+        customer = sub.customer
+        if customer.exempt:
+            continue
+        notify_event(
+            db,
+            event="subscription.due_soon",
+            title="Subscription due soon",
+            message=f"{customer.name} is paid through {sub.current_period_end:%Y-%m-%d} ({sub.billing_tier.package.name} / {sub.billing_tier.name}).",
+            target_type="subscription",
+            target_id=str(sub.id),
+            event_key=f"due:{sub.id}:{sub.current_period_end:%Y-%m-%d}",
+            data={"customer": customer.name, "due_date": sub.current_period_end.strftime("%Y-%m-%d")},
+        )
+
+
 def run_billing_cycle() -> int:
-    """Run automatic expiry/grace transitions and reconcile changed customers."""
+    """Run automatic expiry/grace transitions, notifications and Plex reconciliation."""
     db = SessionLocal()
     try:
-        changed = process_billing(db)
+        now = datetime.utcnow()
+        changed = process_billing(db, now=now)
         for customer in changed:
+            if customer.status == "grace":
+                notify_event(db, event="customer.entered_grace", title="Customer entered grace", message=f"{customer.name} has entered their billing grace period.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
+            elif customer.status == "suspended":
+                notify_event(db, event="customer.suspended", title="Customer suspended", message=f"{customer.name} has been suspended after their billing grace period expired.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
+            elif customer.status == "active":
+                notify_event(db, event="customer.reactivated", title="Customer reactivated", message=f"{customer.name} is active again.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
+
             if not customer.plex_username or customer.exempt:
                 continue
             try:
                 reconcile_customer(db, customer)
             except Exception as exc:
-                db.add(AuditLog(action="billing.reconcile.error", target_type="customer", target_id=str(customer.id), detail=str(exc)))
-                db.commit()
+                _notify_reconcile_failure(db, customer, exc)
+        _notify_due_soon(db, now)
         return len(changed)
     finally:
         db.close()
@@ -210,6 +265,7 @@ def customer_status(request: Request, customer_id: int, status: str = Form(...),
     c = db.get(Customer, customer_id)
     if not c:
         return RedirectResponse("/customers", status_code=303)
+    previous_status = c.status
     allowed = {"active", "grace", "suspended", "cancelled", "exempt"}
     if status not in allowed:
         return RedirectResponse("/customers", status_code=303)
@@ -234,12 +290,18 @@ def customer_status(request: Request, customer_id: int, status: str = Form(...),
 
     db.add(AuditLog(actor=settings.admin_username, action="customer.status", target_type="customer", target_id=str(c.id), detail=detail))
     db.commit()
+    if not c.exempt:
+        if c.status == "grace" and previous_status != "grace":
+            notify_event(db, event="customer.entered_grace", title="Customer entered grace", message=f"{c.name} has entered their billing grace period.", target_type="customer", target_id=str(c.id), data={"customer": c.name})
+        elif c.status == "suspended" and previous_status != "suspended":
+            notify_event(db, event="customer.suspended", title="Customer suspended", message=f"{c.name} has been suspended.", target_type="customer", target_id=str(c.id), data={"customer": c.name})
+        elif c.status == "active" and previous_status == "suspended":
+            notify_event(db, event="customer.reactivated", title="Customer reactivated", message=f"{c.name} is active again.", target_type="customer", target_id=str(c.id), data={"customer": c.name})
     if settings.reconcile_on_assign and c.plex_username:
         try:
             reconcile_customer(db, c)
         except Exception as exc:
-            db.add(AuditLog(action="plex.reconcile.error", target_type="customer", target_id=str(c.id), detail=str(exc)))
-            db.commit()
+            _notify_reconcile_failure(db, c, exc)
     return RedirectResponse("/customers", status_code=303)
 
 
@@ -285,8 +347,7 @@ def subscribe(
         try:
             reconcile_customer(db, c)
         except Exception as exc:
-            db.add(AuditLog(action="plex.reconcile.error", target_type="customer", target_id=str(c.id), detail=str(exc)))
-            db.commit()
+            _notify_reconcile_failure(db, c, exc)
     return RedirectResponse("/customers?notice=Subscription+assigned", status_code=303)
 
 
@@ -328,8 +389,7 @@ def edit_subscription_dates(
         try:
             reconcile_customer(db, sub.customer)
         except Exception as exc:
-            db.add(AuditLog(action="plex.reconcile.error", target_type="customer", target_id=str(sub.customer.id), detail=str(exc)))
-            db.commit()
+            _notify_reconcile_failure(db, sub.customer, exc)
     return RedirectResponse("/customers?notice=Billing+dates+updated", status_code=303)
 
 
@@ -349,6 +409,7 @@ def grant_subscription_credit(
     if not customer:
         return RedirectResponse("/customers?error=Customer+not+found", status_code=303)
     granted_at = _parse_date(granted_date, datetime.utcnow())
+    previous_status = customer.status
     try:
         credit = apply_subscription_credit(
             db,
@@ -375,13 +436,15 @@ def grant_subscription_credit(
         ),
     ))
     db.commit()
+    if previous_status == "suspended" and customer.status == "active":
+        notify_event(db, event="customer.reactivated", title="Customer reactivated", message=f"{customer.name} is active again after complimentary access was granted.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
+
 
     if settings.reconcile_on_assign and customer.plex_username and not customer.exempt:
         try:
             reconcile_customer(db, customer)
         except Exception as exc:
-            db.add(AuditLog(action="credit.reconcile.error", target_type="customer", target_id=str(customer.id), detail=str(exc)))
-            db.commit()
+            _notify_reconcile_failure(db, customer, exc)
     return RedirectResponse("/customers?notice=Complimentary+access+granted", status_code=303)
 
 
@@ -396,6 +459,9 @@ def reconcile(request: Request, customer_id: int, db: Session = Depends(get_db))
         db.add(AuditLog(actor=settings.admin_username, action="reconcile.manual", target_type="customer", target_id=str(c.id), detail="; ".join(messages)))
     except Exception as exc:
         db.add(AuditLog(actor=settings.admin_username, action="reconcile.error", target_type="customer", target_id=str(c.id), detail=str(exc)))
+        db.commit()
+        notify_event(db, event="plex.reconcile_failed", title="Plex reconciliation failed", message=f"{c.name}: {exc}", target_type="customer", target_id=str(c.id), data={"customer": c.name})
+        return RedirectResponse("/customers", status_code=303)
     db.commit()
     return RedirectResponse("/customers", status_code=303)
 
@@ -575,7 +641,7 @@ def set_entitlements(request: Request, package_id: int, integration_id: int = Fo
 
 
 @app.get("/integrations", response_class=HTMLResponse)
-def integrations(request: Request, db: Session = Depends(get_db)):
+def integrations(request: Request, error: str | None = None, notice: str | None = None, db: Session = Depends(get_db)):
     gate = auth(request)
     if gate:
         return gate
@@ -583,14 +649,31 @@ def integrations(request: Request, db: Session = Depends(get_db)):
     enriched = []
     for integration in rows:
         libraries = []
-        error = None
+        plex_error = None
         if integration.kind == "plex" and integration.enabled:
             try:
                 libraries = PlexIntegration(integration.base_url, integration.secret).libraries()
             except Exception as exc:
-                error = str(exc)
-        enriched.append((integration, libraries, error))
-    return render(request, "integrations.html", integrations=enriched)
+                plex_error = str(exc)
+        enriched.append((integration, libraries, plex_error))
+    notification_endpoints = db.query(NotificationEndpoint).order_by(NotificationEndpoint.name).all()
+    for endpoint in notification_endpoints:
+        if endpoint.kind == "home_assistant":
+            endpoint.ui_url = endpoint.url
+        else:
+            parts = urlsplit(endpoint.url)
+            endpoint.ui_url = f"{parts.scheme}://{parts.netloc}/…" if parts.scheme and parts.netloc else "Configured webhook"
+    notification_deliveries = db.query(NotificationDelivery).options(joinedload(NotificationDelivery.endpoint)).order_by(NotificationDelivery.created_at.desc()).limit(30).all()
+    return render(
+        request,
+        "integrations.html",
+        integrations=enriched,
+        notification_endpoints=notification_endpoints,
+        notification_deliveries=notification_deliveries,
+        notification_events=EVENT_DEFINITIONS,
+        error=error,
+        notice=notice,
+    )
 
 
 @app.post("/integrations/plex")
@@ -628,6 +711,128 @@ def import_plex_users(request: Request, integration_id: int, db: Session = Depen
     db.add(AuditLog(actor=settings.admin_username, action="plex.import_users", target_type="integration", target_id=str(integration.id), detail=f"Imported {created} users"))
     db.commit()
     return RedirectResponse("/customers", status_code=303)
+
+
+@app.post("/notifications")
+def add_notification_endpoint(
+    request: Request,
+    kind: str = Form(...),
+    name: str = Form(...),
+    url: str = Form(...),
+    secret: str = Form(""),
+    target: str = Form(""),
+    events: list[str] = Form(default=[]),
+    min_severity: str = Form("info"),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    if kind not in {"home_assistant", "discord", "webhook"}:
+        return RedirectResponse("/integrations?error=Unsupported+notification+type", status_code=303)
+    if min_severity not in {"info", "warning", "critical"}:
+        return RedirectResponse("/integrations?error=Invalid+notification+severity", status_code=303)
+    clean_name = name.strip()
+    clean_url = url.strip().rstrip("/")
+    if not clean_name or not clean_url:
+        return RedirectResponse("/integrations?error=Name+and+URL+are+required", status_code=303)
+    if kind == "home_assistant" and not secret.strip():
+        return RedirectResponse("/integrations?error=Home+Assistant+requires+a+long-lived+access+token", status_code=303)
+    if db.query(NotificationEndpoint).filter(func.lower(NotificationEndpoint.name) == clean_name.lower()).first():
+        return RedirectResponse("/integrations?error=A+notification+integration+with+that+name+already+exists", status_code=303)
+    selected = [event for event in events if event in EVENT_DEFINITIONS]
+    endpoint = NotificationEndpoint(
+        kind=kind, name=clean_name, url=clean_url, secret=secret.strip() or None,
+        target=target.strip() or None, events=",".join(selected), min_severity=min_severity, enabled=True,
+    )
+    db.add(endpoint)
+    db.flush()
+    db.add(AuditLog(actor=settings.admin_username, action="notification.create", target_type="notification_endpoint", target_id=str(endpoint.id), detail=f"{kind}: {clean_name}"))
+    db.commit()
+    return RedirectResponse("/integrations?notice=Notification+integration+added", status_code=303)
+
+
+@app.post("/notifications/{endpoint_id}/edit")
+def edit_notification_endpoint(
+    request: Request,
+    endpoint_id: int,
+    name: str = Form(...),
+    url: str = Form(...),
+    secret: str = Form(""),
+    target: str = Form(""),
+    events: list[str] = Form(default=[]),
+    min_severity: str = Form("info"),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    endpoint = db.get(NotificationEndpoint, endpoint_id)
+    if not endpoint:
+        return RedirectResponse("/integrations?error=Notification+integration+not+found", status_code=303)
+    if min_severity not in {"info", "warning", "critical"}:
+        return RedirectResponse("/integrations?error=Invalid+notification+severity", status_code=303)
+    clean_name = name.strip()
+    clean_url = url.strip().rstrip("/")
+    if not clean_name or not clean_url:
+        return RedirectResponse("/integrations?error=Name+and+URL+are+required", status_code=303)
+    duplicate = db.query(NotificationEndpoint).filter(func.lower(NotificationEndpoint.name) == clean_name.lower(), NotificationEndpoint.id != endpoint.id).first()
+    if duplicate:
+        return RedirectResponse("/integrations?error=A+notification+integration+with+that+name+already+exists", status_code=303)
+    selected = [event for event in events if event in EVENT_DEFINITIONS]
+    endpoint.name = clean_name
+    endpoint.url = clean_url
+    if endpoint.kind == "home_assistant" and secret.strip():
+        endpoint.secret = secret.strip()
+    endpoint.target = target.strip() or None
+    endpoint.events = ",".join(selected)
+    endpoint.min_severity = min_severity
+    db.add(AuditLog(actor=settings.admin_username, action="notification.update", target_type="notification_endpoint", target_id=str(endpoint.id), detail=endpoint.name))
+    db.commit()
+    return RedirectResponse("/integrations?notice=Notification+integration+updated", status_code=303)
+
+
+@app.post("/notifications/{endpoint_id}/test")
+def test_notification_endpoint(request: Request, endpoint_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    endpoint = db.get(NotificationEndpoint, endpoint_id)
+    if not endpoint:
+        return RedirectResponse("/integrations?error=Notification+integration+not+found", status_code=303)
+    delivery = send_test(db, endpoint)
+    if delivery.success:
+        return RedirectResponse("/integrations?notice=Test+notification+sent", status_code=303)
+    return RedirectResponse(f"/integrations?error={quote_plus('Test failed: ' + (delivery.detail or 'unknown error'))}", status_code=303)
+
+
+@app.post("/notifications/{endpoint_id}/toggle")
+def toggle_notification_endpoint(request: Request, endpoint_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    endpoint = db.get(NotificationEndpoint, endpoint_id)
+    if not endpoint:
+        return RedirectResponse("/integrations?error=Notification+integration+not+found", status_code=303)
+    endpoint.enabled = not endpoint.enabled
+    db.add(AuditLog(actor=settings.admin_username, action="notification.toggle", target_type="notification_endpoint", target_id=str(endpoint.id), detail=f"{endpoint.name}: {'enabled' if endpoint.enabled else 'disabled'}"))
+    db.commit()
+    return RedirectResponse("/integrations?notice=Notification+integration+updated", status_code=303)
+
+
+@app.post("/notifications/{endpoint_id}/delete")
+def delete_notification_endpoint(request: Request, endpoint_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    endpoint = db.get(NotificationEndpoint, endpoint_id)
+    if not endpoint:
+        return RedirectResponse("/integrations?error=Notification+integration+not+found", status_code=303)
+    name = endpoint.name
+    db.delete(endpoint)
+    db.add(AuditLog(actor=settings.admin_username, action="notification.delete", target_type="notification_endpoint", target_id=str(endpoint_id), detail=name))
+    db.commit()
+    return RedirectResponse("/integrations?notice=Notification+integration+deleted", status_code=303)
 
 
 @app.get("/payments", response_class=HTMLResponse)
@@ -723,6 +928,7 @@ def add_payment(
     if not selected_source:
         return RedirectResponse("/payments?error=Payment+source+is+not+available", status_code=303)
     paid = _parse_date(paid_at)
+    previous_status = customer.status
     try:
         periods_override = int(billing_periods) if billing_periods.strip() else None
         payment = apply_payment(
@@ -744,13 +950,20 @@ def add_payment(
         detail += f"; {payment.billing_periods or 1} billing period(s); coverage {payment.coverage_start:%Y-%m-%d} -> {payment.coverage_end:%Y-%m-%d}"
     db.add(AuditLog(actor=settings.admin_username, action="payment.record", target_type="payment", target_id=str(payment.id), detail=detail))
     db.commit()
+    notify_event(
+        db, event="payment.received", title="Payment received",
+        message=f"{customer.name}: £{amount:.2f} via {source}.",
+        target_type="payment", target_id=str(payment.id),
+        data={"customer": customer.name, "amount": f"{amount:.2f}", "source": source},
+    )
+    if previous_status == "suspended" and customer.status == "active":
+        notify_event(db, event="customer.reactivated", title="Customer reactivated", message=f"{customer.name} is active again after payment.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
 
     if payment.subscription_id and settings.reconcile_on_assign and customer.plex_username and not customer.exempt:
         try:
             reconcile_customer(db, customer)
         except Exception as exc:
-            db.add(AuditLog(action="payment.reconcile.error", target_type="customer", target_id=str(customer.id), detail=str(exc)))
-            db.commit()
+            _notify_reconcile_failure(db, customer, exc)
 
     if apply_to_subscription and not payment.subscription_id:
         return RedirectResponse("/payments?notice=Payment+recorded+as+ledger+only%3B+customer+has+no+assigned+subscription", status_code=303)
@@ -804,8 +1017,7 @@ def edit_payment(
             process_billing(db)
             reconcile_customer(db, payment.customer)
         except Exception as exc:
-            db.add(AuditLog(action="payment.reconcile.error", target_type="customer", target_id=str(payment.customer_id), detail=str(exc)))
-            db.commit()
+            _notify_reconcile_failure(db, payment.customer, exc)
     return RedirectResponse("/payments?notice=Payment+updated", status_code=303)
 
 
@@ -830,8 +1042,7 @@ def delete_payment(request: Request, payment_id: int, db: Session = Depends(get_
             process_billing(db)
             reconcile_customer(db, payment.customer)
         except Exception as exc:
-            db.add(AuditLog(action="payment.reconcile.error", target_type="customer", target_id=str(payment.customer_id), detail=str(exc)))
-            db.commit()
+            _notify_reconcile_failure(db, payment.customer, exc)
     return RedirectResponse("/payments?notice=Payment+deleted", status_code=303)
 
 
@@ -904,6 +1115,11 @@ def download_database_backup(request: Request):
         except OSError:
             pass
         return RedirectResponse(f"/backups?error={quote_plus('Backup failed: ' + (exc.stderr or str(exc)))}", status_code=303)
+    db = SessionLocal()
+    try:
+        notify_event(db, event="backup.created", title="Database backup created", message=f"Share Manager database backup share-manager-{stamp}.dump was created.", target_type="backup", target_id=stamp, data={"filename": f"share-manager-{stamp}.dump"})
+    finally:
+        db.close()
     return FileResponse(path, filename=f"share-manager-{stamp}.dump", media_type="application/octet-stream", background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
 
 

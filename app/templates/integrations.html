@@ -1,5 +1,129 @@
-{% extends 'base.html' %}{% block content %}
-<header><h1>Integrations</h1><p>Connect entitlement targets. Plex is supported in this first pass.</p></header>
-<section><h2>Add Plex server</h2><form method="post" action="/integrations/plex" class="grid-form"><label>Friendly name<input name="name" placeholder="Main Plex" required></label><label>Server URL<input name="base_url" placeholder="http://192.168.1.100:32400" required></label><label>Plex token<input name="token" type="password" required></label><button>Connect & test</button></form></section>
-<section><h2>Connected integrations</h2><div class="cards">{% for i,libs,error in integrations %}<article class="card"><div class="row between"><h3>{{ i.name }}</h3><span class="badge">{{ i.kind }}</span></div><div class="muted">{{ i.base_url }}</div>{% if error %}<div class="alert error">{{ error }}</div>{% else %}<p>{{ libs|length }} libraries discovered.</p>{% endif %}<form method="post" action="/integrations/{{ i.id }}/import-users"><button>Import Plex users</button></form></article>{% else %}<p class="muted">No integrations connected.</p>{% endfor %}</div></section>
+{% extends 'base.html' %}
+{% macro event_choices(prefix, selected=None) -%}
+  <div class="notification-events">
+    {% for key,meta in notification_events.items() %}
+      <label class="notification-event-choice">
+        <input type="checkbox" name="events" value="{{ key }}" {% if selected is none or key in selected %}checked{% endif %}>
+        <span><strong>{{ meta.label }}</strong><small>{{ meta.severity }}</small></span>
+      </label>
+    {% endfor %}
+  </div>
+{%- endmacro %}
+{% block content %}
+<header><h1>Integrations</h1><p>Connect entitlement targets and notification pipelines.</p></header>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
+
+<section>
+  <h2>Plex</h2>
+  <details class="integration-add">
+    <summary>Add Plex server</summary>
+    <form method="post" action="/integrations/plex" class="grid-form integration-add-body">
+      <label>Friendly name<input name="name" placeholder="Main Plex" required></label>
+      <label>Server URL<input name="base_url" placeholder="http://192.168.1.100:32400" required></label>
+      <label>Plex token<input name="token" type="password" required></label>
+      <button>Connect &amp; test</button>
+    </form>
+  </details>
+  <div class="cards integration-cards">
+    {% for i,libs,plex_error in integrations %}
+      <article class="card">
+        <div class="row between"><h3>{{ i.name }}</h3><span class="badge">{{ i.kind }}</span></div>
+        <div class="muted">{{ i.base_url }}</div>
+        {% if plex_error %}<div class="alert error">{{ plex_error }}</div>{% else %}<p>{{ libs|length }} libraries discovered.</p>{% endif %}
+        <form method="post" action="/integrations/{{ i.id }}/import-users"><button>Import Plex users</button></form>
+      </article>
+    {% else %}<p class="muted">No Plex integrations connected.</p>{% endfor %}
+  </div>
+</section>
+
+<section>
+  <div class="row between notification-heading">
+    <div><h2>Notifications</h2><p class="muted">Route Share Manager events to Home Assistant, Discord or a generic webhook.</p></div>
+  </div>
+
+  <div class="notification-add-grid">
+    <details class="integration-add">
+      <summary>Add Home Assistant</summary>
+      <form method="post" action="/notifications" class="notification-form integration-add-body">
+        <input type="hidden" name="kind" value="home_assistant">
+        <label>Friendly name<input name="name" placeholder="Phone alerts" required></label>
+        <label>Home Assistant URL<input name="url" placeholder="http://homeassistant.local:8123" required></label>
+        <label>Long-lived access token<input name="secret" type="password" required></label>
+        <label>Notification action <span class="muted">(optional)</span><input name="target" placeholder="mobile_app_pixel_9"></label>
+        <p class="muted notification-help">Uses the same pipeline as Uptime Kuma: <code>/api/services/notify/&lt;action&gt;</code>. Enter the action without <code>notify.</code>. Leave blank to use Home Assistant's default <code>notify</code> action.</p>
+        <label>Minimum severity<select name="min_severity"><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></label>
+        <fieldset><legend>Events</legend>{{ event_choices('ha') }}</fieldset>
+        <button>Add Home Assistant</button>
+      </form>
+    </details>
+
+    <details class="integration-add">
+      <summary>Add Discord webhook</summary>
+      <form method="post" action="/notifications" class="notification-form integration-add-body">
+        <input type="hidden" name="kind" value="discord">
+        <label>Friendly name<input name="name" placeholder="Admin Discord" required></label>
+        <label>Webhook URL<input name="url" type="password" placeholder="https://discord.com/api/webhooks/..." required></label>
+        <label>Minimum severity<select name="min_severity"><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></label>
+        <fieldset><legend>Events</legend>{{ event_choices('discord') }}</fieldset>
+        <button>Add Discord</button>
+      </form>
+    </details>
+
+    <details class="integration-add">
+      <summary>Add generic webhook</summary>
+      <form method="post" action="/notifications" class="notification-form integration-add-body">
+        <input type="hidden" name="kind" value="webhook">
+        <label>Friendly name<input name="name" placeholder="Automation endpoint" required></label>
+        <label>Webhook URL<input name="url" placeholder="https://example.com/hooks/share-manager" required></label>
+        <label>Minimum severity<select name="min_severity"><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></label>
+        <fieldset><legend>Events</legend>{{ event_choices('webhook') }}</fieldset>
+        <button>Add webhook</button>
+      </form>
+    </details>
+  </div>
+
+  <div class="cards notification-cards">
+    {% for endpoint in notification_endpoints %}
+      {% set selected = endpoint.events.split(',') if endpoint.events else [] %}
+      <article class="card notification-card {% if not endpoint.enabled %}notification-disabled{% endif %}">
+        <div class="row between"><h3>{{ endpoint.name }}</h3><span class="badge">{{ endpoint.kind.replace('_',' ') }}</span></div>
+        <p class="muted notification-url">{{ endpoint.ui_url }}</p>
+        {% if endpoint.kind == 'home_assistant' %}<p class="muted">Action: notify.{{ endpoint.target or 'notify' }}</p>{% endif %}
+        <p><strong>{{ selected|length }}</strong> event(s) · minimum {{ endpoint.min_severity }}</p>
+        <div class="row notification-actions">
+          <form method="post" action="/notifications/{{ endpoint.id }}/test"><button>Send test</button></form>
+          <form method="post" action="/notifications/{{ endpoint.id }}/toggle"><button class="secondary">{{ 'Disable' if endpoint.enabled else 'Enable' }}</button></form>
+        </div>
+        <details class="notification-editor">
+          <summary>Edit</summary>
+          <form method="post" action="/notifications/{{ endpoint.id }}/edit" class="notification-form">
+            <label>Friendly name<input name="name" value="{{ endpoint.name }}" required></label>
+            <label>{{ 'Home Assistant URL' if endpoint.kind == 'home_assistant' else 'Webhook URL' }}<input name="url" value="{{ endpoint.url }}" required></label>
+            {% if endpoint.kind == 'home_assistant' %}
+              <label>New token <span class="muted">(leave blank to keep current)</span><input name="secret" type="password"></label>
+              <label>Notification action<input name="target" value="{{ endpoint.target or '' }}" placeholder="mobile_app_pixel_9"></label>
+            {% endif %}
+            <label>Minimum severity<select name="min_severity"><option value="info" {% if endpoint.min_severity=='info' %}selected{% endif %}>Info</option><option value="warning" {% if endpoint.min_severity=='warning' %}selected{% endif %}>Warning</option><option value="critical" {% if endpoint.min_severity=='critical' %}selected{% endif %}>Critical</option></select></label>
+            <fieldset><legend>Events</legend>{{ event_choices('edit' ~ endpoint.id, selected) }}</fieldset>
+            <button>Save changes</button>
+          </form>
+          <form method="post" action="/notifications/{{ endpoint.id }}/delete" class="notification-delete" onsubmit="return confirm('Delete this notification integration?')"><button class="danger">Delete integration</button></form>
+        </details>
+      </article>
+    {% else %}<p class="muted">No notification integrations configured yet.</p>{% endfor %}
+  </div>
+</section>
+
+<section>
+  <h2>Recent notification deliveries</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Time</th><th>Endpoint</th><th>Event</th><th>Severity</th><th>Result</th></tr></thead>
+    <tbody>
+      {% for delivery in notification_deliveries %}
+      <tr><td>{{ delivery.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ delivery.endpoint.name if delivery.endpoint else 'Deleted endpoint' }}</td><td><code>{{ delivery.event }}</code></td><td>{{ delivery.severity }}</td><td><span class="badge {{ 'ok' if delivery.success else 'error-badge' }}">{{ 'sent' if delivery.success else 'failed' }}</span>{% if not delivery.success and delivery.detail %}<div class="muted delivery-error">{{ delivery.detail }}</div>{% endif %}</td></tr>
+      {% else %}<tr><td colspan="5" class="muted">No notifications sent yet.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
 {% endblock %}

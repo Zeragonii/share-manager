@@ -156,3 +156,33 @@ class AuditLog(Base):
     target_type: Mapped[str | None] = mapped_column(String(60), nullable=True)
     target_id: Mapped[str | None] = mapped_column(String(60), nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NotificationEndpoint(Base):
+    __tablename__ = "notification_endpoints"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    url: Mapped[str] = mapped_column(String(1000))
+    secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    events: Mapped[str] = mapped_column(Text, default="")
+    min_severity: Mapped[str] = mapped_column(String(16), default="info")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class NotificationDelivery(Base):
+    __tablename__ = "notification_deliveries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    endpoint_id: Mapped[int | None] = mapped_column(ForeignKey("notification_endpoints.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    event: Mapped[str] = mapped_column(String(120))
+    event_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    severity: Mapped[str] = mapped_column(String(16), default="info")
+    title: Mapped[str] = mapped_column(String(255))
+    message: Mapped[str] = mapped_column(Text)
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    endpoint: Mapped[NotificationEndpoint | None] = relationship()

@@ -2,13 +2,13 @@
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
-## v0.2.2 highlights
+## v0.3.0 highlights
 
 - Package and billing-tier management, including per-tier grace periods.
 - Customer subscriptions with explicit start/current-period dates.
 - Manual payment ledger with payment-received date, coverage attribution, and multi-period prepayments.
 - Payment duration can be auto-calculated from amount ÷ tier price or manually overridden.
-- Customer cards are displayed in one vertical column for easier scanning.
+- Customer cards retain the responsive tile layout with aligned controls and client-side search/status filtering.
 - Renewal semantics:
   - first/fully-lapsed payment starts coverage on the payment date;
   - early/on-time payments extend from the existing expiry;
@@ -32,6 +32,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=<strong-password>
 RECONCILE_ON_ASSIGN=true
 BILLING_CHECK_INTERVAL_MINUTES=15
+NOTIFICATION_DUE_SOON_DAYS=3
 ```
 
 The container listens on port `8080`; map any free host port to it, e.g. `8088:8080`.
@@ -95,3 +96,35 @@ pg_restore --clean --if-exists --no-owner -d sharemanager share-manager-YYYYMMDD
 ```
 
 Stop the application container while restoring. The database backup contains Share Manager data, not your Portainer stack/environment variables, so keep a copy of those separately.
+
+
+## v0.3.0 notifications
+
+Share Manager can route operational events to **Home Assistant**, **Discord**, or a **generic JSON webhook**. Notification integrations are configured under **Integrations → Notifications** and support per-endpoint event selection, a minimum severity filter, enable/disable controls, editing, deletion, and a **Send test** action. The page also shows the most recent delivery results.
+
+Supported events in v0.3.0 are:
+
+- `payment.received` (info)
+- `customer.entered_grace` (warning)
+- `customer.suspended` (critical)
+- `customer.reactivated` (info)
+- `subscription.due_soon` (warning)
+- `plex.invite_sent` (info)
+- `plex.reconcile_failed` (critical)
+- `backup.created` (info)
+
+`NOTIFICATION_DUE_SOON_DAYS` defaults to `3`. Set it to `0` to disable due-soon event generation. Due-soon notifications are de-duplicated per endpoint and paid-through date, so the 15-minute billing worker does not repeatedly notify for the same renewal.
+
+### Home Assistant
+
+The Home Assistant adapter intentionally mirrors Uptime Kuma's native Home Assistant notifier. Configure the Home Assistant base URL and a long-lived access token. Share Manager POSTs to:
+
+```text
+<HA URL>/api/services/notify/<notification action>
+```
+
+The optional **Notification action** is the service name without the `notify.` prefix, for example `mobile_app_pixel_9`. If left blank, Share Manager uses `notify`, matching Kuma's default behaviour. The payload includes `title`, `message`, and an additional `data` object containing the Share Manager event name and severity.
+
+### Generic webhook payload
+
+Generic endpoints receive JSON containing `event`, `severity`, `title`, `message`, `data`, and `sent_at`. Discord endpoints use the standard Discord webhook endpoint. Webhook URLs and HA tokens should be treated as secrets; Share Manager masks webhook URLs in the UI and does not persist secret-bearing exception URLs in delivery errors.
