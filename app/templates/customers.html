@@ -3,10 +3,23 @@
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
 <section><h2>Add customer</h2><form method="post" class="grid-form"><label>Name<input name="name" required></label><label>Email<input name="email" type="email"></label><label>Plex username/email<input name="plex_username"></label><label>Notes<input name="notes"></label><button>Add customer</button></form></section>
-<section><h2>Managed customers</h2><div class="cards customer-list">
+<section><h2>Managed customers</h2>
+<div class="customer-toolbar">
+  <label class="customer-search">Search customers<input id="customer-search" type="search" placeholder="Name, email or Plex username…" autocomplete="off"></label>
+  <div class="customer-filters" role="group" aria-label="Filter customers by status">
+    <button type="button" class="secondary customer-filter active" data-status="all">All <span class="filter-count" data-count="all">0</span></button>
+    <button type="button" class="secondary customer-filter" data-status="active">Active <span class="filter-count" data-count="active">0</span></button>
+    <button type="button" class="secondary customer-filter" data-status="grace">Grace <span class="filter-count" data-count="grace">0</span></button>
+    <button type="button" class="secondary customer-filter" data-status="suspended">Suspended <span class="filter-count" data-count="suspended">0</span></button>
+    <button type="button" class="secondary customer-filter" data-status="cancelled">Cancelled <span class="filter-count" data-count="cancelled">0</span></button>
+    <button type="button" class="secondary customer-filter" data-status="exempt">Exempt <span class="filter-count" data-count="exempt">0</span></button>
+  </div>
+</div>
+<div id="customer-filter-empty" class="subtle customer-filter-empty" hidden>No customers match this filter.</div>
+<div class="cards customer-list">
 {% for c in customers %}
 {% set sub = c.ui_subscription %}
-<article class="card">
+<article class="card customer-card" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}">
   <div class="row between"><div><h3>{{ c.name }}</h3><div class="muted">{{ c.plex_username or 'No Plex account linked' }}</div></div><span class="badge {{ 'exempt' if c.exempt else c.status }}">{{ 'exempt' if c.exempt else c.status }}</span></div>
   {% if sub %}
   <div class="subtle"><strong>{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}</strong><br>
@@ -60,6 +73,44 @@
 {% endif %}
 {% else %}<p class="muted">No customers yet.</p>{% endfor %}</div></section>
 <script>
+(() => {
+  const cards = [...document.querySelectorAll('.customer-card')];
+  const search = document.getElementById('customer-search');
+  const filterButtons = [...document.querySelectorAll('.customer-filter')];
+  const empty = document.getElementById('customer-filter-empty');
+  let currentStatus = 'all';
+
+  const counts = {all: cards.length, active: 0, grace: 0, suspended: 0, cancelled: 0, exempt: 0};
+  cards.forEach(card => {
+    const status = card.dataset.status;
+    if (Object.prototype.hasOwnProperty.call(counts, status)) counts[status] += 1;
+  });
+  document.querySelectorAll('.filter-count').forEach(node => {
+    node.textContent = counts[node.dataset.count] ?? 0;
+  });
+
+  function applyFilters() {
+    const query = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    cards.forEach(card => {
+      const statusMatch = currentStatus === 'all' || card.dataset.status === currentStatus;
+      const textMatch = !query || (card.dataset.search || '').includes(query);
+      const show = statusMatch && textMatch;
+      card.hidden = !show;
+      if (show) visible += 1;
+    });
+    empty.hidden = visible !== 0;
+  }
+
+  filterButtons.forEach(button => button.addEventListener('click', () => {
+    currentStatus = button.dataset.status;
+    filterButtons.forEach(item => item.classList.toggle('active', item === button));
+    applyFilters();
+  }));
+  search.addEventListener('input', applyFilters);
+  applyFilters();
+})();
+
 document.querySelectorAll('dialog.customer-modal').forEach(dialog => {
   dialog.addEventListener('click', event => {
     const rect = dialog.getBoundingClientRect();

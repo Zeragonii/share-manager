@@ -67,3 +67,10 @@ Customer cards now resolve their subscription centrally in Python instead of dup
 ## Manual access until override
 
 Each subscription can optionally have a **Manual access until** date from the customer card's **Edit billing** modal. While that date is still in the future, the customer is guaranteed active access without altering their payment or complimentary-credit history. When the override date is reached, Share Manager automatically falls back to the normal paid-through and grace calculation. Payments recorded during the override continue to update normal billing coverage, so paid access can carry on afterwards without an administrator clearing the override.
+
+## v0.2.8
+
+- Added instant client-side customer search on the Customers page.
+- Added status filters for All, Active, Grace, Suspended, Cancelled and Exempt customers, with live counts.
+- Search and status filters can be combined without reloading the page.
+- Replaced the long Payments customer dropdown with a searchable customer picker that matches names, email addresses and Plex usernames while retaining billing-period previews.

@@ -50,3 +50,7 @@ Customer cards now resolve their subscription centrally in Python instead of dup
 ### Manual entitlement override
 
 `subscriptions.manual_access_end` is an optional hard access cutoff. It is intentionally separate from `current_period_end`: billing history remains truthful while operators retain fine-grained entitlement control. When present, automatic status calculation ignores grace and returns `active` before the override timestamp and `suspended` at/after it.
+
+## v0.2.8 UI filtering
+
+Customer status filtering and text search are intentionally client-side because the full customer collection is already rendered for management actions. Payment customer selection uses a searchable client-side picker while submitting the canonical numeric customer ID to the existing payment endpoint; no billing or persistence semantics changed in this release.

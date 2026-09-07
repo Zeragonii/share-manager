@@ -4,7 +4,27 @@
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
 <section><h2>Record payment</h2>
 <form method="post" class="grid-form payment-form">
-  <label>Customer<select name="customer_id" id="payment-customer" required>{% for c in customers %}{% set assigned = c.subscriptions|selectattr('status','in',['active','grace','suspended'])|list %}{% set sub = assigned|sort(attribute='id', reverse=true)|first if assigned else none %}<option value="{{ c.id }}" {% if sub %}data-tier-price="{{ sub.billing_tier.price }}" data-tier-name="{{ sub.billing_tier.package.name }} — {{ sub.billing_tier.name }}" data-tier-unit="{{ sub.billing_tier.interval_unit }}" data-tier-count="{{ sub.billing_tier.interval_count }}"{% endif %}>{{ c.name }}{% if sub %} — {{ sub.billing_tier.package.name }} / {{ sub.billing_tier.name }}{% endif %}</option>{% endfor %}</select></label>
+  <label class="payment-customer-label">Customer
+    <div class="customer-picker" id="payment-customer-picker">
+      <input id="payment-customer-search" type="search" placeholder="Search customer…" autocomplete="off" required>
+      <input id="payment-customer" name="customer_id" type="hidden" required>
+      <div class="customer-picker-menu" id="payment-customer-menu" hidden>
+        {% for c in customers %}
+        {% set assigned = c.subscriptions|selectattr('status','in',['active','grace','suspended'])|list %}
+        {% set sub = assigned|sort(attribute='id', reverse=true)|first if assigned else none %}
+        <button type="button" class="customer-picker-option"
+          data-customer-id="{{ c.id }}"
+          data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or ''))|lower|e }}"
+          data-label="{{ c.name }}{% if sub %} — {{ sub.billing_tier.package.name }} / {{ sub.billing_tier.name }}{% endif %}"
+          {% if sub %}data-tier-price="{{ sub.billing_tier.price }}" data-tier-name="{{ sub.billing_tier.package.name }} — {{ sub.billing_tier.name }}" data-tier-unit="{{ sub.billing_tier.interval_unit }}" data-tier-count="{{ sub.billing_tier.interval_count }}"{% endif %}>
+          <strong>{{ c.name }}</strong>
+          <span class="muted">{% if c.plex_username %}{{ c.plex_username }}{% elif c.email %}{{ c.email }}{% else %}No linked identifier{% endif %}{% if sub %} · {{ sub.billing_tier.package.name }} / {{ sub.billing_tier.name }}{% endif %}</span>
+        </button>
+        {% endfor %}
+        <div class="customer-picker-empty muted" hidden>No customers match your search.</div>
+      </div>
+    </div>
+  </label>
   <label>Amount (£)<input id="payment-amount" name="amount" type="number" min="0" step="0.01" required></label>
   <label>Payment received<input name="paid_at" type="date" value="{{ today }}" required></label>
   <label>Source<select name="source" required>{% for source in payment_sources if source.active %}<option value="{{ source.name }}">{{ source.name }}</option>{% endfor %}</select></label>
@@ -46,31 +66,80 @@
 {% else %}<tr><td colspan="7" class="muted">No payments recorded.</td></tr>{% endfor %}</tbody></table></section>
 <script>
 (() => {
-  const customer = document.getElementById('payment-customer');
+  const picker = document.getElementById('payment-customer-picker');
+  const search = document.getElementById('payment-customer-search');
+  const customerId = document.getElementById('payment-customer');
+  const menu = document.getElementById('payment-customer-menu');
+  const options = [...menu.querySelectorAll('.customer-picker-option')];
+  const empty = menu.querySelector('.customer-picker-empty');
   const amount = document.getElementById('payment-amount');
   const periods = document.getElementById('billing-periods');
   const apply = document.getElementById('apply-payment');
   const preview = document.getElementById('payment-period-preview');
+  let selected = null;
+
+  function choose(option) {
+    selected = option;
+    customerId.value = option.dataset.customerId;
+    search.value = option.dataset.label;
+    search.setCustomValidity('');
+    menu.hidden = true;
+    refresh();
+  }
+
+  function filterOptions(showAll = false) {
+    const query = showAll ? '' : (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    options.forEach(option => {
+      const show = !query || (option.dataset.search || '').includes(query) || (option.dataset.label || '').toLowerCase().includes(query);
+      option.hidden = !show;
+      if (show) visible += 1;
+    });
+    empty.hidden = visible !== 0;
+    menu.hidden = false;
+  }
+
   function refresh() {
-    const opt = customer.options[customer.selectedIndex];
     if (!apply.checked) { preview.textContent = 'Ledger only — this payment will not alter subscription coverage.'; return; }
-    if (!opt.dataset.tierPrice) { preview.textContent = 'This customer has no current subscription; payment will be ledger-only.'; return; }
+    if (!selected) { preview.textContent = 'Choose a customer to calculate subscription coverage.'; return; }
+    if (!selected.dataset.tierPrice) { preview.textContent = 'This customer has no current subscription; payment will be ledger-only.'; return; }
     const manual = parseInt(periods.value || '', 10);
-    const price = parseFloat(opt.dataset.tierPrice);
+    const price = parseFloat(selected.dataset.tierPrice);
     const paid = parseFloat(amount.value);
-    const count = parseInt(opt.dataset.tierCount || '1', 10);
-    const unit = opt.dataset.tierUnit || 'month';
+    const count = parseInt(selected.dataset.tierCount || '1', 10);
+    const unit = selected.dataset.tierUnit || 'month';
     const labelUnit = count === 1 ? unit : `${count} ${unit}s`;
-    if (manual > 0) { preview.textContent = `Manual: ${manual} × ${labelUnit} billing period${manual === 1 ? '' : 's'} on ${opt.dataset.tierName}.`; return; }
+    if (manual > 0) { preview.textContent = `Manual: ${manual} × ${labelUnit} billing period${manual === 1 ? '' : 's'} on ${selected.dataset.tierName}.`; return; }
     if (Number.isFinite(paid) && price > 0) {
       const auto = paid / price;
-      if (Number.isInteger(auto) && auto >= 1) preview.textContent = `Auto: £${paid.toFixed(2)} buys ${auto} × ${labelUnit} billing period${auto === 1 ? '' : 's'} on ${opt.dataset.tierName}.`;
+      if (Number.isInteger(auto) && auto >= 1) preview.textContent = `Auto: £${paid.toFixed(2)} buys ${auto} × ${labelUnit} billing period${auto === 1 ? '' : 's'} on ${selected.dataset.tierName}.`;
       else preview.textContent = `£${paid.toFixed(2)} is not a whole multiple of the £${price.toFixed(2)} tier price — enter Billing periods manually.`;
       return;
     }
     preview.textContent = `Auto calculation uses the current tier price (£${price.toFixed(2)}).`;
   }
-  [customer, amount, periods, apply].forEach(el => el.addEventListener('input', refresh));
+
+  search.addEventListener('focus', () => {
+    if (selected) search.select();
+    filterOptions(Boolean(selected));
+  });
+  search.addEventListener('input', () => {
+    selected = null;
+    customerId.value = '';
+    search.setCustomValidity('Select a customer from the results.');
+    filterOptions();
+    refresh();
+  });
+  options.forEach(option => option.addEventListener('click', () => choose(option)));
+  document.addEventListener('click', event => { if (!picker.contains(event.target)) menu.hidden = true; });
+  picker.closest('form').addEventListener('submit', event => {
+    if (!customerId.value) {
+      search.setCustomValidity('Select a customer from the results.');
+      search.reportValidity();
+      event.preventDefault();
+    }
+  });
+  [amount, periods, apply].forEach(el => el.addEventListener('input', refresh));
   refresh();
 })();
 </script>
