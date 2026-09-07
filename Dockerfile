@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
+COPY VERSION ./VERSION
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 EXPOSE 8080

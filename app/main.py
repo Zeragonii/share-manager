@@ -12,8 +12,9 @@ from .models import AuditLog, BillingTier, Customer, Integration, Package, Packa
 from .integrations.plex import PlexIntegration
 from .security import logged_in, make_session, valid_credentials
 from .services.reconcile import reconcile_customer
+from .version import APP_VERSION
 
-app = FastAPI(title="Share Manager", version="0.1.1")
+app = FastAPI(title="Share Manager", version=APP_VERSION)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
@@ -25,11 +26,11 @@ def auth(request: Request):
 
 
 def render(request: Request, name: str, **ctx):
-    return templates.TemplateResponse(request=request, name=name, context={"request": request, **ctx})
+    return templates.TemplateResponse(request=request, name=name, context={"request": request, "app_version": APP_VERSION, **ctx})
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.1.1"}
+    return {"status": "ok", "version": APP_VERSION}
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
@@ -88,31 +89,29 @@ def customer_status(request: Request, customer_id: int, status: str = Form(...),
     gate = auth(request)
     if gate: return gate
     c = db.get(Customer, customer_id)
-    c.status = status
-    db.add(AuditLog(actor=settings.admin_username, action="customer.status", target_type="customer", target_id=str(c.id), detail=status))
-    db.commit()
-    if settings.reconcile_on_assign and c.plex_username:
-        try: reconcile_customer(db, c)
-        except Exception as e: pass
-    return RedirectResponse("/customers", status_code=303)
-
-@app.post("/customers/{customer_id}/exempt")
-def customer_exempt(request: Request, customer_id: int, db: Session = Depends(get_db)):
-    gate = auth(request)
-    if gate: return gate
-    c = db.get(Customer, customer_id)
     if not c:
         return RedirectResponse("/customers", status_code=303)
-    c.exempt = not c.exempt
-    state = "enabled" if c.exempt else "disabled"
-    db.add(AuditLog(
-        actor=settings.admin_username,
-        action="customer.exempt",
-        target_type="customer",
-        target_id=str(c.id),
-        detail=f"Automation exemption {state}",
-    ))
+
+    allowed = {"active", "grace", "suspended", "cancelled", "exempt"}
+    if status not in allowed:
+        return RedirectResponse("/customers", status_code=303)
+
+    if status == "exempt":
+        # Preserve the customer's lifecycle state so it can be resumed when exemption is removed.
+        c.exempt = True
+        detail = "exempt"
+    else:
+        c.exempt = False
+        c.status = status
+        detail = status
+
+    db.add(AuditLog(actor=settings.admin_username, action="customer.status", target_type="customer", target_id=str(c.id), detail=detail))
     db.commit()
+    if settings.reconcile_on_assign and c.plex_username:
+        try:
+            reconcile_customer(db, c)
+        except Exception:
+            pass
     return RedirectResponse("/customers", status_code=303)
 
 @app.post("/customers/{customer_id}/subscribe")
