@@ -1,24 +1,39 @@
-# Architecture
+# Share Manager Architecture — v0.2
 
-## Core domain
+## Core model
 
-- **Customer**: the person receiving access.
-- **Package**: what access is granted.
-- **BillingTier**: how much/how often a package is billed.
-- **Subscription**: connects a customer to a billing tier and lifecycle state.
-- **Payment**: immutable-style ledger entry for money received.
-- **Integration**: an external entitlement target/provider configuration.
-- **PackageEntitlement**: generic resource mapping between a package and an integration.
-- **AuditLog**: management/reconciliation history.
+`Customer -> Subscription -> BillingTier -> Package -> PackageEntitlement -> Integration`
 
-## Integration boundary
+Payments are append-only ledger entries. An applied payment can reference a subscription and stores the exact `coverage_start` and `coverage_end` it purchased.
 
-Plex-specific behaviour lives under `app/integrations/plex.py`. Core package/subscription tables do not contain Plex library columns. This is intentional so future integrations can expose their own resource types while reusing the same entitlement model.
+## Billing dates
 
-## Desired-state reconciliation
+A subscription stores:
 
-`app/services/reconcile.py` calculates the desired resources from the customer's active subscriptions and asks the integration adapter to enforce them. This is preferred to one-shot event actions because a later reconciliation can repair drift or a previously failed API request.
+- `started_at`
+- `current_period_start`
+- `current_period_end`
+- `grace_until`
+- lifecycle `status`
 
-## Payment-provider future
+Each BillingTier defines price, interval/count and `grace_period_days`.
 
-Payment processors should ultimately translate webhook/provider events into the same internal `Payment` and subscription-period concepts. The entitlement engine should not care whether a payment originated from manual entry, bank transfer, Stripe, PayPal, or another adapter.
+### Renewal rule
+
+If payment is received on/before `grace_until`, the next coverage period begins at the previous `current_period_end`. If payment arrives after grace has elapsed, the next period begins on the payment date. This prevents grace days becoming free paid-service days.
+
+## State engine
+
+For billing-initialised subscriptions:
+
+- before `current_period_end` -> active
+- after expiry but before `grace_until` -> grace
+- after grace -> suspended
+
+`active` and `grace` retain Plex entitlement. `suspended` removes it. An applied payment reactivates the subscription and the Plex integration reconciles access.
+
+Exempt customers remain outside automatic status/Plex enforcement.
+
+## Upgrade safety
+
+v0.2 performs additive schema migration at container startup. Existing v0.1 subscriptions with a NULL `current_period_end` are intentionally skipped by automatic billing until an administrator initialises their dates.

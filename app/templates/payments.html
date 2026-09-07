@@ -1,5 +1,21 @@
 {% extends 'base.html' %}{% block content %}
-<header><h1>Payments</h1><p>Manual ledger now; provider adapters can feed the same records later.</p></header>
-<section><h2>Record payment</h2><form method="post" class="grid-form"><label>Customer<select name="customer_id">{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label><label>Amount (£)<input name="amount" type="number" min="0" step="0.01" required></label><label>Source<select name="source"><option>manual</option><option>bank_transfer</option><option>cash</option><option>paypal</option><option>stripe</option><option>other</option></select></label><label>Reference<input name="external_reference"></label><label>Note<input name="note"></label><button>Record payment</button></form></section>
-<section><h2>Payment history</h2><table><thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Source</th><th>Reference</th></tr></thead><tbody>{% for p in payments %}<tr><td>{{ p.paid_at.strftime('%Y-%m-%d') }}</td><td>{{ customer_lookup[p.customer_id].name }}</td><td>£{{ '%.2f'|format(p.amount) }}</td><td>{{ p.source }}</td><td>{{ p.external_reference or '' }}</td></tr>{% else %}<tr><td colspan="5" class="muted">No payments recorded.</td></tr>{% endfor %}</tbody></table></section>
+<header><h1>Payments</h1><p>Payments are permanent ledger records. Applied payments also advance subscription coverage.</p></header>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
+<section><h2>Record payment</h2>
+<form method="post" class="grid-form payment-form">
+  <label>Customer<select name="customer_id" required>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+  <label>Amount (£)<input name="amount" type="number" min="0" step="0.01" required></label>
+  <label>Payment received<input name="paid_at" type="date" value="{{ today }}" required></label>
+  <label>Source<select name="source"><option>manual</option><option>bank_transfer</option><option>cash</option><option>paypal</option><option>stripe</option><option>other</option></select></label>
+  <label>Reference<input name="external_reference"></label>
+  <label>Note<input name="note"></label>
+  <label class="check apply-payment"><input name="apply_to_subscription" type="checkbox" value="true" checked> Apply to current subscription</label>
+  <button>Record payment</button>
+</form>
+<p class="muted payment-help">If paid before expiry or during grace, coverage continues from the previous expiry. If grace has already elapsed, coverage restarts from the payment date. Untick “Apply” when importing history that should not alter current coverage.</p>
+</section>
+<section><h2>Payment history</h2><table><thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Source</th><th>Coverage</th><th>Reference</th></tr></thead><tbody>
+{% for p in payments %}<tr><td>{{ p.paid_at.strftime('%Y-%m-%d') }}</td><td>{{ p.customer.name }}</td><td>£{{ '%.2f'|format(p.amount) }}</td><td>{{ p.source }}</td><td>{% if p.coverage_end %}{{ p.coverage_start.strftime('%Y-%m-%d') }} → {{ p.coverage_end.strftime('%Y-%m-%d') }}{% else %}<span class="muted">Ledger only</span>{% endif %}</td><td>{{ p.external_reference or '' }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">No payments recorded.</td></tr>{% endfor %}</tbody></table></section>
 {% endblock %}

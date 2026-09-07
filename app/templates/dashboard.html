@@ -1,7 +1,9 @@
 {% extends 'base.html' %}{% block content %}
-<header><h1>Dashboard</h1><p>Subscription and entitlement overview.</p></header>
-<div class="stats">
-{% for label,value in [('Customers',stats.customers),('Active',stats.active),('Packages',stats.packages),('Integrations',stats.integrations),('Payments',stats.payments)] %}<div class="stat"><strong>{{ value }}</strong><span>{{ label }}</span></div>{% endfor %}
+<header class="row between"><div><h1>Dashboard</h1><p>Subscription, billing and entitlement overview.</p></div><form method="post" action="/billing/run"><button class="secondary">Run billing check</button></form></header>
+{% if request.query_params.get('notice') %}<div class="alert success">{{ request.query_params.get('notice') }}</div>{% endif %}
+<div class="stats billing-stats">
+{% for label,value in [('Customers',stats.customers),('Active',stats.active),('In grace',stats.grace),('Suspended',stats.suspended),('Due in 7 days',stats.due_soon)] %}<div class="stat"><strong>{{ value }}</strong><span>{{ label }}</span></div>{% endfor %}
+<div class="stat"><strong>£{{ '%.2f'|format(stats.revenue) }}</strong><span>Revenue this month</span></div>
 </div>
 <section><h2>Recent activity</h2><table><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>{% for a in recent %}<tr><td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td><code>{{ a.action }}</code></td><td>{{ a.detail or '' }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No activity yet.</td></tr>{% endfor %}</tbody></table></section>
 {% endblock %}

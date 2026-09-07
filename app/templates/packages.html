@@ -47,7 +47,7 @@
           <tr>
             <td>{{ t.name }}</td>
             <td>£{{ '%.2f'|format(t.price) }}</td>
-            <td>{{ t.interval_count }} {{ t.interval_unit }}</td>
+            <td>{{ t.interval_count }} {{ t.interval_unit }} <span class="muted">· {{ t.grace_period_days }}d grace</span></td>
             <td class="tier-actions-cell"><button type="button" class="secondary small-action js-toggle" data-target="tier-edit-{{ t.id }}">Edit</button></td>
           </tr>
           <tr id="tier-edit-{{ t.id }}" class="tier-edit-row" hidden>
@@ -57,6 +57,7 @@
                 <label>Price<input name="price" type="number" min="0" step="0.01" value="{{ '%.2f'|format(t.price) }}" required></label>
                 <label>Interval<select name="interval_unit"><option value="month" {% if t.interval_unit == 'month' %}selected{% endif %}>month</option><option value="year" {% if t.interval_unit == 'year' %}selected{% endif %}>year</option><option value="week" {% if t.interval_unit == 'week' %}selected{% endif %}>week</option></select></label>
                 <label>Count<input name="interval_count" type="number" min="1" value="{{ t.interval_count }}"></label>
+                <label>Grace days<input name="grace_period_days" type="number" min="0" value="{{ t.grace_period_days }}"></label>
                 <button type="submit">Save</button>
               </form>
               <div class="tier-edit-footer">
@@ -84,6 +85,7 @@
         <label>Price<input name="price" type="number" min="0" step="0.01" required></label>
         <label>Interval<select name="interval_unit"><option value="month">month</option><option value="year">year</option><option value="week">week</option></select></label>
         <label>Count<input name="interval_count" type="number" min="1" value="1"></label>
+        <label>Grace days<input name="grace_period_days" type="number" min="0" value="3"></label>
         <button>Add tier</button>
       </form>
     </div>

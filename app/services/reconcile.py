@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session, joinedload
-from ..models import AuditLog, BillingTier, Customer, Integration, Subscription
+from ..models import ACCESS_SUBSCRIPTION_STATES, AuditLog, BillingTier, Customer, Integration, Subscription
 from ..integrations.plex import PlexIntegration
 
-ACTIVE_STATES = {"active", "grace"}
+ACTIVE_STATES = ACCESS_SUBSCRIPTION_STATES
 
 
 def _result_detail(integration_name: str, result: dict) -> tuple[str, str]:

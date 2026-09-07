@@ -3,6 +3,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
+
 class Customer(Base):
     __tablename__ = "customers"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -15,6 +16,8 @@ class Customer(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    payments: Mapped[list["Payment"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+
 
 class Package(Base):
     __tablename__ = "packages"
@@ -25,32 +28,36 @@ class Package(Base):
     billing_tiers: Mapped[list["BillingTier"]] = relationship(back_populates="package", cascade="all, delete-orphan")
     entitlements: Mapped[list["PackageEntitlement"]] = relationship(back_populates="package", cascade="all, delete-orphan")
 
-CURRENT_SUBSCRIPTION_STATES = {"active", "grace"}
+
+# Assigned means the customer still belongs to this tier, even if billing has
+# temporarily suspended their access. Cancelled rows are historical only.
+ASSIGNED_SUBSCRIPTION_STATES = {"active", "grace", "suspended"}
+ACCESS_SUBSCRIPTION_STATES = {"active", "grace"}
+# Backwards-compatible alias used by v0.1 code/tests.
+CURRENT_SUBSCRIPTION_STATES = ASSIGNED_SUBSCRIPTION_STATES
+
 
 class BillingTier(Base):
     __tablename__ = "billing_tiers"
     id: Mapped[int] = mapped_column(primary_key=True)
     package_id: Mapped[int] = mapped_column(ForeignKey("packages.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(80))
-    price: Mapped[float] = mapped_column(Numeric(10,2))
+    price: Mapped[float] = mapped_column(Numeric(10, 2))
     interval_unit: Mapped[str] = mapped_column(String(16), default="month")
     interval_count: Mapped[int] = mapped_column(Integer, default=1)
+    grace_period_days: Mapped[int] = mapped_column(Integer, default=3)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     package: Mapped[Package] = relationship(back_populates="billing_tiers")
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="billing_tier")
 
     @property
     def current_subscriptions(self):
-        """Subscriptions that currently represent an assigned billing tier.
-
-        Historical/cancelled rows are deliberately retained for audit/history but must
-        not be treated as live package usage.
-        """
-        return [s for s in self.subscriptions if s.status in CURRENT_SUBSCRIPTION_STATES]
+        return [s for s in self.subscriptions if s.status in ASSIGNED_SUBSCRIPTION_STATES]
 
     @property
     def current_subscription_count(self) -> int:
         return len(self.current_subscriptions)
+
 
 class Integration(Base):
     __tablename__ = "integrations"
@@ -62,6 +69,7 @@ class Integration(Base):
     secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     machine_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
     __table_args__ = (UniqueConstraint("kind", "name"),)
+
 
 class PackageEntitlement(Base):
     __tablename__ = "package_entitlements"
@@ -75,6 +83,7 @@ class PackageEntitlement(Base):
     integration: Mapped[Integration] = relationship()
     __table_args__ = (UniqueConstraint("package_id", "integration_id", "resource_type", "resource_id"),)
 
+
 class Subscription(Base):
     __tablename__ = "subscriptions"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -82,20 +91,32 @@ class Subscription(Base):
     billing_tier_id: Mapped[int] = mapped_column(ForeignKey("billing_tiers.id"))
     status: Mapped[str] = mapped_column(String(32), default="active")
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    grace_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     customer: Mapped[Customer] = relationship(back_populates="subscriptions")
     billing_tier: Mapped[BillingTier] = relationship(back_populates="subscriptions")
+    payments: Mapped[list["Payment"]] = relationship(back_populates="subscription")
+
 
 class Payment(Base):
     __tablename__ = "payments"
     id: Mapped[int] = mapped_column(primary_key=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"))
-    amount: Mapped[float] = mapped_column(Numeric(10,2))
+    subscription_id: Mapped[int | None] = mapped_column(ForeignKey("subscriptions.id"), nullable=True)
+    amount: Mapped[float] = mapped_column(Numeric(10, 2))
     currency: Mapped[str] = mapped_column(String(3), default="GBP")
     source: Mapped[str] = mapped_column(String(32), default="manual")
     external_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     paid_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    coverage_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    coverage_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    customer: Mapped[Customer] = relationship(back_populates="payments")
+    subscription: Mapped[Subscription | None] = relationship(back_populates="payments")
+
 
 class AuditLog(Base):
     __tablename__ = "audit_log"

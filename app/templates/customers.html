@@ -1,10 +1,45 @@
 {% extends 'base.html' %}{% block content %}
-<header><h1>Customers</h1><p>Link people to Plex identities, subscriptions and access states.</p></header>
+<header><h1>Customers</h1><p>Link people to packages, billing periods and Plex access.</p></header>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
 <section><h2>Add customer</h2><form method="post" class="grid-form"><label>Name<input name="name" required></label><label>Email<input name="email" type="email"></label><label>Plex username/email<input name="plex_username"></label><label>Notes<input name="notes"></label><button>Add customer</button></form></section>
-<section><h2>Managed customers</h2><div class="cards">{% for c in customers %}<article class="card"><div class="row between"><div><h3>{{ c.name }}</h3><div class="muted">{{ c.plex_username or 'No Plex account linked' }}</div></div><span class="badge {{ 'exempt' if c.exempt else c.status }}">{{ 'exempt' if c.exempt else c.status }}</span></div>
-<div class="subtle">{% set active_subs = c.subscriptions|selectattr('status','in',['active','grace'])|list %}{% if active_subs %}{{ active_subs[0].billing_tier.package.name }} · {{ active_subs[0].billing_tier.name }}{% else %}No active subscription{% endif %}</div>
-<form method="post" action="/customers/{{ c.id }}/subscribe" class="inline"><select name="billing_tier_id">{% for t in tiers %}<option value="{{ t.id }}">{{ t.package.name }} — {{ t.name }} (£{{ '%.2f'|format(t.price) }})</option>{% endfor %}</select><button>Assign</button></form>
-<div class="row customer-actions"><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option value="active" {% if not c.exempt and c.status == 'active' %}selected{% endif %}>active</option><option value="grace" {% if not c.exempt and c.status == 'grace' %}selected{% endif %}>grace</option><option value="suspended" {% if not c.exempt and c.status == 'suspended' %}selected{% endif %}>suspended</option><option value="cancelled" {% if not c.exempt and c.status == 'cancelled' %}selected{% endif %}>cancelled</option><option value="exempt" {% if c.exempt %}selected{% endif %}>exempt</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary" {% if c.exempt %}title="This customer is exempt; reconciliation will skip them."{% endif %}>Reconcile Plex</button></form></div>
-{% if c.exempt %}<div class="exempt-note">Automation is disabled for this customer. Plex reconciliation will leave their current access untouched until another status is selected.</div>{% endif %}
-</article>{% else %}<p class="muted">No customers yet.</p>{% endfor %}</div></section>
+<section><h2>Managed customers</h2><div class="cards">
+{% for c in customers %}
+{% set assigned = c.subscriptions|selectattr('status','in',['active','grace','suspended'])|list %}
+{% set sub = assigned|sort(attribute='id', reverse=true)|first if assigned else none %}
+<article class="card">
+  <div class="row between"><div><h3>{{ c.name }}</h3><div class="muted">{{ c.plex_username or 'No Plex account linked' }}</div></div><span class="badge {{ 'exempt' if c.exempt else c.status }}">{{ 'exempt' if c.exempt else c.status }}</span></div>
+  {% if sub %}
+  <div class="subtle"><strong>{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}</strong><br>
+    <span class="muted billing-summary">
+      Started {{ sub.started_at.strftime('%Y-%m-%d') }} ·
+      {% if sub.current_period_end %}Paid through {{ sub.current_period_end.strftime('%Y-%m-%d') }} · Grace until {{ sub.grace_until.strftime('%Y-%m-%d') if sub.grace_until else '—' }}{% else %}Billing dates not initialised{% endif %}
+    </span>
+  </div>
+  <button type="button" class="secondary small-action js-toggle" data-target="billing-edit-{{ sub.id }}">Edit billing</button>
+  <div id="billing-edit-{{ sub.id }}" class="simple-editor billing-editor" hidden>
+    <form method="post" action="/subscriptions/{{ sub.id }}/billing-dates" class="grid-form billing-date-form">
+      <label>Period / subscription start<input type="date" name="start_date" value="{{ (sub.current_period_start or sub.started_at).strftime('%Y-%m-%d') }}" required></label>
+      <label>Paid through <span class="muted">(blank = calculate from tier)</span><input type="date" name="period_end" value="{{ sub.current_period_end.strftime('%Y-%m-%d') if sub.current_period_end else '' }}"></label>
+      <button>Save dates</button>
+    </form>
+  </div>
+  {% else %}<div class="subtle">No assigned subscription</div>{% endif %}
+
+  <form method="post" action="/customers/{{ c.id }}/subscribe" class="subscription-assign">
+    <select name="billing_tier_id">{% for t in tiers %}<option value="{{ t.id }}" {% if sub and sub.billing_tier_id == t.id %}selected{% endif %}>{{ t.package.name }} — {{ t.name }} (£{{ '%.2f'|format(t.price) }})</option>{% endfor %}</select>
+    <label class="assign-date">Start date<input type="date" name="start_date" title="Subscription start date; defaults to today if blank"></label>
+    <button>{{ 'Change package' if sub else 'Assign' }}</button>
+  </form>
+
+  <div class="row customer-actions"><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option value="active" {% if not c.exempt and c.status == 'active' %}selected{% endif %}>active</option><option value="grace" {% if not c.exempt and c.status == 'grace' %}selected{% endif %}>grace</option><option value="suspended" {% if not c.exempt and c.status == 'suspended' %}selected{% endif %}>suspended</option><option value="cancelled" {% if not c.exempt and c.status == 'cancelled' %}selected{% endif %}>cancelled</option><option value="exempt" {% if c.exempt %}selected{% endif %}>exempt</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary" {% if c.exempt %}title="This customer is exempt; reconciliation will skip them."{% endif %}>Reconcile Plex</button></form></div>
+  {% if c.exempt %}<div class="exempt-note">Automation is disabled for this customer. Billing records can still be maintained, but automatic status/Plex changes will leave them alone.</div>{% endif %}
+</article>
+{% else %}<p class="muted">No customers yet.</p>{% endfor %}</div></section>
+<script>
+document.querySelectorAll('.js-toggle').forEach(button => button.addEventListener('click', () => {
+  const target = document.getElementById(button.dataset.target); if (!target) return;
+  target.hidden = !target.hidden; button.textContent = target.hidden ? 'Edit billing' : 'Close';
+}));
+</script>
 {% endblock %}
