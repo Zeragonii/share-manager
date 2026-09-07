@@ -64,6 +64,6 @@ Complimentary access is deliberately separate from the payments ledger. Each gra
 Customer cards now resolve their subscription centrally in Python instead of duplicating subscription-state filtering in the template. Complimentary access can also reactivate a customer on their most recent historical tier, so the Grant control is available for any customer with subscription history, not only customers whose current row happens to be in a specific live state.
 
 
-## Manual access end override
+## Manual access until override
 
-Each subscription can optionally have a **Manual access end** date from the customer card's **Edit billing** panel. While set, this is a hard entitlement cutoff and overrides the normal paid-through/grace calculation without altering payment or complimentary-credit history. Clear the field to return the subscription to normal billing enforcement. Saving the override immediately recalculates the customer's state and reconciles Plex when enabled.
+Each subscription can optionally have a **Manual access until** date from the customer card's **Edit billing** modal. While that date is still in the future, the customer is guaranteed active access without altering their payment or complimentary-credit history. When the override date is reached, Share Manager automatically falls back to the normal paid-through and grace calculation. Payments recorded during the override continue to update normal billing coverage, so paid access can carry on afterwards without an administrator clearing the override.

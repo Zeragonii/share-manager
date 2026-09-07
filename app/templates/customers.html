@@ -12,30 +12,12 @@
   <div class="subtle"><strong>{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}</strong><br>
     <span class="muted billing-summary">
       Started {{ sub.started_at.strftime('%Y-%m-%d') }} ·
-      {% if sub.current_period_end %}Paid through {{ sub.current_period_end.strftime('%Y-%m-%d') }} · Grace until {{ sub.grace_until.strftime('%Y-%m-%d') if sub.grace_until else '—' }}{% else %}Billing dates not initialised{% endif %}{% if sub.manual_access_end %}<br><strong>Manual access end: {{ sub.manual_access_end.strftime('%Y-%m-%d') }}</strong>{% endif %}
+      {% if sub.current_period_end %}Paid through {{ sub.current_period_end.strftime('%Y-%m-%d') }} · Grace until {{ sub.grace_until.strftime('%Y-%m-%d') if sub.grace_until else '—' }}{% else %}Billing dates not initialised{% endif %}{% if sub.manual_access_end %}<br><strong>Manual access until: {{ sub.manual_access_end.strftime('%Y-%m-%d') }}</strong>{% endif %}
     </span>
   </div>
   <div class="row compact-card-actions">
-    <button type="button" class="secondary small-action js-toggle" data-target="billing-edit-{{ sub.id }}" data-open-label="Edit billing" data-close-label="Close">Edit billing</button>
-    <button type="button" class="secondary small-action js-toggle" data-target="credit-grant-{{ sub.id }}" data-open-label="Grant complimentary access" data-close-label="Close">Grant complimentary access</button>
-  </div>
-  <div id="billing-edit-{{ sub.id }}" class="simple-editor billing-editor" hidden>
-    <form method="post" action="/subscriptions/{{ sub.id }}/billing-dates" class="grid-form billing-date-form">
-      <label>Period / subscription start<input type="date" name="start_date" value="{{ (sub.current_period_start or sub.started_at).strftime('%Y-%m-%d') }}" required></label>
-      <label>Paid through <span class="muted">(blank = calculate from tier)</span><input type="date" name="period_end" value="{{ sub.current_period_end.strftime('%Y-%m-%d') if sub.current_period_end else '' }}"></label>
-      <label>Manual access end <span class="muted">(optional hard override)</span><input type="date" name="manual_access_end" value="{{ sub.manual_access_end.strftime('%Y-%m-%d') if sub.manual_access_end else '' }}"></label>
-      <div class="muted">While set, this date overrides paid-through and grace for access enforcement. Clear it to return to normal billing rules.</div>
-      <button>Save dates</button>
-    </form>
-  </div>
-  <div id="credit-grant-{{ sub.id }}" class="simple-editor billing-editor" hidden>
-    <form method="post" action="/customers/{{ c.id }}/credits" class="complimentary-form">
-      <label>Billing periods<input type="number" name="billing_periods" min="1" step="1" value="1" required></label>
-      <label>Grant date<input type="date" name="granted_date" value="{{ today }}"></label>
-      <label>Reason<input name="reason" placeholder="e.g. Grandfathered donor"></label>
-      <button>Grant access</button>
-    </form>
-    <div class="muted complimentary-help">Uses the current tier interval: {{ sub.billing_tier.interval_count }} {{ sub.billing_tier.interval_unit }}{{ 's' if sub.billing_tier.interval_count != 1 else '' }} per period. Complimentary access is tracked separately from payments.</div>
+    <button type="button" class="secondary small-action" onclick="document.getElementById('billing-modal-{{ sub.id }}').showModal()">Edit billing</button>
+    <button type="button" class="secondary small-action" onclick="document.getElementById('credit-modal-{{ sub.id }}').showModal()">Grant complimentary access</button>
   </div>
   {% set credits = c.credits|sort(attribute='granted_at', reverse=true) %}
   {% if credits %}
@@ -52,11 +34,38 @@
   <div class="row customer-actions"><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option value="active" {% if not c.exempt and c.status == 'active' %}selected{% endif %}>active</option><option value="grace" {% if not c.exempt and c.status == 'grace' %}selected{% endif %}>grace</option><option value="suspended" {% if not c.exempt and c.status == 'suspended' %}selected{% endif %}>suspended</option><option value="cancelled" {% if not c.exempt and c.status == 'cancelled' %}selected{% endif %}>cancelled</option><option value="exempt" {% if c.exempt %}selected{% endif %}>exempt</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary" {% if c.exempt %}title="This customer is exempt; reconciliation will skip them."{% endif %}>Reconcile Plex</button></form></div>
   {% if c.exempt %}<div class="exempt-note">Automation is disabled for this customer. Billing records can still be maintained, but automatic status/Plex changes will leave them alone.</div>{% endif %}
 </article>
+
+{% if sub %}
+<dialog id="billing-modal-{{ sub.id }}" class="customer-modal">
+  <div class="modal-heading"><div><h3>Edit billing · {{ c.name }}</h3><span class="muted">{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}</span></div><button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
+  <form method="post" action="/subscriptions/{{ sub.id }}/billing-dates" class="modal-form">
+    <label>Period / subscription start<input type="date" name="start_date" value="{{ (sub.current_period_start or sub.started_at).strftime('%Y-%m-%d') }}" required></label>
+    <label>Paid through <span class="muted">(blank = calculate from tier)</span><input type="date" name="period_end" value="{{ sub.current_period_end.strftime('%Y-%m-%d') if sub.current_period_end else '' }}"></label>
+    <label>Manual access until <span class="muted">(optional temporary override)</span><input type="date" name="manual_access_end" value="{{ sub.manual_access_end.strftime('%Y-%m-%d') if sub.manual_access_end else '' }}"></label>
+    <div class="modal-help muted">While this date is in the future, access stays active. When it is reached, Share Manager automatically falls back to the normal paid-through and grace dates. Payments received during the override still extend billing normally.</div>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Save billing</button></div>
+  </form>
+</dialog>
+
+<dialog id="credit-modal-{{ sub.id }}" class="customer-modal">
+  <div class="modal-heading"><div><h3>Grant complimentary access · {{ c.name }}</h3><span class="muted">{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}</span></div><button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
+  <form method="post" action="/customers/{{ c.id }}/credits" class="modal-form">
+    <label>Billing periods<input type="number" name="billing_periods" min="1" step="1" value="1" required></label>
+    <label>Grant date<input type="date" name="granted_date" value="{{ today }}"></label>
+    <label>Reason<input name="reason" placeholder="e.g. Grandfathered donor"></label>
+    <div class="modal-help muted">Uses the current tier interval: {{ sub.billing_tier.interval_count }} {{ sub.billing_tier.interval_unit }}{{ 's' if sub.billing_tier.interval_count != 1 else '' }} per period. Complimentary access is tracked separately from payments.</div>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Grant access</button></div>
+  </form>
+</dialog>
+{% endif %}
 {% else %}<p class="muted">No customers yet.</p>{% endfor %}</div></section>
 <script>
-document.querySelectorAll('.js-toggle').forEach(button => button.addEventListener('click', () => {
-  const target = document.getElementById(button.dataset.target); if (!target) return;
-  target.hidden = !target.hidden; button.textContent = target.hidden ? (button.dataset.openLabel || 'Edit') : (button.dataset.closeLabel || 'Close');
-}));
+document.querySelectorAll('dialog.customer-modal').forEach(dialog => {
+  dialog.addEventListener('click', event => {
+    const rect = dialog.getBoundingClientRect();
+    const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    if (!inside) dialog.close();
+  });
+});
 </script>
 {% endblock %}

@@ -182,18 +182,39 @@ def test_manual_access_end_extends_access_without_rewriting_paid_through():
     assert sub.current_period_end == paid_through
 
 
-def test_manual_access_end_is_hard_cutoff_without_grace():
+def test_manual_access_end_falls_back_to_normal_billing_after_override():
     from app.services.billing import desired_billing_status
-    db, customer, sub = make_db(grace=30)
+    db, customer, sub = make_db(grace=3)
     sub.manual_access_end = datetime(2026, 9, 20)
+    # Override guarantees access while it is in force.
     assert desired_billing_status(sub, datetime(2026, 9, 19)) == "active"
-    assert desired_billing_status(sub, datetime(2026, 9, 20)) == "suspended"
+    # Once it expires, the still-paid subscription remains active automatically.
+    assert desired_billing_status(sub, datetime(2026, 9, 20)) == "active"
+
+
+def test_payment_during_manual_override_continues_after_override_expires():
+    from app.services.billing import desired_billing_status
+    db, customer, sub = make_db(grace=3)
+    sub.manual_access_end = datetime(2026, 10, 10)
+    payment = apply_payment(db, customer=customer, amount=Decimal("10"), paid_at=datetime(2026, 10, 5), source="manual", external_reference=None, note=None, apply_to_subscription=True)
+    db.commit()
+    assert payment.coverage_end == datetime(2026, 11, 5)
+    # After manual access ends, normal paid coverage takes over with no admin action.
+    assert desired_billing_status(sub, datetime(2026, 10, 11)) == "active"
+
+
+def test_manual_override_expiry_can_fall_back_to_grace_or_suspension():
+    from app.services.billing import desired_billing_status
+    db, customer, sub = make_db(grace=3)
+    sub.manual_access_end = datetime(2026, 10, 2)
+    assert desired_billing_status(sub, datetime(2026, 10, 2)) == "grace"
+    assert desired_billing_status(sub, datetime(2026, 10, 5)) == "suspended"
 
 
 def test_clearing_manual_access_end_returns_to_normal_billing_rules():
     from app.services.billing import desired_billing_status
     db, customer, sub = make_db(grace=3)
-    sub.manual_access_end = datetime(2026, 9, 20)
-    assert desired_billing_status(sub, datetime(2026, 9, 25)) == "suspended"
+    sub.manual_access_end = datetime(2026, 10, 20)
+    assert desired_billing_status(sub, datetime(2026, 10, 10)) == "active"
     sub.manual_access_end = None
-    assert desired_billing_status(sub, datetime(2026, 9, 25)) == "active"
+    assert desired_billing_status(sub, datetime(2026, 10, 10)) == "suspended"

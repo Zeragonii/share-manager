@@ -40,3 +40,11 @@
 /* v0.2.4 complimentary access */
 .compact-card-actions{flex-wrap:wrap;margin:10px 0}.complimentary-form{display:grid;grid-template-columns:110px 150px minmax(180px,1fr) auto;gap:8px;align-items:end}.complimentary-help,.credit-summary{font-size:11px}.complimentary-help{margin-top:9px}.credit-summary{margin:8px 0 2px;padding:7px 9px;border-left:2px solid var(--accent);background:#0e141d;border-radius:0 6px 6px 0}
 @media(max-width:700px){.complimentary-form{grid-template-columns:1fr}}
+
+/* v0.2.7: customer billing/credit actions use modal islands instead of expanding tiles. */
+.customer-modal{width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;margin:auto;border:1px solid #3b4659;border-radius:14px;background:var(--panel);color:#e8ecf3;padding:0;box-shadow:0 24px 80px rgba(0,0,0,.58)}
+.customer-modal::backdrop{background:rgba(3,7,13,.72);backdrop-filter:blur(3px)}
+.modal-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid var(--line);background:#101721}
+.modal-heading h3{margin:0 0 3px}.modal-close{font-size:22px;line-height:1;padding:5px 9px;margin:-3px -5px 0 0}
+.modal-form{display:grid;gap:14px;padding:20px}.modal-form label{min-width:0}.modal-help{font-size:12px;line-height:1.5;padding:10px 12px;background:#0e141d;border:1px solid var(--line);border-radius:8px}.modal-actions{display:flex;justify-content:flex-end;gap:9px;padding-top:4px}.modal-actions button{min-width:90px}
+@media(max-width:520px){.customer-modal{width:calc(100vw - 18px);max-height:calc(100vh - 18px)}.modal-heading,.modal-form{padding:15px}.modal-actions{flex-direction:column-reverse}.modal-actions button{width:100%}}

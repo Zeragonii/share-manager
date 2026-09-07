@@ -315,7 +315,7 @@ def edit_subscription_dates(
         action="subscription.dates",
         target_type="subscription",
         target_id=str(sub.id),
-        detail=(f"starts {start:%Y-%m-%d}; paid through {sub.current_period_end:%Y-%m-%d}; grace until {sub.grace_until:%Y-%m-%d}; manual access end {sub.manual_access_end:%Y-%m-%d}" if sub.manual_access_end else f"starts {start:%Y-%m-%d}; paid through {sub.current_period_end:%Y-%m-%d}; grace until {sub.grace_until:%Y-%m-%d}; manual access end cleared"),
+        detail=(f"starts {start:%Y-%m-%d}; paid through {sub.current_period_end:%Y-%m-%d}; grace until {sub.grace_until:%Y-%m-%d}; manual access until {sub.manual_access_end:%Y-%m-%d}" if sub.manual_access_end else f"starts {start:%Y-%m-%d}; paid through {sub.current_period_end:%Y-%m-%d}; grace until {sub.grace_until:%Y-%m-%d}; manual access override cleared"),
     ))
     db.commit()
     if settings.reconcile_on_assign and sub.customer.plex_username and not sub.customer.exempt:

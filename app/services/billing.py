@@ -209,12 +209,13 @@ def apply_subscription_credit(
 def desired_billing_status(sub: Subscription, now: datetime) -> str | None:
     """Return automatic access status for a subscription.
 
-    A manual access-end override is authoritative and intentionally bypasses the
-    normal paid-through/grace calculation. It is a hard access cutoff only; it
-    does not rewrite billing history.
+    ``manual_access_end`` is a temporary access guarantee. While the override is
+    in the future, access remains active regardless of the paid-through date.
+    Once that date is reached, the override expires and normal billing/grace
+    rules take over again. Billing history is never rewritten.
     """
-    if sub.manual_access_end is not None:
-        return "active" if now < sub.manual_access_end else "suspended"
+    if sub.manual_access_end is not None and now < sub.manual_access_end:
+        return "active"
     if not sub.current_period_end:
         return None
     if now < sub.current_period_end:
@@ -253,7 +254,7 @@ def process_billing(db: Session, now: datetime | None = None) -> list[Customer]:
             action="billing.status",
             target_type="subscription",
             target_id=str(sub.id),
-            detail=(f"{previous} -> {desired}; manual access end {sub.manual_access_end:%Y-%m-%d}" if sub.manual_access_end else f"{previous} -> {desired}; period end {sub.current_period_end:%Y-%m-%d}"),
+            detail=(f"{previous} -> {desired}; manual access until {sub.manual_access_end:%Y-%m-%d}" if sub.manual_access_end else f"{previous} -> {desired}; period end {sub.current_period_end:%Y-%m-%d}"),
         ))
     db.commit()
     return list(changed_customers.values())
