@@ -89,7 +89,7 @@
               <span class="muted">every {% if t.interval_count != 1 %}{{ t.interval_count }} {% endif %}{{ t.interval_unit }}{% if t.interval_count != 1 %}s{% endif %}</span>
             </div>
             <div class="tier-meta">
-              {% if t.subscriptions %}<span class="usage-pill">{{ t.subscriptions|length }} assigned</span>{% else %}<span class="usage-pill empty">Unused</span>{% endif %}
+              {% if t.current_subscription_count %}<span class="usage-pill">{{ t.current_subscription_count }} assigned</span>{% else %}<span class="usage-pill empty">Unused</span>{% endif %}
               <button type="button" class="ghost small-button js-toggle" data-target="tier-edit-{{ t.id }}" data-label-closed="Edit" data-label-open="Close">Edit</button>
             </div>
           </div>
@@ -103,13 +103,13 @@
               <button type="submit">Save</button>
             </form>
             <div class="inline-editor-footer">
-              {% if t.subscriptions %}
-                <span class="muted">This tier is assigned to {{ t.subscriptions|length }} subscription(s) and cannot be deleted.</span>
+              {% if t.current_subscription_count %}
+                <span class="muted">This tier is assigned to {{ t.current_subscription_count }} current subscription(s) and cannot be deleted.</span>
               {% else %}
                 <span class="muted">This tier is not currently assigned.</span>
               {% endif %}
               <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/delete" onsubmit="return confirm('Delete billing tier {{ t.name|e }}?');">
-                <button type="submit" class="danger small-button" {% if t.subscriptions %}disabled title="This tier is assigned to {{ t.subscriptions|length }} subscription(s)"{% endif %}>Delete tier</button>
+                <button type="submit" class="danger small-button" {% if t.current_subscription_count %}disabled title="This tier is assigned to {{ t.current_subscription_count }} current subscription(s)"{% endif %}>Delete tier</button>
               </form>
             </div>
           </div>

@@ -25,6 +25,8 @@ class Package(Base):
     billing_tiers: Mapped[list["BillingTier"]] = relationship(back_populates="package", cascade="all, delete-orphan")
     entitlements: Mapped[list["PackageEntitlement"]] = relationship(back_populates="package", cascade="all, delete-orphan")
 
+CURRENT_SUBSCRIPTION_STATES = {"active", "grace"}
+
 class BillingTier(Base):
     __tablename__ = "billing_tiers"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -36,6 +38,19 @@ class BillingTier(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     package: Mapped[Package] = relationship(back_populates="billing_tiers")
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="billing_tier")
+
+    @property
+    def current_subscriptions(self):
+        """Subscriptions that currently represent an assigned billing tier.
+
+        Historical/cancelled rows are deliberately retained for audit/history but must
+        not be treated as live package usage.
+        """
+        return [s for s in self.subscriptions if s.status in CURRENT_SUBSCRIPTION_STATES]
+
+    @property
+    def current_subscription_count(self) -> int:
+        return len(self.current_subscriptions)
 
 class Integration(Base):
     __tablename__ = "integrations"

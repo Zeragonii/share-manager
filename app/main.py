@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .config import settings
 from .db import get_db
-from .models import AuditLog, BillingTier, Customer, Integration, Package, PackageEntitlement, Payment, Subscription
+from .models import AuditLog, BillingTier, Customer, Integration, Package, PackageEntitlement, Payment, Subscription, CURRENT_SUBSCRIPTION_STATES
 from .integrations.plex import PlexIntegration
 from .security import logged_in, make_session, valid_credentials
 from .services.reconcile import reconcile_customer
@@ -121,7 +121,10 @@ def subscribe(request: Request, customer_id: int, billing_tier_id: int = Form(..
     if gate: return gate
     c = db.get(Customer, customer_id)
     tier = db.get(BillingTier, billing_tier_id)
-    existing = db.query(Subscription).filter(Subscription.customer_id == customer_id).all()
+    existing = db.query(Subscription).filter(
+        Subscription.customer_id == customer_id,
+        Subscription.status.in_(CURRENT_SUBSCRIPTION_STATES),
+    ).all()
     for sub in existing:
         sub.status = "cancelled"
     sub = Subscription(customer_id=customer_id, billing_tier_id=billing_tier_id, status="active")
@@ -197,7 +200,7 @@ def delete_package(request: Request, package_id: int, db: Session = Depends(get_
     p = db.query(Package).options(joinedload(Package.billing_tiers).joinedload(BillingTier.subscriptions)).filter(Package.id == package_id).first()
     if not p:
         return RedirectResponse("/packages?error=Package+not+found", status_code=303)
-    assigned = sum(len(t.subscriptions) for t in p.billing_tiers)
+    assigned = sum(t.current_subscription_count for t in p.billing_tiers)
     if assigned:
         return RedirectResponse(f"/packages?error=Cannot+delete+package%3A+it+is+used+by+{assigned}+subscription%28s%29", status_code=303)
     name = p.name
@@ -239,8 +242,8 @@ def delete_tier(request: Request, package_id: int, tier_id: int, db: Session = D
     t = db.query(BillingTier).options(joinedload(BillingTier.subscriptions)).filter(BillingTier.id == tier_id, BillingTier.package_id == package_id).first()
     if not t:
         return RedirectResponse("/packages?error=Billing+tier+not+found", status_code=303)
-    if t.subscriptions:
-        return RedirectResponse(f"/packages?error=Cannot+delete+billing+tier%3A+it+is+used+by+{len(t.subscriptions)}+subscription%28s%29", status_code=303)
+    if t.current_subscription_count:
+        return RedirectResponse(f"/packages?error=Cannot+delete+billing+tier%3A+it+is+used+by+{t.current_subscription_count}+subscription%28s%29", status_code=303)
     name = t.name
     db.delete(t)
     db.flush()
