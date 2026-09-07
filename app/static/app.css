@@ -27,3 +27,12 @@
 .customer-list .subscription-assign button{width:100%}
 .payment-period-preview{margin-top:10px;padding:9px 11px;border:1px solid var(--line);border-radius:7px;background:#0e141d;font-size:12px}
 @media(max-width:900px){.customer-list{grid-template-columns:1fr}}
+
+
+/* v0.2.3 editable payment sources */
+.source-manager{margin-top:16px;border:1px solid var(--line);border-radius:8px;background:#0e141d}
+.source-manager summary{cursor:pointer;padding:10px 12px;font-size:12px;font-weight:700;color:#d8dee8}
+.source-manager-body{padding:0 12px 12px;border-top:1px solid var(--line)}
+.source-add-form{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:8px;align-items:end;margin:12px 0}
+.source-list{display:grid;gap:7px}.source-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}.source-rename-form{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}.source-archived{opacity:.55}.source-help{font-size:11px;margin:10px 0 0}
+@media(max-width:650px){.source-add-form,.source-row,.source-rename-form{grid-template-columns:1fr}}

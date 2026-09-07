@@ -7,7 +7,7 @@
   <label>Customer<select name="customer_id" id="payment-customer" required>{% for c in customers %}{% set assigned = c.subscriptions|selectattr('status','in',['active','grace','suspended'])|list %}{% set sub = assigned|sort(attribute='id', reverse=true)|first if assigned else none %}<option value="{{ c.id }}" {% if sub %}data-tier-price="{{ sub.billing_tier.price }}" data-tier-name="{{ sub.billing_tier.package.name }} — {{ sub.billing_tier.name }}" data-tier-unit="{{ sub.billing_tier.interval_unit }}" data-tier-count="{{ sub.billing_tier.interval_count }}"{% endif %}>{{ c.name }}{% if sub %} — {{ sub.billing_tier.package.name }} / {{ sub.billing_tier.name }}{% endif %}</option>{% endfor %}</select></label>
   <label>Amount (£)<input id="payment-amount" name="amount" type="number" min="0" step="0.01" required></label>
   <label>Payment received<input name="paid_at" type="date" value="{{ today }}" required></label>
-  <label>Source<select name="source"><option>manual</option><option>bank_transfer</option><option>cash</option><option>paypal</option><option>stripe</option><option>other</option></select></label>
+  <label>Source<select name="source" required>{% for source in payment_sources if source.active %}<option value="{{ source.name }}">{{ source.name }}</option>{% endfor %}</select></label>
   <label>Reference<input name="external_reference"></label>
   <label>Note<input name="note"></label>
   <label>Billing periods <span class="muted">(optional override)</span><input id="billing-periods" name="billing_periods" type="number" min="1" step="1" placeholder="Auto"></label>
@@ -16,6 +16,30 @@
 </form>
 <div id="payment-period-preview" class="payment-period-preview muted"></div>
 <p class="muted payment-help">Leave Billing periods blank to calculate automatically from amount ÷ current tier price (for example £30 on a £10/month tier = 3 monthly periods). Enter a number manually to override that calculation, which is useful for discounts or special arrangements. If paid before expiry or during grace, all purchased periods extend from the previous expiry; after grace, they start from the payment date.</p>
+
+<details class="source-manager">
+  <summary>Manage payment sources</summary>
+  <div class="source-manager-body">
+    <form method="post" action="/payments/sources" class="source-add-form">
+      <label>New source<input name="name" placeholder="e.g. Revolut" required></label>
+      <button>Add source</button>
+    </form>
+    <div class="source-list">
+      {% for source in payment_sources %}
+      <div class="source-row{% if not source.active %} source-archived{% endif %}">
+        <form method="post" action="/payments/sources/{{ source.id }}/rename" class="source-rename-form">
+          <input name="name" value="{{ source.name }}" required>
+          <button class="secondary" type="submit">Rename</button>
+        </form>
+        <form method="post" action="/payments/sources/{{ source.id }}/toggle">
+          <button class="ghost small-action" type="submit">{{ 'Archive' if source.active else 'Restore' }}</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="muted source-help">Archiving removes a source from new-payment choices but does not alter historical payment records.</p>
+  </div>
+</details>
 </section>
 <section><h2>Payment history</h2><table><thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Source</th><th>Periods</th><th>Coverage</th><th>Reference</th></tr></thead><tbody>
 {% for p in payments %}<tr><td>{{ p.paid_at.strftime('%Y-%m-%d') }}</td><td>{{ p.customer.name }}</td><td>£{{ '%.2f'|format(p.amount) }}</td><td>{{ p.source }}</td><td>{{ p.billing_periods if p.billing_periods else '—' }}</td><td>{% if p.coverage_end %}{{ p.coverage_start.strftime('%Y-%m-%d') }} → {{ p.coverage_end.strftime('%Y-%m-%d') }}{% else %}<span class="muted">Ledger only</span>{% endif %}</td><td>{{ p.external_reference or '' }}</td></tr>

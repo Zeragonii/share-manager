@@ -22,6 +22,7 @@ from .models import (
     Package,
     PackageEntitlement,
     Payment,
+    PaymentSource,
     Subscription,
 )
 from .integrations.plex import PlexIntegration
@@ -554,7 +555,67 @@ def payments(request: Request, error: str | None = None, notice: str | None = No
         return gate
     rows = db.query(Payment).options(joinedload(Payment.customer), joinedload(Payment.subscription).joinedload(Subscription.billing_tier)).order_by(Payment.paid_at.desc(), Payment.id.desc()).limit(250).all()
     customers = db.query(Customer).options(joinedload(Customer.subscriptions).joinedload(Subscription.billing_tier).joinedload(BillingTier.package)).order_by(Customer.name).all()
-    return render(request, "payments.html", payments=rows, customers=customers, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"))
+    payment_sources = db.query(PaymentSource).order_by(PaymentSource.active.desc(), PaymentSource.name.asc()).all()
+    return render(request, "payments.html", payments=rows, customers=customers, payment_sources=payment_sources, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"))
+
+
+@app.post("/payments/sources")
+def add_payment_source(request: Request, name: str = Form(...), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    clean = name.strip()
+    if not clean:
+        return RedirectResponse("/payments?error=Payment+source+name+cannot+be+blank", status_code=303)
+    existing = db.query(PaymentSource).filter(func.lower(PaymentSource.name) == clean.lower()).first()
+    if existing:
+        if not existing.active:
+            existing.active = True
+            db.add(AuditLog(actor=settings.admin_username, action="payment_source.restore", target_type="payment_source", target_id=str(existing.id), detail=existing.name))
+            db.commit()
+            return RedirectResponse("/payments?notice=Payment+source+restored", status_code=303)
+        return RedirectResponse("/payments?error=Payment+source+already+exists", status_code=303)
+    source = PaymentSource(name=clean)
+    db.add(source)
+    db.flush()
+    db.add(AuditLog(actor=settings.admin_username, action="payment_source.create", target_type="payment_source", target_id=str(source.id), detail=source.name))
+    db.commit()
+    return RedirectResponse("/payments?notice=Payment+source+added", status_code=303)
+
+
+@app.post("/payments/sources/{source_id}/rename")
+def rename_payment_source(request: Request, source_id: int, name: str = Form(...), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    source = db.get(PaymentSource, source_id)
+    if not source:
+        return RedirectResponse("/payments?error=Payment+source+not+found", status_code=303)
+    clean = name.strip()
+    if not clean:
+        return RedirectResponse("/payments?error=Payment+source+name+cannot+be+blank", status_code=303)
+    duplicate = db.query(PaymentSource).filter(func.lower(PaymentSource.name) == clean.lower(), PaymentSource.id != source.id).first()
+    if duplicate:
+        return RedirectResponse("/payments?error=Another+payment+source+already+uses+that+name", status_code=303)
+    old = source.name
+    source.name = clean
+    db.add(AuditLog(actor=settings.admin_username, action="payment_source.rename", target_type="payment_source", target_id=str(source.id), detail=f"{old} -> {clean}"))
+    db.commit()
+    return RedirectResponse("/payments?notice=Payment+source+renamed", status_code=303)
+
+
+@app.post("/payments/sources/{source_id}/toggle")
+def toggle_payment_source(request: Request, source_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    source = db.get(PaymentSource, source_id)
+    if not source:
+        return RedirectResponse("/payments?error=Payment+source+not+found", status_code=303)
+    source.active = not source.active
+    db.add(AuditLog(actor=settings.admin_username, action="payment_source.toggle", target_type="payment_source", target_id=str(source.id), detail=f"{source.name}: {'active' if source.active else 'archived'}"))
+    db.commit()
+    return RedirectResponse("/payments?notice=Payment+source+updated", status_code=303)
 
 
 @app.post("/payments")
@@ -576,6 +637,9 @@ def add_payment(
     customer = db.get(Customer, customer_id)
     if not customer:
         return RedirectResponse("/payments?error=Customer+not+found", status_code=303)
+    selected_source = db.query(PaymentSource).filter(PaymentSource.name == source, PaymentSource.active.is_(True)).first()
+    if not selected_source:
+        return RedirectResponse("/payments?error=Payment+source+is+not+available", status_code=303)
     paid = _parse_date(paid_at)
     try:
         periods_override = int(billing_periods) if billing_periods.strip() else None

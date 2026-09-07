@@ -31,3 +31,22 @@ with engine.begin() as conn:
     conn.execute(text("UPDATE payments SET created_at = COALESCE(created_at, paid_at) WHERE created_at IS NULL"))
 
 print("Database schema ready")
+
+
+# Seed editable payment-source choices. Payments keep their source text so historical
+# ledger entries remain unchanged if a source is later renamed or archived.
+from .db import SessionLocal
+from .models import Payment, PaymentSource
+
+db = SessionLocal()
+try:
+    defaults = ["manual", "bank_transfer", "cash", "paypal", "stripe", "other"]
+    historical = [row[0] for row in db.query(Payment.source).distinct().all() if row[0]]
+    existing = {row.name.lower() for row in db.query(PaymentSource).all()}
+    for name in defaults + historical:
+        if name.lower() not in existing:
+            db.add(PaymentSource(name=name, active=True))
+            existing.add(name.lower())
+    db.commit()
+finally:
+    db.close()

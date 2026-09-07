@@ -100,6 +100,14 @@ class Subscription(Base):
     payments: Mapped[list["Payment"]] = relationship(back_populates="subscription")
 
 
+class PaymentSource(Base):
+    __tablename__ = "payment_sources"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Payment(Base):
     __tablename__ = "payments"
     id: Mapped[int] = mapped_column(primary_key=True)
