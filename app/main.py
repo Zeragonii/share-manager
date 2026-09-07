@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import IntegrityError
 
 from .config import settings
 from .db import get_db
@@ -147,16 +148,19 @@ def reconcile(request: Request, customer_id: int, db: Session = Depends(get_db))
     return RedirectResponse("/customers", status_code=303)
 
 @app.get("/packages", response_class=HTMLResponse)
-def packages(request: Request, db: Session = Depends(get_db)):
+def packages(request: Request, error: str | None = None, notice: str | None = None, db: Session = Depends(get_db)):
     gate = auth(request)
     if gate: return gate
-    rows = db.query(Package).options(joinedload(Package.billing_tiers), joinedload(Package.entitlements).joinedload(PackageEntitlement.integration)).order_by(Package.name).all()
+    rows = db.query(Package).options(
+        joinedload(Package.billing_tiers).joinedload(BillingTier.subscriptions),
+        joinedload(Package.entitlements).joinedload(PackageEntitlement.integration),
+    ).order_by(Package.name).all()
     integrations = db.query(Integration).filter(Integration.enabled == True).all()  # noqa: E712
     selected = {}
     for package in rows:
         for entitlement in package.entitlements:
             selected.setdefault(f"{package.id}:{entitlement.integration_id}", []).append(entitlement.resource_id)
-    return render(request, "packages.html", packages=rows, integrations=integrations, selected=selected)
+    return render(request, "packages.html", packages=rows, integrations=integrations, selected=selected, error=error, notice=notice)
 
 @app.post("/packages")
 def create_package(request: Request, name: str = Form(...), description: str = Form(""), db: Session = Depends(get_db)):
@@ -166,6 +170,43 @@ def create_package(request: Request, name: str = Form(...), description: str = F
     db.add(p); db.flush(); db.add(AuditLog(actor=settings.admin_username, action="package.create", target_type="package", target_id=str(p.id), detail=p.name)); db.commit()
     return RedirectResponse("/packages", status_code=303)
 
+@app.post("/packages/{package_id}/edit")
+def edit_package(request: Request, package_id: int, name: str = Form(...), description: str = Form(""), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate: return gate
+    p = db.get(Package, package_id)
+    if not p:
+        return RedirectResponse("/packages?error=Package+not+found", status_code=303)
+    clean_name = name.strip()
+    if not clean_name:
+        return RedirectResponse("/packages?error=Package+name+cannot+be+blank", status_code=303)
+    duplicate = db.query(Package).filter(Package.name == clean_name, Package.id != package_id).first()
+    if duplicate:
+        return RedirectResponse("/packages?error=A+package+with+that+name+already+exists", status_code=303)
+    old_name = p.name
+    p.name = clean_name
+    p.description = description.strip() or None
+    db.add(AuditLog(actor=settings.admin_username, action="package.update", target_type="package", target_id=str(p.id), detail=f"{old_name} -> {p.name}"))
+    db.commit()
+    return RedirectResponse("/packages?notice=Package+updated", status_code=303)
+
+@app.post("/packages/{package_id}/delete")
+def delete_package(request: Request, package_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate: return gate
+    p = db.query(Package).options(joinedload(Package.billing_tiers).joinedload(BillingTier.subscriptions)).filter(Package.id == package_id).first()
+    if not p:
+        return RedirectResponse("/packages?error=Package+not+found", status_code=303)
+    assigned = sum(len(t.subscriptions) for t in p.billing_tiers)
+    if assigned:
+        return RedirectResponse(f"/packages?error=Cannot+delete+package%3A+it+is+used+by+{assigned}+subscription%28s%29", status_code=303)
+    name = p.name
+    db.delete(p)
+    db.flush()
+    db.add(AuditLog(actor=settings.admin_username, action="package.delete", target_type="package", target_id=str(package_id), detail=name))
+    db.commit()
+    return RedirectResponse("/packages?notice=Package+deleted", status_code=303)
+
 @app.post("/packages/{package_id}/tiers")
 def add_tier(request: Request, package_id: int, name: str = Form(...), price: Decimal = Form(...), interval_unit: str = Form(...), interval_count: int = Form(1), db: Session = Depends(get_db)):
     gate = auth(request)
@@ -173,6 +214,39 @@ def add_tier(request: Request, package_id: int, name: str = Form(...), price: De
     t = BillingTier(package_id=package_id, name=name.strip(), price=price, interval_unit=interval_unit, interval_count=interval_count)
     db.add(t); db.commit()
     return RedirectResponse("/packages", status_code=303)
+
+@app.post("/packages/{package_id}/tiers/{tier_id}/edit")
+def edit_tier(request: Request, package_id: int, tier_id: int, name: str = Form(...), price: Decimal = Form(...), interval_unit: str = Form(...), interval_count: int = Form(1), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate: return gate
+    t = db.query(BillingTier).filter(BillingTier.id == tier_id, BillingTier.package_id == package_id).first()
+    if not t:
+        return RedirectResponse("/packages?error=Billing+tier+not+found", status_code=303)
+    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or price < 0:
+        return RedirectResponse("/packages?error=Invalid+billing+tier+values", status_code=303)
+    t.name = name.strip()
+    t.price = price
+    t.interval_unit = interval_unit
+    t.interval_count = interval_count
+    db.add(AuditLog(actor=settings.admin_username, action="billing_tier.update", target_type="billing_tier", target_id=str(t.id), detail=f"{t.name}: £{price} / {interval_count} {interval_unit}"))
+    db.commit()
+    return RedirectResponse("/packages?notice=Billing+tier+updated", status_code=303)
+
+@app.post("/packages/{package_id}/tiers/{tier_id}/delete")
+def delete_tier(request: Request, package_id: int, tier_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate: return gate
+    t = db.query(BillingTier).options(joinedload(BillingTier.subscriptions)).filter(BillingTier.id == tier_id, BillingTier.package_id == package_id).first()
+    if not t:
+        return RedirectResponse("/packages?error=Billing+tier+not+found", status_code=303)
+    if t.subscriptions:
+        return RedirectResponse(f"/packages?error=Cannot+delete+billing+tier%3A+it+is+used+by+{len(t.subscriptions)}+subscription%28s%29", status_code=303)
+    name = t.name
+    db.delete(t)
+    db.flush()
+    db.add(AuditLog(actor=settings.admin_username, action="billing_tier.delete", target_type="billing_tier", target_id=str(tier_id), detail=name))
+    db.commit()
+    return RedirectResponse("/packages?notice=Billing+tier+deleted", status_code=303)
 
 @app.post("/packages/{package_id}/entitlements")
 def set_entitlements(request: Request, package_id: int, integration_id: int = Form(...), library_ids: list[str] = Form(default=[]), db: Session = Depends(get_db)):

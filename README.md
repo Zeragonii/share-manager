@@ -121,3 +121,10 @@ uvicorn app.main:app --reload --port 8080
 ## Version
 
 `0.1.0` — foundation + Plex entitlement first pass.
+
+## v0.1.3
+
+- Added package editing for name and description.
+- Added in-place billing tier editing.
+- Added guarded delete controls for billing tiers and packages.
+- Packages or tiers referenced by subscriptions cannot be deleted.

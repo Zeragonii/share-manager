@@ -1,11 +1,57 @@
 {% extends 'base.html' %}{% block content %}
 <header><h1>Packages</h1><p>Packages define access. Billing tiers define how customers pay for it.</p></header>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
 <section><h2>Create package</h2><form method="post" class="grid-form"><label>Name<input name="name" required></label><label>Description<input name="description"></label><button>Create package</button></form></section>
-{% for p in packages %}<section><div class="row between"><div><h2>{{ p.name }}</h2><p>{{ p.description or '' }}</p></div></div>
-<div class="two-col"><div><h3>Billing tiers</h3><table><thead><tr><th>Name</th><th>Price</th><th>Interval</th></tr></thead><tbody>{% for t in p.billing_tiers %}<tr><td>{{ t.name }}</td><td>£{{ '%.2f'|format(t.price) }}</td><td>{{ t.interval_count }} {{ t.interval_unit }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No tiers yet.</td></tr>{% endfor %}</tbody></table>
-<form method="post" action="/packages/{{ p.id }}/tiers" class="grid-form compact"><label>Name<input name="name" placeholder="Monthly" required></label><label>Price<input name="price" type="number" step="0.01" required></label><label>Interval<select name="interval_unit"><option value="month">month</option><option value="year">year</option><option value="week">week</option></select></label><label>Count<input name="interval_count" type="number" min="1" value="1"></label><button>Add tier</button></form></div>
-<div><h3>Integration entitlements</h3>{% for i in integrations %}<div class="entitlement-box"><strong>{{ i.name }} <span class="muted">({{ i.kind }})</span></strong>{% if i.kind == 'plex' %}<form method="post" action="/packages/{{ p.id }}/entitlements" class="library-form" data-integration="{{ i.id }}" data-selected='{{ selected.get((p.id|string) ~ ":" ~ (i.id|string), [])|tojson }}'><input type="hidden" name="integration_id" value="{{ i.id }}"><div class="library-list">Loading libraries…</div><button>Save Plex libraries</button></form>{% endif %}</div>{% else %}<p class="muted">Add an integration first.</p>{% endfor %}</div></div></section>{% endfor %}
+{% for p in packages %}
+<section>
+  <div class="row between package-heading">
+    <div><h2>{{ p.name }}</h2><p>{{ p.description or '' }}</p></div>
+    <div class="row package-actions">
+      <button type="button" class="secondary js-toggle-edit" data-target="package-edit-{{ p.id }}">Edit package</button>
+      <form method="post" action="/packages/{{ p.id }}/delete" onsubmit="return confirm('Delete {{ p.name|e }}? This also removes its billing tiers and entitlement mappings.');">
+        <button type="submit" class="danger" {% if p.billing_tiers|selectattr('subscriptions')|list %}title="Assigned billing tiers cannot be deleted"{% endif %}>Delete package</button>
+      </form>
+    </div>
+  </div>
+
+  <form id="package-edit-{{ p.id }}" method="post" action="/packages/{{ p.id }}/edit" class="grid-form package-edit hidden">
+    <label>Name<input name="name" value="{{ p.name }}" required></label>
+    <label>Description<input name="description" value="{{ p.description or '' }}"></label>
+    <button type="submit">Save changes</button>
+  </form>
+
+  <div class="two-col">
+    <div>
+      <h3>Billing tiers</h3>
+      <div class="tier-list">
+      {% for t in p.billing_tiers %}
+        <div class="tier-row">
+          <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/edit" class="tier-edit-form">
+            <label>Name<input name="name" value="{{ t.name }}" required></label>
+            <label>Price<input name="price" type="number" min="0" step="0.01" value="{{ '%.2f'|format(t.price) }}" required></label>
+            <label>Interval<select name="interval_unit"><option value="month" {% if t.interval_unit == 'month' %}selected{% endif %}>month</option><option value="year" {% if t.interval_unit == 'year' %}selected{% endif %}>year</option><option value="week" {% if t.interval_unit == 'week' %}selected{% endif %}>week</option></select></label>
+            <label>Count<input name="interval_count" type="number" min="1" value="{{ t.interval_count }}"></label>
+            <button type="submit" class="secondary">Save</button>
+          </form>
+          <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/delete" class="tier-delete" onsubmit="return confirm('Delete billing tier {{ t.name|e }}?');">
+            <button type="submit" class="danger" {% if t.subscriptions %}disabled title="This tier is assigned to {{ t.subscriptions|length }} subscription(s)"{% endif %}>Delete</button>
+          </form>
+          {% if t.subscriptions %}<span class="muted tier-usage">Used by {{ t.subscriptions|length }} subscription(s)</span>{% endif %}
+        </div>
+      {% else %}<p class="muted">No tiers yet.</p>{% endfor %}
+      </div>
+      <h4>Add billing tier</h4>
+      <form method="post" action="/packages/{{ p.id }}/tiers" class="grid-form compact"><label>Name<input name="name" placeholder="Monthly" required></label><label>Price<input name="price" type="number" min="0" step="0.01" required></label><label>Interval<select name="interval_unit"><option value="month">month</option><option value="year">year</option><option value="week">week</option></select></label><label>Count<input name="interval_count" type="number" min="1" value="1"></label><button>Add tier</button></form>
+    </div>
+    <div><h3>Integration entitlements</h3>{% for i in integrations %}<div class="entitlement-box"><strong>{{ i.name }} <span class="muted">({{ i.kind }})</span></strong>{% if i.kind == 'plex' %}<form method="post" action="/packages/{{ p.id }}/entitlements" class="library-form" data-integration="{{ i.id }}" data-selected='{{ selected.get((p.id|string) ~ ":" ~ (i.id|string), [])|tojson }}'><input type="hidden" name="integration_id" value="{{ i.id }}"><div class="library-list">Loading libraries…</div><button>Save Plex libraries</button></form>{% endif %}</div>{% else %}<p class="muted">Add an integration first.</p>{% endfor %}</div>
+  </div>
+</section>
+{% endfor %}
 <script>
+document.querySelectorAll('.js-toggle-edit').forEach(button => {
+  button.addEventListener('click', () => document.getElementById(button.dataset.target).classList.toggle('hidden'));
+});
 document.querySelectorAll('.library-form').forEach(async form => {
   const id=form.dataset.integration; const selected=JSON.parse(form.dataset.selected || '[]'); const box=form.querySelector('.library-list');
   try { const libs=await fetch(`/api/integrations/${id}/libraries`).then(r=>r.json()); box.innerHTML='';
