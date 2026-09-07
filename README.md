@@ -73,7 +73,7 @@ For each enabled Plex integration, Share Manager calculates the libraries the cu
 
 - `active` / `grace`: package library entitlements are applied.
 - `suspended` / `cancelled`: no library sections are shared.
-- `exempt`: reconciliation intentionally skips the customer.
+- Customer-level **Automation Exempt** toggle: reconciliation intentionally skips the customer and leaves Plex access untouched.
 - no linked Plex identity: reconciliation intentionally skips the customer.
 
 The implementation calls Python-PlexAPI `updateFriend()`, using the desired section list or `removeSections=True` when the desired set is empty.

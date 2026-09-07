@@ -13,7 +13,7 @@ from .integrations.plex import PlexIntegration
 from .security import logged_in, make_session, valid_credentials
 from .services.reconcile import reconcile_customer
 
-app = FastAPI(title="Share Manager", version="0.1.0")
+app = FastAPI(title="Share Manager", version="0.1.1")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
@@ -29,7 +29,7 @@ def render(request: Request, name: str, **ctx):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.1.1"}
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
@@ -94,6 +94,25 @@ def customer_status(request: Request, customer_id: int, status: str = Form(...),
     if settings.reconcile_on_assign and c.plex_username:
         try: reconcile_customer(db, c)
         except Exception as e: pass
+    return RedirectResponse("/customers", status_code=303)
+
+@app.post("/customers/{customer_id}/exempt")
+def customer_exempt(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate: return gate
+    c = db.get(Customer, customer_id)
+    if not c:
+        return RedirectResponse("/customers", status_code=303)
+    c.exempt = not c.exempt
+    state = "enabled" if c.exempt else "disabled"
+    db.add(AuditLog(
+        actor=settings.admin_username,
+        action="customer.exempt",
+        target_type="customer",
+        target_id=str(c.id),
+        detail=f"Automation exemption {state}",
+    ))
+    db.commit()
     return RedirectResponse("/customers", status_code=303)
 
 @app.post("/customers/{customer_id}/subscribe")
