@@ -1,62 +1,212 @@
 {% extends 'base.html' %}{% block content %}
-<header><h1>Packages</h1><p>Packages define access. Billing tiers define how customers pay for it.</p></header>
+<header>
+  <h1>Packages</h1>
+  <p>Packages define access. Billing tiers define how customers pay for it.</p>
+</header>
+
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
-<section><h2>Create package</h2><form method="post" class="grid-form"><label>Name<input name="name" required></label><label>Description<input name="description"></label><button>Create package</button></form></section>
+
+<section class="create-package-panel">
+  <div class="section-heading">
+    <div>
+      <h2>Create package</h2>
+      <p class="muted">Add a new access package, then configure its billing tiers and entitlements.</p>
+    </div>
+  </div>
+  <form method="post" class="grid-form create-package-form">
+    <label>Name<input name="name" placeholder="e.g. Plex" required></label>
+    <label>Description<input name="description" placeholder="e.g. General Plex Access"></label>
+    <button>Create package</button>
+  </form>
+</section>
+
 {% for p in packages %}
-<section>
-  <div class="row between package-heading">
-    <div><h2>{{ p.name }}</h2><p>{{ p.description or '' }}</p></div>
+<section class="package-card">
+  <div class="package-heading">
+    <div class="package-title-block">
+      <div class="row package-title-line">
+        <h2>{{ p.name }}</h2>
+        <span class="package-count-badge">{{ p.billing_tiers|length }} tier{% if p.billing_tiers|length != 1 %}s{% endif %}</span>
+      </div>
+      {% if p.description %}<p>{{ p.description }}</p>{% endif %}
+    </div>
     <div class="row package-actions">
-      <button type="button" class="secondary js-toggle-edit" data-target="package-edit-{{ p.id }}">Edit package</button>
+      <button type="button" class="secondary js-toggle" data-target="package-edit-{{ p.id }}" data-label-closed="Edit package" data-label-open="Close editor">Edit package</button>
+    </div>
+  </div>
+
+  <div id="package-edit-{{ p.id }}" class="package-editor hidden">
+    <div class="editor-heading">
+      <div>
+        <strong>Package details</strong>
+        <span class="muted">Changes keep the existing package ID and customer assignments.</span>
+      </div>
+    </div>
+    <form method="post" action="/packages/{{ p.id }}/edit" class="grid-form package-edit-form">
+      <label>Name<input name="name" value="{{ p.name }}" required></label>
+      <label>Description<input name="description" value="{{ p.description or '' }}"></label>
+      <button type="submit">Save changes</button>
+    </form>
+    <div class="danger-zone">
+      <div>
+        <strong>Delete package</strong>
+        <span class="muted">Only possible when none of its billing tiers are assigned.</span>
+      </div>
       <form method="post" action="/packages/{{ p.id }}/delete" onsubmit="return confirm('Delete {{ p.name|e }}? This also removes its billing tiers and entitlement mappings.');">
-        <button type="submit" class="danger" {% if p.billing_tiers|selectattr('subscriptions')|list %}title="Assigned billing tiers cannot be deleted"{% endif %}>Delete package</button>
+        <button type="submit" class="danger">Delete package</button>
       </form>
     </div>
   </div>
 
-  <form id="package-edit-{{ p.id }}" method="post" action="/packages/{{ p.id }}/edit" class="grid-form package-edit hidden">
-    <label>Name<input name="name" value="{{ p.name }}" required></label>
-    <label>Description<input name="description" value="{{ p.description or '' }}"></label>
-    <button type="submit">Save changes</button>
-  </form>
+  <div class="package-content-grid">
+    <div class="package-column">
+      <div class="subsection-heading">
+        <div>
+          <h3>Billing tiers</h3>
+          <p class="muted">Prices and billing periods available for this package.</p>
+        </div>
+        <button type="button" class="secondary small-button js-toggle" data-target="tier-add-{{ p.id }}" data-label-closed="Add tier" data-label-open="Cancel">Add tier</button>
+      </div>
 
-  <div class="two-col">
-    <div>
-      <h3>Billing tiers</h3>
+      <div id="tier-add-{{ p.id }}" class="inline-editor hidden">
+        <form method="post" action="/packages/{{ p.id }}/tiers" class="tier-form">
+          <label>Name<input name="name" placeholder="Monthly" required></label>
+          <label>Price<input name="price" type="number" min="0" step="0.01" placeholder="10.00" required></label>
+          <label>Interval<select name="interval_unit"><option value="month">month</option><option value="year">year</option><option value="week">week</option></select></label>
+          <label>Count<input name="interval_count" type="number" min="1" value="1"></label>
+          <button>Add tier</button>
+        </form>
+      </div>
+
       <div class="tier-list">
       {% for t in p.billing_tiers %}
-        <div class="tier-row">
-          <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/edit" class="tier-edit-form">
-            <label>Name<input name="name" value="{{ t.name }}" required></label>
-            <label>Price<input name="price" type="number" min="0" step="0.01" value="{{ '%.2f'|format(t.price) }}" required></label>
-            <label>Interval<select name="interval_unit"><option value="month" {% if t.interval_unit == 'month' %}selected{% endif %}>month</option><option value="year" {% if t.interval_unit == 'year' %}selected{% endif %}>year</option><option value="week" {% if t.interval_unit == 'week' %}selected{% endif %}>week</option></select></label>
-            <label>Count<input name="interval_count" type="number" min="1" value="{{ t.interval_count }}"></label>
-            <button type="submit" class="secondary">Save</button>
-          </form>
-          <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/delete" class="tier-delete" onsubmit="return confirm('Delete billing tier {{ t.name|e }}?');">
-            <button type="submit" class="danger" {% if t.subscriptions %}disabled title="This tier is assigned to {{ t.subscriptions|length }} subscription(s)"{% endif %}>Delete</button>
-          </form>
-          {% if t.subscriptions %}<span class="muted tier-usage">Used by {{ t.subscriptions|length }} subscription(s)</span>{% endif %}
+        <div class="tier-item">
+          <div class="tier-summary">
+            <div class="tier-main">
+              <strong>{{ t.name }}</strong>
+              <span class="tier-price">£{{ '%.2f'|format(t.price) }}</span>
+              <span class="muted">every {% if t.interval_count != 1 %}{{ t.interval_count }} {% endif %}{{ t.interval_unit }}{% if t.interval_count != 1 %}s{% endif %}</span>
+            </div>
+            <div class="tier-meta">
+              {% if t.subscriptions %}<span class="usage-pill">{{ t.subscriptions|length }} assigned</span>{% else %}<span class="usage-pill empty">Unused</span>{% endif %}
+              <button type="button" class="ghost small-button js-toggle" data-target="tier-edit-{{ t.id }}" data-label-closed="Edit" data-label-open="Close">Edit</button>
+            </div>
+          </div>
+
+          <div id="tier-edit-{{ t.id }}" class="inline-editor hidden">
+            <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/edit" class="tier-form">
+              <label>Name<input name="name" value="{{ t.name }}" required></label>
+              <label>Price<input name="price" type="number" min="0" step="0.01" value="{{ '%.2f'|format(t.price) }}" required></label>
+              <label>Interval<select name="interval_unit"><option value="month" {% if t.interval_unit == 'month' %}selected{% endif %}>month</option><option value="year" {% if t.interval_unit == 'year' %}selected{% endif %}>year</option><option value="week" {% if t.interval_unit == 'week' %}selected{% endif %}>week</option></select></label>
+              <label>Count<input name="interval_count" type="number" min="1" value="{{ t.interval_count }}"></label>
+              <button type="submit">Save</button>
+            </form>
+            <div class="inline-editor-footer">
+              {% if t.subscriptions %}
+                <span class="muted">This tier is assigned to {{ t.subscriptions|length }} subscription(s) and cannot be deleted.</span>
+              {% else %}
+                <span class="muted">This tier is not currently assigned.</span>
+              {% endif %}
+              <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/delete" onsubmit="return confirm('Delete billing tier {{ t.name|e }}?');">
+                <button type="submit" class="danger small-button" {% if t.subscriptions %}disabled title="This tier is assigned to {{ t.subscriptions|length }} subscription(s)"{% endif %}>Delete tier</button>
+              </form>
+            </div>
+          </div>
         </div>
-      {% else %}<p class="muted">No tiers yet.</p>{% endfor %}
+      {% else %}
+        <div class="empty-state">No billing tiers yet. Add one to make this package assignable.</div>
+      {% endfor %}
       </div>
-      <h4>Add billing tier</h4>
-      <form method="post" action="/packages/{{ p.id }}/tiers" class="grid-form compact"><label>Name<input name="name" placeholder="Monthly" required></label><label>Price<input name="price" type="number" min="0" step="0.01" required></label><label>Interval<select name="interval_unit"><option value="month">month</option><option value="year">year</option><option value="week">week</option></select></label><label>Count<input name="interval_count" type="number" min="1" value="1"></label><button>Add tier</button></form>
     </div>
-    <div><h3>Integration entitlements</h3>{% for i in integrations %}<div class="entitlement-box"><strong>{{ i.name }} <span class="muted">({{ i.kind }})</span></strong>{% if i.kind == 'plex' %}<form method="post" action="/packages/{{ p.id }}/entitlements" class="library-form" data-integration="{{ i.id }}" data-selected='{{ selected.get((p.id|string) ~ ":" ~ (i.id|string), [])|tojson }}'><input type="hidden" name="integration_id" value="{{ i.id }}"><div class="library-list">Loading libraries…</div><button>Save Plex libraries</button></form>{% endif %}</div>{% else %}<p class="muted">Add an integration first.</p>{% endfor %}</div>
+
+    <div class="package-column">
+      <div class="subsection-heading">
+        <div>
+          <h3>Integration entitlements</h3>
+          <p class="muted">What access this package grants.</p>
+        </div>
+      </div>
+
+      {% for i in integrations %}
+        {% set mapped = p.entitlements|selectattr('integration_id', 'equalto', i.id)|list %}
+        <div class="entitlement-card">
+          <div class="entitlement-heading">
+            <div>
+              <strong>{{ i.name }}</strong>
+              <span class="integration-type">{{ i.kind }}</span>
+            </div>
+            {% if i.kind == 'plex' %}
+              <button type="button" class="ghost small-button js-toggle js-entitlement-edit" data-target="entitlement-edit-{{ p.id }}-{{ i.id }}" data-label-closed="Edit libraries" data-label-open="Close">Edit libraries</button>
+            {% endif %}
+          </div>
+
+          {% if mapped %}
+            <div class="entitlement-chips">
+              {% for entitlement in mapped %}<span class="entitlement-chip">{{ entitlement.resource_name }}</span>{% endfor %}
+            </div>
+          {% else %}
+            <p class="muted entitlement-empty">No access mapped for this integration.</p>
+          {% endif %}
+
+          {% if i.kind == 'plex' %}
+          <div id="entitlement-edit-{{ p.id }}-{{ i.id }}" class="inline-editor entitlement-editor hidden">
+            <form method="post" action="/packages/{{ p.id }}/entitlements" class="library-form" data-integration="{{ i.id }}" data-selected='{{ selected.get((p.id|string) ~ ":" ~ (i.id|string), [])|tojson }}'>
+              <input type="hidden" name="integration_id" value="{{ i.id }}">
+              <div class="library-list" data-loaded="false">Open the editor to load libraries…</div>
+              <div class="editor-actions"><button>Save libraries</button></div>
+            </form>
+          </div>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="empty-state">Add an integration first, then map package access here.</div>
+      {% endfor %}
+    </div>
   </div>
 </section>
 {% endfor %}
+
 <script>
-document.querySelectorAll('.js-toggle-edit').forEach(button => {
-  button.addEventListener('click', () => document.getElementById(button.dataset.target).classList.toggle('hidden'));
+function toggleTarget(button) {
+  const target = document.getElementById(button.dataset.target);
+  if (!target) return;
+  const opening = target.classList.contains('hidden');
+  target.classList.toggle('hidden');
+  if (button.dataset.labelClosed && button.dataset.labelOpen) {
+    button.textContent = opening ? button.dataset.labelOpen : button.dataset.labelClosed;
+  }
+  if (opening && button.classList.contains('js-entitlement-edit')) {
+    loadLibraries(target.querySelector('.library-form'));
+  }
+}
+
+document.querySelectorAll('.js-toggle').forEach(button => {
+  button.addEventListener('click', () => toggleTarget(button));
 });
-document.querySelectorAll('.library-form').forEach(async form => {
-  const id=form.dataset.integration; const selected=JSON.parse(form.dataset.selected || '[]'); const box=form.querySelector('.library-list');
-  try { const libs=await fetch(`/api/integrations/${id}/libraries`).then(r=>r.json()); box.innerHTML='';
-    libs.forEach(lib=>{ const label=document.createElement('label'); label.className='check'; label.innerHTML=`<input type="checkbox" name="library_ids" value="${lib.id}" ${selected.includes(String(lib.id)) ? 'checked' : ''}> ${lib.name} <span>${lib.type}</span>`; box.appendChild(label); });
-  } catch(e){ box.textContent='Could not load libraries'; }
-});
+
+async function loadLibraries(form) {
+  if (!form) return;
+  const box = form.querySelector('.library-list');
+  if (!box || box.dataset.loaded === 'true') return;
+  box.textContent = 'Loading libraries…';
+  try {
+    const selected = JSON.parse(form.dataset.selected || '[]').map(String);
+    const response = await fetch(`/api/integrations/${form.dataset.integration}/libraries`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const libs = await response.json();
+    box.innerHTML = '';
+    libs.forEach(lib => {
+      const label = document.createElement('label');
+      label.className = 'check';
+      const checked = selected.includes(String(lib.id)) ? 'checked' : '';
+      label.innerHTML = `<input type="checkbox" name="library_ids" value="${lib.id}" ${checked}> <span class="check-name">${lib.name}</span> <span class="check-type">${lib.type}</span>`;
+      box.appendChild(label);
+    });
+    box.dataset.loaded = 'true';
+  } catch (e) {
+    box.textContent = 'Could not load libraries';
+  }
+}
 </script>
 {% endblock %}

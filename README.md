@@ -128,3 +128,10 @@ uvicorn app.main:app --reload --port 8080
 - Added in-place billing tier editing.
 - Added guarded delete controls for billing tiers and packages.
 - Packages or tiers referenced by subscriptions cannot be deleted.
+
+## v0.1.4
+- Reworked package management UI into a compact overview-first layout.
+- Package details are hidden behind an explicit editor instead of being permanently expanded.
+- Billing tiers now render as compact summary rows with per-tier edit controls.
+- Plex entitlements render as library chips until the library editor is opened.
+- Package deletion moved into the package editor/danger area.
