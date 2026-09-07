@@ -169,6 +169,7 @@ class NotificationEndpoint(Base):
     target: Mapped[str | None] = mapped_column(String(255), nullable=True)
     events: Mapped[str] = mapped_column(Text, default="")
     min_severity: Mapped[str] = mapped_column(String(16), default="info")
+    due_reminder_days: Mapped[str] = mapped_column(String(120), default="3")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

@@ -1,15 +1,48 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 
 import httpx
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from ..models import NotificationDelivery, NotificationEndpoint
+from ..models import BillingTier, NotificationDelivery, NotificationEndpoint, Subscription
 
 
 SEVERITY_RANK = {"info": 10, "warning": 20, "critical": 30}
+
+
+
+def parse_due_reminder_days(raw: str | None, fallback: int = 3) -> list[int]:
+    """Parse a comma-separated due reminder schedule into unique day offsets.
+
+    Values are whole calendar days before the paid-through date. ``0`` means
+    the due date itself. Keeping this parser central means UI validation and
+    the billing worker interpret schedules identically.
+    """
+    value = (raw or "").strip()
+    if not value:
+        value = str(max(0, int(fallback)))
+    days: set[int] = set()
+    for part in value.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            day = int(token)
+        except ValueError as exc:
+            raise ValueError("Due reminders must be comma-separated whole numbers, e.g. 7,3,1") from exc
+        if day < 0 or day > 365:
+            raise ValueError("Due reminder days must be between 0 and 365")
+        days.add(day)
+    if not days:
+        raise ValueError("Enter at least one due reminder day")
+    return sorted(days, reverse=True)
+
+
+def format_due_reminder_days(raw: str | None, fallback: int = 3) -> str:
+    return ",".join(str(day) for day in parse_due_reminder_days(raw, fallback))
+
 
 EVENT_DEFINITIONS = {
     "payment.received": {"label": "Payment received", "severity": "info"},
@@ -136,6 +169,7 @@ def notify_event(
     target_id: str | None = None,
     event_key: str | None = None,
     data: dict | None = None,
+    only_endpoint_id: int | None = None,
 ) -> list[NotificationDelivery]:
     """Dispatch one Share Manager event to every matching notification endpoint.
 
@@ -143,7 +177,10 @@ def notify_event(
     ``event_key`` enables per-endpoint deduplication for recurring checks such as due-soon.
     """
     severity = severity or EVENT_DEFINITIONS.get(event, {}).get("severity", "info")
-    endpoints = db.query(NotificationEndpoint).filter(NotificationEndpoint.enabled.is_(True)).all()
+    endpoint_query = db.query(NotificationEndpoint).filter(NotificationEndpoint.enabled.is_(True))
+    if only_endpoint_id is not None:
+        endpoint_query = endpoint_query.filter(NotificationEndpoint.id == only_endpoint_id)
+    endpoints = endpoint_query.all()
     deliveries: list[NotificationDelivery] = []
     for endpoint in endpoints:
         selected = _selected_events(endpoint)
@@ -171,3 +208,56 @@ def notify_event(
             event_key=event_key,
         ))
     return deliveries
+
+
+def notify_due_reminders(db: Session, *, now: datetime, fallback_days: int = 3) -> int:
+    """Send endpoint-specific staged subscription renewal reminders."""
+    sent = 0
+    endpoints = db.query(NotificationEndpoint).filter(NotificationEndpoint.enabled.is_(True)).all()
+    for endpoint in endpoints:
+        selected = _selected_events(endpoint)
+        if "subscription.due_soon" not in selected and "*" not in selected:
+            continue
+        try:
+            reminder_days = parse_due_reminder_days(endpoint.due_reminder_days, fallback=fallback_days)
+        except ValueError:
+            continue
+        max_days = max(reminder_days)
+        cutoff = now + timedelta(days=max_days + 1)
+        due = db.query(Subscription).options(
+            joinedload(Subscription.customer),
+            joinedload(Subscription.billing_tier).joinedload(BillingTier.package),
+        ).filter(
+            Subscription.status == "active",
+            Subscription.current_period_end.is_not(None),
+            Subscription.current_period_end >= now,
+            Subscription.current_period_end < cutoff,
+        ).all()
+        for sub in due:
+            customer = sub.customer
+            if customer.exempt:
+                continue
+            days_left = (sub.current_period_end.date() - now.date()).days
+            if days_left not in reminder_days:
+                continue
+            when = "today" if days_left == 0 else f"in {days_left} day{'s' if days_left != 1 else ''}"
+            deliveries = notify_event(
+                db,
+                event="subscription.due_soon",
+                title="Subscription due soon",
+                message=(
+                    f"{customer.name} is due {when} on {sub.current_period_end:%Y-%m-%d} "
+                    f"({sub.billing_tier.package.name} / {sub.billing_tier.name})."
+                ),
+                target_type="subscription",
+                target_id=str(sub.id),
+                event_key=f"due:{endpoint.id}:{sub.id}:{sub.current_period_end:%Y-%m-%d}:{days_left}",
+                data={
+                    "customer": customer.name,
+                    "due_date": sub.current_period_end.strftime("%Y-%m-%d"),
+                    "days_remaining": days_left,
+                },
+                only_endpoint_id=endpoint.id,
+            )
+            sent += sum(1 for delivery in deliveries if delivery.success)
+    return sent

@@ -53,6 +53,7 @@
         <label>Notification action <span class="muted">(optional)</span><input name="target" placeholder="mobile_app_pixel_9"></label>
         <p class="muted notification-help">Uses the same pipeline as Uptime Kuma: <code>/api/services/notify/&lt;action&gt;</code>. Enter the action without <code>notify.</code>. Leave blank to use Home Assistant's default <code>notify</code> action.</p>
         <label>Minimum severity<select name="min_severity"><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></label>
+        <label>Due reminder days <span class="muted">(before renewal)</span><input name="due_reminder_days" value="{{ notification_default_due_days }}" placeholder="7,3,1,0"><small class="muted">Comma-separated calendar days. 0 = due date.</small></label>
         <fieldset><legend>Events</legend>{{ event_choices('ha') }}</fieldset>
         <button>Add Home Assistant</button>
       </form>
@@ -65,6 +66,7 @@
         <label>Friendly name<input name="name" placeholder="Admin Discord" required></label>
         <label>Webhook URL<input name="url" type="password" placeholder="https://discord.com/api/webhooks/..." required></label>
         <label>Minimum severity<select name="min_severity"><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></label>
+        <label>Due reminder days <span class="muted">(before renewal)</span><input name="due_reminder_days" value="{{ notification_default_due_days }}" placeholder="7,3,1,0"><small class="muted">Comma-separated calendar days. 0 = due date.</small></label>
         <fieldset><legend>Events</legend>{{ event_choices('discord') }}</fieldset>
         <button>Add Discord</button>
       </form>
@@ -77,6 +79,7 @@
         <label>Friendly name<input name="name" placeholder="Automation endpoint" required></label>
         <label>Webhook URL<input name="url" placeholder="https://example.com/hooks/share-manager" required></label>
         <label>Minimum severity<select name="min_severity"><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></label>
+        <label>Due reminder days <span class="muted">(before renewal)</span><input name="due_reminder_days" value="{{ notification_default_due_days }}" placeholder="7,3,1,0"><small class="muted">Comma-separated calendar days. 0 = due date.</small></label>
         <fieldset><legend>Events</legend>{{ event_choices('webhook') }}</fieldset>
         <button>Add webhook</button>
       </form>
@@ -91,6 +94,7 @@
         <p class="muted notification-url">{{ endpoint.ui_url }}</p>
         {% if endpoint.kind == 'home_assistant' %}<p class="muted">Action: notify.{{ endpoint.target or 'notify' }}</p>{% endif %}
         <p><strong>{{ selected|length }}</strong> event(s) · minimum {{ endpoint.min_severity }}</p>
+        {% if 'subscription.due_soon' in selected or '*' in selected %}<p class="muted">Due reminders: {{ endpoint.due_reminder_days or '3' }} day(s) before renewal</p>{% endif %}
         <div class="row notification-actions">
           <form method="post" action="/notifications/{{ endpoint.id }}/test"><button>Send test</button></form>
           <form method="post" action="/notifications/{{ endpoint.id }}/toggle"><button class="secondary">{{ 'Disable' if endpoint.enabled else 'Enable' }}</button></form>
@@ -105,6 +109,7 @@
               <label>Notification action<input name="target" value="{{ endpoint.target or '' }}" placeholder="mobile_app_pixel_9"></label>
             {% endif %}
             <label>Minimum severity<select name="min_severity"><option value="info" {% if endpoint.min_severity=='info' %}selected{% endif %}>Info</option><option value="warning" {% if endpoint.min_severity=='warning' %}selected{% endif %}>Warning</option><option value="critical" {% if endpoint.min_severity=='critical' %}selected{% endif %}>Critical</option></select></label>
+            <label>Due reminder days <span class="muted">(before renewal)</span><input name="due_reminder_days" value="{{ endpoint.due_reminder_days or '3' }}" placeholder="7,3,1,0"><small class="muted">Only used when Subscription due soon is enabled. 0 = due date.</small></label>
             <fieldset><legend>Events</legend>{{ event_choices('edit' ~ endpoint.id, selected) }}</fieldset>
             <button>Save changes</button>
           </form>

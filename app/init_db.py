@@ -1,5 +1,6 @@
 from sqlalchemy import inspect, text
 from .db import Base, engine
+from .config import settings
 from . import models  # noqa: F401
 
 
@@ -28,6 +29,15 @@ add_column_if_missing("payments", "billing_periods", "INTEGER NULL")
 add_column_if_missing("payments", "created_at", "TIMESTAMP NULL")
 add_column_if_missing("payments", "voided_at", "TIMESTAMP NULL")
 add_column_if_missing("payments", "voided_by", "VARCHAR(120) NULL")
+_notification_columns = {c["name"] for c in inspect(engine).get_columns("notification_endpoints")}
+_notification_due_days_was_missing = "due_reminder_days" not in _notification_columns
+add_column_if_missing("notification_endpoints", "due_reminder_days", "VARCHAR(120) NOT NULL DEFAULT '3'")
+if _notification_due_days_was_missing:
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE notification_endpoints SET due_reminder_days = :days"),
+            {"days": str(max(0, int(settings.notification_due_soon_days)))},
+        )
 
 # Backfill created_at for old payment rows after adding the nullable column.
 with engine.begin() as conn:

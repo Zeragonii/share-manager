@@ -98,7 +98,7 @@ pg_restore --clean --if-exists --no-owner -d sharemanager share-manager-YYYYMMDD
 Stop the application container while restoring. The database backup contains Share Manager data, not your Portainer stack/environment variables, so keep a copy of those separately.
 
 
-## v0.3.0 notifications
+## v0.3.x notifications
 
 Share Manager can route operational events to **Home Assistant**, **Discord**, or a **generic JSON webhook**. Notification integrations are configured under **Integrations → Notifications** and support per-endpoint event selection, a minimum severity filter, enable/disable controls, editing, deletion, and a **Send test** action. The page also shows the most recent delivery results.
 
@@ -113,7 +113,7 @@ Supported events in v0.3.0 are:
 - `plex.reconcile_failed` (critical)
 - `backup.created` (info)
 
-`NOTIFICATION_DUE_SOON_DAYS` defaults to `3`. Set it to `0` to disable due-soon event generation. Due-soon notifications are de-duplicated per endpoint and paid-through date, so the 15-minute billing worker does not repeatedly notify for the same renewal.
+`NOTIFICATION_DUE_SOON_DAYS` is now the default reminder offset used when creating/migrating notification destinations. In v0.3.1 each destination has its own **Due reminder days** schedule, for example `7,3,1,0` (seven, three and one day before renewal plus the due date). Reminder deliveries are de-duplicated per destination, subscription, expiry date and threshold, so the billing worker does not repeat the same reminder.
 
 ### Home Assistant
 
@@ -128,3 +128,17 @@ The optional **Notification action** is the service name without the `notify.` p
 ### Generic webhook payload
 
 Generic endpoints receive JSON containing `event`, `severity`, `title`, `message`, `data`, and `sent_at`. Discord endpoints use the standard Discord webhook endpoint. Webhook URLs and HA tokens should be treated as secrets; Share Manager masks webhook URLs in the UI and does not persist secret-bearing exception URLs in delivery errors.
+
+
+## v0.3.1 staged notification rules
+
+Each notification destination can independently configure renewal reminder offsets. Example:
+
+```text
+Home Assistant: 3,1,0
+Discord:        7,3,1,0
+```
+
+`0` means the paid-through date itself. Grace and suspension alerts remain state-transition events: if those events are enabled for a destination, Share Manager sends them when the customer actually enters grace or becomes suspended. This provides a staged sequence such as 3-day warning → grace alert → suspension alert without repeated notifications every billing cycle.
+
+The legacy `NOTIFICATION_DUE_SOON_DAYS` environment setting is retained as the default for new notification destinations and is copied into existing destinations during the v0.3.0 → v0.3.1 schema upgrade.

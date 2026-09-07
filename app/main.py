@@ -39,7 +39,7 @@ from .security import logged_in, make_session, valid_credentials
 from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
 from .services.reconcile import reconcile_customer
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
-from .services.notifications import EVENT_DEFINITIONS, notify_event, send_test
+from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
 from .version import APP_VERSION
 
 
@@ -64,33 +64,7 @@ def _notify_reconcile_failure(db: Session, customer: Customer, exc: Exception) -
 
 
 def _notify_due_soon(db: Session, now: datetime) -> None:
-    days = max(0, int(settings.notification_due_soon_days))
-    if days <= 0:
-        return
-    cutoff = now + timedelta(days=days)
-    due = db.query(Subscription).options(
-        joinedload(Subscription.customer),
-        joinedload(Subscription.billing_tier).joinedload(BillingTier.package),
-    ).filter(
-        Subscription.status == "active",
-        Subscription.current_period_end.is_not(None),
-        Subscription.current_period_end > now,
-        Subscription.current_period_end <= cutoff,
-    ).all()
-    for sub in due:
-        customer = sub.customer
-        if customer.exempt:
-            continue
-        notify_event(
-            db,
-            event="subscription.due_soon",
-            title="Subscription due soon",
-            message=f"{customer.name} is paid through {sub.current_period_end:%Y-%m-%d} ({sub.billing_tier.package.name} / {sub.billing_tier.name}).",
-            target_type="subscription",
-            target_id=str(sub.id),
-            event_key=f"due:{sub.id}:{sub.current_period_end:%Y-%m-%d}",
-            data={"customer": customer.name, "due_date": sub.current_period_end.strftime("%Y-%m-%d")},
-        )
+    notify_due_reminders(db, now=now, fallback_days=settings.notification_due_soon_days)
 
 
 def run_billing_cycle() -> int:
@@ -671,6 +645,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         notification_endpoints=notification_endpoints,
         notification_deliveries=notification_deliveries,
         notification_events=EVENT_DEFINITIONS,
+        notification_default_due_days=max(0, int(settings.notification_due_soon_days)),
         error=error,
         notice=notice,
     )
@@ -723,6 +698,7 @@ def add_notification_endpoint(
     target: str = Form(""),
     events: list[str] = Form(default=[]),
     min_severity: str = Form("info"),
+    due_reminder_days: str = Form("3"),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -732,6 +708,10 @@ def add_notification_endpoint(
         return RedirectResponse("/integrations?error=Unsupported+notification+type", status_code=303)
     if min_severity not in {"info", "warning", "critical"}:
         return RedirectResponse("/integrations?error=Invalid+notification+severity", status_code=303)
+    try:
+        clean_due_days = format_due_reminder_days(due_reminder_days, settings.notification_due_soon_days)
+    except ValueError as exc:
+        return RedirectResponse(f"/integrations?error={quote_plus(str(exc))}", status_code=303)
     clean_name = name.strip()
     clean_url = url.strip().rstrip("/")
     if not clean_name or not clean_url:
@@ -743,7 +723,8 @@ def add_notification_endpoint(
     selected = [event for event in events if event in EVENT_DEFINITIONS]
     endpoint = NotificationEndpoint(
         kind=kind, name=clean_name, url=clean_url, secret=secret.strip() or None,
-        target=target.strip() or None, events=",".join(selected), min_severity=min_severity, enabled=True,
+        target=target.strip() or None, events=",".join(selected), min_severity=min_severity,
+        due_reminder_days=clean_due_days, enabled=True,
     )
     db.add(endpoint)
     db.flush()
@@ -762,6 +743,7 @@ def edit_notification_endpoint(
     target: str = Form(""),
     events: list[str] = Form(default=[]),
     min_severity: str = Form("info"),
+    due_reminder_days: str = Form("3"),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -772,6 +754,10 @@ def edit_notification_endpoint(
         return RedirectResponse("/integrations?error=Notification+integration+not+found", status_code=303)
     if min_severity not in {"info", "warning", "critical"}:
         return RedirectResponse("/integrations?error=Invalid+notification+severity", status_code=303)
+    try:
+        clean_due_days = format_due_reminder_days(due_reminder_days, settings.notification_due_soon_days)
+    except ValueError as exc:
+        return RedirectResponse(f"/integrations?error={quote_plus(str(exc))}", status_code=303)
     clean_name = name.strip()
     clean_url = url.strip().rstrip("/")
     if not clean_name or not clean_url:
@@ -787,6 +773,7 @@ def edit_notification_endpoint(
     endpoint.target = target.strip() or None
     endpoint.events = ",".join(selected)
     endpoint.min_severity = min_severity
+    endpoint.due_reminder_days = clean_due_days
     db.add(AuditLog(actor=settings.admin_username, action="notification.update", target_type="notification_endpoint", target_id=str(endpoint.id), detail=endpoint.name))
     db.commit()
     return RedirectResponse("/integrations?notice=Notification+integration+updated", status_code=303)

@@ -70,3 +70,8 @@ Customer status filtering and text search are intentionally client-side because 
 `NotificationDelivery` is an append-only delivery audit containing event, severity, title/message, success state, response code and a sanitized diagnostic. An optional `event_key` provides per-endpoint de-duplication for recurring conditions such as `subscription.due_soon`. Notification delivery failures are recorded but never allowed to roll back billing, payment, backup, or Plex state transitions.
 
 Home Assistant uses its authenticated REST service-call pipeline (`/api/services/notify/<service>`) with a Bearer long-lived access token, matching the Uptime Kuma integration pattern.
+
+
+## v0.3.1 notification timing
+
+`NotificationEndpoint.due_reminder_days` stores a normalized comma-separated set of calendar-day offsets. Renewal reminder generation is endpoint-specific; each successful threshold delivery receives an event key containing endpoint, subscription, expiry date and day offset, making scheduled checks idempotent. Grace and suspension notifications continue to be emitted by billing-state transitions rather than reminder polling.
