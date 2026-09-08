@@ -5,5 +5,16 @@
 {% for label,value in [('Customers',stats.customers),('Active',stats.active),('In grace',stats.grace),('Suspended',stats.suspended),('Due in 7 days',stats.due_soon)] %}<div class="stat"><strong>{{ value }}</strong><span>{{ label }}</span></div>{% endfor %}
 <div class="stat"><strong>£{{ '%.2f'|format(stats.revenue) }}</strong><span>Revenue this month</span></div>
 </div>
+<section class="revenue-forecast">
+  <div class="row between forecast-heading"><div><h2>Expected revenue</h2><p class="muted">Projected from the current Active/Grace package distribution. Exempt and suspended customers are excluded.</p></div></div>
+  <div class="forecast-totals">
+    <div class="forecast-stat"><span>Monthly revenue</span><strong>£{{ '%.2f'|format(revenue_forecast.monthly) }}</strong><small>per month from monthly-billed tiers</small></div>
+    <div class="forecast-stat"><span>Yearly revenue</span><strong>£{{ '%.2f'|format(revenue_forecast.yearly) }}</strong><small>per year from yearly-billed tiers</small></div>
+    <div class="forecast-stat"><span>Annualised total</span><strong>£{{ '%.2f'|format(revenue_forecast.annualised) }}</strong><small>monthly tiers × 12 + yearly tiers</small></div>
+  </div>
+  <div class="table-wrap"><table class="forecast-table"><thead><tr><th>Package</th><th>Live customers</th><th>Monthly</th><th>Yearly</th></tr></thead><tbody>
+    {% for row in revenue_forecast.packages %}<tr><td><strong>{{ row.name }}</strong></td><td>{{ row.customers }}</td><td>£{{ '%.2f'|format(row.monthly) }} <span class="muted">/mo · {{ row.monthly_customers }} customer{{ '' if row.monthly_customers == 1 else 's' }}</span></td><td>£{{ '%.2f'|format(row.yearly) }} <span class="muted">/yr · {{ row.yearly_customers }} customer{{ '' if row.yearly_customers == 1 else 's' }}</span></td></tr>{% else %}<tr><td colspan="4" class="muted">No revenue-bearing subscriptions yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
 <section><h2>Recent activity</h2><div class="table-wrap"><table><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>{% for a in recent %}<tr><td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td><code>{{ a.action }}</code></td><td>{{ a.detail or '' }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No activity yet.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}

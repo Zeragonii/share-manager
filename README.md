@@ -159,3 +159,7 @@ If the Plex invitation fails, the customer and subscription are retained and the
 ## v0.3.4
 - Refined the mobile navigation into a dedicated top bar so the menu control no longer overlaps drawer branding.
 - Added mobile-only compact customer summaries showing name, package/tier and status; tapping a summary expands the existing full customer controls. Desktop customer tiles are unchanged.
+
+
+## v0.3.5
+- Added a forward-looking Dashboard revenue forecast based on the current Active/Grace subscription distribution. It shows monthly-tier revenue, yearly-tier revenue, annualised total, and per-package breakdowns while excluding exempt/suspended/cancelled customers.

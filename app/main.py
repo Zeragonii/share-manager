@@ -172,6 +172,57 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         Subscription.current_period_end <= now + timedelta(days=7),
     ).count()
     revenue = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(Payment.paid_at >= month_start, Payment.voided_at.is_(None)).scalar()
+
+    # Forward-looking revenue forecast based purely on the current live
+    # subscription distribution. Grace customers are still considered live;
+    # exempt, suspended and cancelled customers are intentionally excluded.
+    forecast_rows = (
+        db.query(Subscription)
+        .join(Subscription.customer)
+        .options(joinedload(Subscription.billing_tier).joinedload(BillingTier.package))
+        .filter(
+            Subscription.status.in_(["active", "grace"]),
+            Customer.exempt == False,  # noqa: E712
+        )
+        .all()
+    )
+    forecast_by_package: dict[int, dict] = {}
+    forecast_monthly = Decimal("0.00")
+    forecast_yearly = Decimal("0.00")
+    for sub in forecast_rows:
+        tier = sub.billing_tier
+        package = tier.package
+        package_row = forecast_by_package.setdefault(package.id, {
+            "name": package.name,
+            "customers": 0,
+            "monthly_customers": 0,
+            "yearly_customers": 0,
+            "monthly": Decimal("0.00"),
+            "yearly": Decimal("0.00"),
+        })
+        package_row["customers"] += 1
+        price = Decimal(tier.price or 0)
+        count = max(int(tier.interval_count or 1), 1)
+        if tier.interval_unit == "month":
+            # Normalise multi-month tiers to an average monthly figure.
+            amount = price / Decimal(count)
+            forecast_monthly += amount
+            package_row["monthly"] += amount
+            package_row["monthly_customers"] += 1
+        elif tier.interval_unit == "year":
+            # Likewise, a two-year tier contributes half its price per year.
+            amount = price / Decimal(count)
+            forecast_yearly += amount
+            package_row["yearly"] += amount
+            package_row["yearly_customers"] += 1
+
+    revenue_forecast = {
+        "monthly": forecast_monthly,
+        "yearly": forecast_yearly,
+        "annualised": (forecast_monthly * Decimal("12")) + forecast_yearly,
+        "packages": sorted(forecast_by_package.values(), key=lambda row: row["name"].lower()),
+    }
+
     stats = {
         "customers": db.query(Customer).count(),
         "active": db.query(Customer).filter(Customer.status == "active").count(),
@@ -181,7 +232,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "revenue": Decimal(revenue or 0),
     }
     recent = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(12).all()
-    return render(request, "dashboard.html", stats=stats, recent=recent)
+    return render(request, "dashboard.html", stats=stats, recent=recent, revenue_forecast=revenue_forecast)
 
 
 @app.post("/billing/run")
