@@ -246,3 +246,7 @@ The database backup does **not** contain Portainer environment variables, passwo
 Open **Integrations → Tautulli** and enter the URL Share Manager can reach (for example `http://tautulli:8181` on a shared Docker network, or the Tautulli host/LAN URL) plus the Tautulli API key. Save, use **Test connection**, then **Sync now** for the initial customer match. No additional Docker environment variables are required.
 
 Matching prefers the stored Plex numeric user ID and falls back to Plex username/email. Historical analytics are cached in PostgreSQL; the UI never waits for Tautulli during normal page loads. Live activity is fetched through Share Manager's `/api/tautulli/live` endpoint and is server-cached so multiple open browsers share one lightweight Tautulli `get_activity` sample per refresh interval.
+
+
+## v0.5.1
+- Moved the customer-card Tautulli usage/live activity summary out of the upper identity/billing content and into the package/control area so it stays visually anchored directly above the package selector. No Tautulli sync or heartbeat logic changed.

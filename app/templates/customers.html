@@ -99,16 +99,16 @@
   <div class="credit-summary muted">Latest complimentary credit: +{{ credits[0].billing_periods }} period{{ '' if credits[0].billing_periods == 1 else 's' }} · through {{ credits[0].coverage_end.strftime('%Y-%m-%d') }}{% if credits[0].reason %} · {{ credits[0].reason }}{% endif %}</div>
   {% endif %}
   {% else %}<div class="subtle">No subscription history yet — assign a package/tier before granting complimentary access.</div>{% endif %}
-  {% if ta %}
-  <div class="tautulli-customer-summary" data-live-customer="{{ c.id }}">
-    <span class="tautulli-live-label" hidden><span class="live-dot"></span><strong>Watching now</strong><span class="tautulli-live-title"></span></span>
-    <span class="tautulli-cached-label"><strong>Last streamed {{ relative_time(ta.last_streamed_at) }}</strong><span>30d {{ format_duration(ta.watch_time_30d) }} · {{ ta.plays_30d }} plays · lifetime {{ format_duration(ta.watch_time_lifetime) }}</span></span>
-  </div>
-  {% endif %}
   {% if c.exempt %}<div class="exempt-note">Automation is disabled for this customer. Billing records can still be maintained, but automatic status/Plex changes will leave them alone.</div>{% endif %}
   </div>
 
   <div class="customer-card-controls">
+  {% if ta %}
+  <div class="tautulli-customer-summary tautulli-package-summary" data-live-customer="{{ c.id }}">
+    <span class="tautulli-live-label" hidden><span class="live-dot"></span><strong>Watching now</strong><span class="tautulli-live-title"></span></span>
+    <span class="tautulli-cached-label"><strong>Last streamed {{ relative_time(ta.last_streamed_at) }}</strong><span>30d {{ format_duration(ta.watch_time_30d) }} · {{ ta.plays_30d }} plays · lifetime {{ format_duration(ta.watch_time_lifetime) }}</span></span>
+  </div>
+  {% endif %}
   <form method="post" action="/customers/{{ c.id }}/subscribe" class="subscription-assign">
     <select name="billing_tier_id">{% for t in tiers %}<option value="{{ t.id }}" {% if sub and sub.billing_tier_id == t.id %}selected{% endif %}>{{ t.package.name }} — {{ t.name }} (£{{ '%.2f'|format(t.price) }})</option>{% endfor %}</select>
     <label class="assign-date">Start date<input type="date" name="start_date" title="Subscription start date; defaults to today if blank"></label>

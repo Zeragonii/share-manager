@@ -139,3 +139,7 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 
 ## v0.5.0 Tautulli integration
 Tautulli is an observational integration, not an entitlement authority. Historical usage is cached in `tautulli_activity` by a background sync. Live sessions use Tautulli `get_activity` through a short in-process cache exposed by `/api/tautulli/live`; browser heartbeats query Share Manager rather than Tautulli directly. User matching prefers stored Plex numeric user ID, then Plex username/email identity matching. Inactivity can notify administrators but never changes customer subscription status or Plex access.
+
+
+## v0.5.1
+- Moved the customer-card Tautulli usage/live activity summary out of the upper identity/billing content and into the package/control area so it stays visually anchored directly above the package selector. No Tautulli sync or heartbeat logic changed.
