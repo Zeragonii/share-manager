@@ -83,3 +83,8 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 
 ## v0.3.3
 - Added a mobile-friendly responsive UI with an off-canvas navigation drawer, improved phone/tablet spacing, touch-friendly stacked controls, and horizontal-scroll wrappers for wide tables without disrupting the desktop layout.
+
+
+## v0.3.4
+- Refined the mobile navigation into a dedicated top bar so the menu control no longer overlaps drawer branding.
+- Added mobile-only compact customer summaries showing name, package/tier and status; tapping a summary expands the existing full customer controls. Desktop customer tiles are unchanged.

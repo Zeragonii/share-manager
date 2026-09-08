@@ -134,3 +134,41 @@ a.button-link, .button-link{white-space:nowrap}
   .customer-modal{width:calc(100vw - 12px);max-height:calc(100vh - 12px)}
   .timeline-row{grid-template-columns:1fr}
 }
+
+
+/* v0.3.4: polished mobile top bar and compact expandable customer cards. */
+.mobile-topbar,.customer-mobile-summary{display:none}
+.mobile-brand{font-size:18px;font-weight:800;white-space:nowrap}
+.mobile-brand span{font-size:10px;background:var(--accent);color:#111;padding:3px 6px;border-radius:20px;vertical-align:middle}
+
+@media(max-width:900px){
+  .mobile-topbar{display:flex;position:fixed;top:0;left:0;right:0;height:58px;z-index:50;align-items:center;gap:12px;padding:8px 12px;background:#0f141c;border-bottom:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.22)}
+  .mobile-nav-toggle{display:inline-flex;position:static;z-index:auto;flex:0 0 42px;width:42px;height:42px;border-radius:10px;box-shadow:none;background:#202b3a}
+  .mobile-nav-toggle span{width:19px;height:2px;margin:2.5px auto}
+  .mobile-nav-overlay{z-index:70}
+  aside{z-index:80}
+  main{padding-top:74px}
+
+  .customer-card{padding:0;overflow:hidden;display:block;min-height:0}
+  .customer-mobile-summary{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:14px 14px;background:transparent;color:#e8ecf3;text-align:left;border:0;border-radius:0;font-weight:400}
+  .customer-mobile-summary:hover,.customer-mobile-summary:focus-visible{background:#151d29;outline:none}
+  .customer-mobile-identity{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .customer-mobile-identity strong{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .customer-mobile-identity .muted{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .customer-mobile-state{display:flex;align-items:center;gap:9px;flex:0 0 auto}
+  .customer-mobile-chevron{font-size:20px;color:var(--muted);line-height:1;transition:transform .16s ease;transform-origin:center}
+  .customer-card.mobile-expanded .customer-mobile-chevron{transform:rotate(180deg)}
+  .customer-card-details{display:none;padding:0 14px 14px;border-top:1px solid var(--line)}
+  .customer-card.mobile-expanded .customer-card-details{display:block}
+  .customer-card-details .customer-card-main{padding-top:14px}
+  .customer-card-details .customer-card-main>.row.between:first-child{display:none}
+  .customer-card-details .customer-card-controls{padding-top:10px}
+}
+
+@media(max-width:520px){
+  .mobile-topbar{height:56px;padding:7px 10px}
+  .mobile-nav-toggle{width:40px;height:40px;flex-basis:40px}
+  .mobile-brand{font-size:17px}
+  main{padding-top:70px}
+  .customer-mobile-summary{padding:13px 12px}
+}

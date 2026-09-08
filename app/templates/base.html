@@ -6,9 +6,12 @@
   <link rel="stylesheet" href="/static/app.css?v={{ app_version }}">
 </head>
 <body>
-<button type="button" class="mobile-nav-toggle ghost" aria-label="Open navigation" aria-controls="site-sidebar" aria-expanded="false">
-  <span></span><span></span><span></span>
-</button>
+<div class="mobile-topbar">
+  <button type="button" class="mobile-nav-toggle ghost" aria-label="Open navigation" aria-controls="site-sidebar" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="mobile-brand">Share Manager <span>{{ app_version }}</span></div>
+</div>
 <div class="mobile-nav-overlay" hidden></div>
 <div class="layout">
   <aside id="site-sidebar" aria-label="Sidebar navigation">

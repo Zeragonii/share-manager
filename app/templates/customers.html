@@ -47,6 +47,17 @@
 {% for c in customers %}
 {% set sub = c.ui_subscription %}
 <article class="card customer-card" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}">
+  <button type="button" class="customer-mobile-summary" aria-expanded="false">
+    <span class="customer-mobile-identity">
+      <strong>{{ c.name }}</strong>
+      <span class="muted">{% if sub %}{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}{% else %}No package assigned{% endif %}</span>
+    </span>
+    <span class="customer-mobile-state">
+      <span class="badge {{ 'exempt' if c.exempt else c.status }}">{{ 'exempt' if c.exempt else c.status }}</span>
+      <span class="customer-mobile-chevron" aria-hidden="true">⌄</span>
+    </span>
+  </button>
+  <div class="customer-card-details">
   <div class="customer-card-main">
   <div class="row between"><div><h3>{{ c.name }}</h3><div class="muted">{{ c.plex_username or 'No Plex account linked' }}</div></div><span class="badge {{ 'exempt' if c.exempt else c.status }}">{{ 'exempt' if c.exempt else c.status }}</span></div>
   {% if sub %}
@@ -76,6 +87,7 @@
   </form>
 
   <div class="row customer-actions"><a class="button-link secondary small-action" href="/customers/{{ c.id }}/history">History</a><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option value="active" {% if not c.exempt and c.status == 'active' %}selected{% endif %}>active</option><option value="grace" {% if not c.exempt and c.status == 'grace' %}selected{% endif %}>grace</option><option value="suspended" {% if not c.exempt and c.status == 'suspended' %}selected{% endif %}>suspended</option><option value="cancelled" {% if not c.exempt and c.status == 'cancelled' %}selected{% endif %}>cancelled</option><option value="exempt" {% if c.exempt %}selected{% endif %}>exempt</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary" {% if c.exempt %}title="This customer is exempt; reconciliation will skip them."{% endif %}>Reconcile Plex</button></form></div>
+  </div>
   </div>
 </article>
 
@@ -141,6 +153,15 @@
   search.addEventListener('input', applyFilters);
   applyFilters();
 })();
+
+
+document.querySelectorAll('.customer-mobile-summary').forEach(button => {
+  button.addEventListener('click', () => {
+    const card = button.closest('.customer-card');
+    const expanded = card.classList.toggle('mobile-expanded');
+    button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  });
+});
 
 document.querySelectorAll('dialog.customer-modal').forEach(dialog => {
   dialog.addEventListener('click', event => {
