@@ -224,3 +224,7 @@ The database backup does **not** contain Portainer environment variables, passwo
 - Existing `BACKUP_SCHEDULE_HOUR`, `BACKUP_CHECK_INTERVAL_MINUTES`, and retention environment variables are retained only as first-run defaults for compatibility.
 - `BACKUP_HOST_PATH` remains a deployment/Compose setting because Docker must mount the host/NAS path before the application starts.
 - Scheduler settings are re-read at runtime; changing the policy does not require an app restart (the check interval itself updates after the current sleep finishes).
+
+
+## v0.4.2
+- Polished the Disaster Recovery automation UI by grouping schedule and retention settings into aligned rows with consistent control heights and helper text, while keeping the existing backup behaviour unchanged.
