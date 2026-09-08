@@ -110,3 +110,7 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 
 ## v0.3.9
 - Added a client-side Package filter to the Customers page. Package filtering composes with status, text search and sorting, and the package list is generated from currently displayed customer assignments.
+
+
+## v0.3.10
+- Added an Edit customer modal beside Reconcile Plex. Friendly name, contact email, Plex username/email and notes can be updated without changing customer IDs, subscription history, payment history or package assignments. Changing Plex identity clears the cached numeric Plex user ID so future reconciliation safely resolves the new account.

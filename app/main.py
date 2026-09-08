@@ -377,6 +377,69 @@ def create_customer(request: Request, name: str = Form(...), email: str = Form("
     return RedirectResponse("/customers", status_code=303)
 
 
+@app.post("/customers/{customer_id}/edit")
+def edit_customer(
+    request: Request,
+    customer_id: int,
+    name: str = Form(...),
+    email: str = Form(""),
+    plex_username: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        return RedirectResponse("/customers?error=Customer+not+found", status_code=303)
+
+    clean_name = name.strip()
+    clean_email = email.strip() or None
+    clean_plex = plex_username.strip() or None
+    if not clean_name:
+        return RedirectResponse("/customers?error=Customer+name+is+required", status_code=303)
+
+    if clean_plex:
+        duplicate = db.query(Customer).filter(
+            Customer.id != customer_id,
+            func.lower(Customer.plex_username) == clean_plex.lower(),
+        ).first()
+        if duplicate:
+            return RedirectResponse(
+                f"/customers?error={quote_plus('Another customer already uses that Plex username/email')}",
+                status_code=303,
+            )
+
+    old_name = customer.name
+    old_plex = customer.plex_username
+    customer.name = clean_name
+    customer.email = clean_email
+    customer.plex_username = clean_plex
+    customer.notes = notes.strip() or None
+
+    # The stored numeric Plex ID belongs to the old Plex identity. If the
+    # operator changes that identity, force future reconciliation to resolve
+    # or invite the new account rather than accidentally targeting the old one.
+    plex_changed = (old_plex or "").lower() != (clean_plex or "").lower()
+    if plex_changed:
+        customer.plex_user_id = None
+
+    changes = [f"name {old_name!r} -> {clean_name!r}"] if old_name != clean_name else []
+    if plex_changed:
+        changes.append(f"Plex identity {old_plex or 'none'} -> {clean_plex or 'none'}")
+    db.add(AuditLog(
+        actor=settings.admin_username,
+        action="customer.edit",
+        target_type="customer",
+        target_id=str(customer.id),
+        detail="; ".join(changes) or "Customer metadata updated",
+    ))
+    db.commit()
+    return RedirectResponse("/customers?notice=Customer+updated", status_code=303)
+
+
 @app.post("/customers/{customer_id}/status")
 def customer_status(request: Request, customer_id: int, status: str = Form(...), db: Session = Depends(get_db)):
     gate = auth(request)

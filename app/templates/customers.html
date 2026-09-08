@@ -95,10 +95,22 @@
     <button>{{ 'Change package' if sub else 'Assign' }}</button>
   </form>
 
-  <div class="row customer-actions"><a class="button-link secondary small-action" href="/customers/{{ c.id }}/history">History</a><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option value="active" {% if not c.exempt and c.status == 'active' %}selected{% endif %}>active</option><option value="grace" {% if not c.exempt and c.status == 'grace' %}selected{% endif %}>grace</option><option value="suspended" {% if not c.exempt and c.status == 'suspended' %}selected{% endif %}>suspended</option><option value="cancelled" {% if not c.exempt and c.status == 'cancelled' %}selected{% endif %}>cancelled</option><option value="exempt" {% if c.exempt %}selected{% endif %}>exempt</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary" {% if c.exempt %}title="This customer is exempt; reconciliation will skip them."{% endif %}>Reconcile Plex</button></form></div>
+  <div class="row customer-actions"><a class="button-link secondary small-action" href="/customers/{{ c.id }}/history">History</a><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option value="active" {% if not c.exempt and c.status == 'active' %}selected{% endif %}>active</option><option value="grace" {% if not c.exempt and c.status == 'grace' %}selected{% endif %}>grace</option><option value="suspended" {% if not c.exempt and c.status == 'suspended' %}selected{% endif %}>suspended</option><option value="cancelled" {% if not c.exempt and c.status == 'cancelled' %}selected{% endif %}>cancelled</option><option value="exempt" {% if c.exempt %}selected{% endif %}>exempt</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary" {% if c.exempt %}title="This customer is exempt; reconciliation will skip them."{% endif %}>Reconcile Plex</button></form><button type="button" class="secondary" onclick="document.getElementById('customer-edit-{{ c.id }}').showModal()">Edit customer</button></div>
   </div>
   </div>
 </article>
+
+<dialog id="customer-edit-{{ c.id }}" class="customer-modal">
+  <div class="modal-heading"><div><h3>Edit customer · {{ c.name }}</h3><span class="muted">Update customer metadata without changing their subscription or payment history.</span></div><button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
+  <form method="post" action="/customers/{{ c.id }}/edit" class="modal-form">
+    <label>Name<input name="name" value="{{ c.name }}" required></label>
+    <label>Contact email<input name="email" type="email" value="{{ c.email or '' }}"></label>
+    <label>Plex username or email<input name="plex_username" value="{{ c.plex_username or '' }}"></label>
+    <label>Notes<textarea name="notes" rows="4">{{ c.notes or '' }}</textarea></label>
+    <div class="modal-help muted"><strong>Plex identity:</strong> changing the Plex username/email does not alter billing history, but it does change which Plex account future reconcile/invite operations target. Share Manager will clear the previously cached Plex user ID so the new identity is resolved safely.</div>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Save customer</button></div>
+  </form>
+</dialog>
 
 {% if sub %}
 <dialog id="billing-modal-{{ sub.id }}" class="customer-modal">
