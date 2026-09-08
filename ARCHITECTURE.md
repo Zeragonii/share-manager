@@ -92,3 +92,7 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 
 ## v0.3.5
 - Added a forward-looking Dashboard revenue forecast based on the current Active/Grace subscription distribution. It shows monthly-tier revenue, yearly-tier revenue, annualised total, and per-package breakdowns while excluding exempt/suspended/cancelled customers.
+
+
+## v0.3.6
+- Fixed a desktop Customers-page layout regression so each customer tile again behaves as a top/bottom flex layout, keeping summary content aligned at the top and action controls pinned to the bottom of equal-height cards.
