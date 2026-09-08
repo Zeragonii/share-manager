@@ -55,6 +55,11 @@ EVENT_DEFINITIONS = {
     "backup.created": {"label": "Database backup created", "severity": "info"},
     "backup.failed": {"label": "Database backup failed", "severity": "critical"},
     "backup.restored": {"label": "Database restored", "severity": "warning"},
+    "tautulli.sync_failed": {"label": "Tautulli sync failed", "severity": "critical"},
+    "tautulli.user_unmatched": {"label": "Tautulli user unmatched", "severity": "warning"},
+    "tautulli.customer_inactive": {"label": "Customer inactive 90+ days", "severity": "warning"},
+    "tautulli.never_streamed": {"label": "Customer never streamed", "severity": "warning"},
+    "tautulli.suspended_streaming": {"label": "Suspended customer streaming", "severity": "critical"},
 }
 
 

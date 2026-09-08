@@ -37,6 +37,39 @@
   </div>
 </section>
 
+<section class="tautulli-integration">
+  <div class="row between tautulli-heading">
+    <div><h2>Tautulli</h2><p class="muted">Usage analytics and live Plex activity for managed customers.</p></div>
+    {% if tautulli_settings.integration and tautulli_settings.integration.enabled %}<span class="badge active">connected</span>{% endif %}
+  </div>
+  <form method="post" action="/integrations/tautulli" class="tautulli-settings-form">
+    <label class="toggle-choice"><input type="checkbox" name="enabled" {% if not tautulli_settings.integration or tautulli_settings.integration.enabled %}checked{% endif %}><span><strong>Enable Tautulli integration</strong><small class="muted">Historical usage sync and live activity heartbeat.</small></span></label>
+    <div class="tautulli-settings-grid">
+      <label>Tautulli URL<input name="base_url" value="{{ tautulli_settings.integration.base_url if tautulli_settings.integration else '' }}" placeholder="http://192.168.1.100:8181" required></label>
+      <label>API key <span class="muted">{% if tautulli_settings.integration %}(leave blank to keep current){% endif %}</span><input name="api_key" type="password" {% if not tautulli_settings.integration %}required{% endif %}></label>
+      <label>Historical sync interval<select name="sync_interval_minutes">{% for n in [5,15,30,60,120,360,720,1440] %}<option value="{{ n }}" {% if tautulli_settings.sync_interval_minutes == n %}selected{% endif %}>{{ n }} minute{{ '' if n == 1 else 's' }}</option>{% endfor %}</select></label>
+      <label>Live activity refresh<select name="live_refresh_seconds">{% for n in [10,15,30,60] %}<option value="{{ n }}" {% if tautulli_settings.live_refresh_seconds == n %}selected{% endif %}>Every {{ n }} seconds</option>{% endfor %}</select></label>
+    </div>
+    {% if tautulli_settings.integration %}
+    <div class="tautulli-status-grid">
+      <div><span>Last successful sync</span><strong>{{ tautulli_settings.last_sync_success_at.strftime('%Y-%m-%d %H:%M') if tautulli_settings.last_sync_success_at else 'Never' }}</strong></div>
+      <div><span>Matched customers</span><strong>{{ tautulli_settings.last_matched_count }}</strong></div>
+      <div><span>Unmatched Tautulli users</span><strong>{{ tautulli_settings.last_unmatched_count }}</strong></div>
+      <div><span>Last result</span><strong class="{% if tautulli_settings.last_sync_error %}text-error{% endif %}">{{ tautulli_settings.last_sync_error or 'OK' }}</strong></div>
+    </div>
+    {% endif %}
+    <div class="row tautulli-actions">
+      <button>Save Tautulli settings</button>
+    </div>
+  </form>
+  {% if tautulli_settings.integration %}
+  <div class="row tautulli-actions secondary-actions">
+    <form method="post" action="/integrations/tautulli/test"><button class="secondary">Test connection</button></form>
+    <form method="post" action="/integrations/tautulli/sync"><button class="secondary">Sync now</button></form>
+  </div>
+  {% endif %}
+</section>
+
 <section>
   <div class="row between notification-heading">
     <div><h2>Notifications</h2><p class="muted">Route Share Manager events to Home Assistant, Discord or a generic webhook.</p></div>

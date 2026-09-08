@@ -35,14 +35,18 @@ from .models import (
     SubscriptionCredit,
     NotificationEndpoint,
     NotificationDelivery,
+    TautulliActivity,
+    TautulliSettings,
 )
 from .integrations.plex import PlexIntegration
+from .integrations.tautulli import TautulliIntegration, TautulliError
 from .security import logged_in, make_session, valid_credentials
 from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
 from .services.reconcile import reconcile_customer
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy
+from .services.tautulli import get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage
 from .version import APP_VERSION
 
 
@@ -50,6 +54,40 @@ def _parse_date(value: str | None, fallback: datetime | None = None) -> datetime
     if not value:
         return fallback
     return datetime.strptime(value, "%Y-%m-%d")
+
+
+def _format_duration(seconds: int | None) -> str:
+    total = max(0, int(seconds or 0))
+    hours, remainder = divmod(total, 3600)
+    minutes = remainder // 60
+    if hours >= 24:
+        days, hours = divmod(hours, 24)
+        return f"{days}d {hours}h" if hours else f"{days}d"
+    if hours:
+        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+    return f"{minutes}m"
+
+
+def _relative_time(value: datetime | None, now: datetime | None = None) -> str:
+    if value is None:
+        return "Never"
+    now = now or datetime.utcnow()
+    seconds = max(0, int((now - value).total_seconds()))
+    if seconds < 60:
+        return "just now"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days < 30:
+        return f"{days}d ago"
+    months = days // 30
+    if months < 12:
+        return f"{months}mo ago"
+    return f"{days // 365}y ago"
 
 
 def _notify_reconcile_failure(db: Session, customer: Customer, exc: Exception) -> None:
@@ -128,6 +166,20 @@ def run_billing_cycle() -> int:
         db.close()
 
 
+def run_tautulli_cycle() -> bool:
+    db = SessionLocal()
+    try:
+        row = get_tautulli_settings(db)
+        if not sync_due(row):
+            return False
+        sync_tautulli(db)
+        return True
+    except Exception:
+        return False
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     async def billing_loop():
@@ -157,22 +209,37 @@ async def lifespan(_app: FastAPI):
                 db.close()
             await asyncio.sleep(max(1, interval) * 60)
 
+    async def tautulli_loop():
+        await asyncio.sleep(15)
+        while True:
+            try:
+                await asyncio.to_thread(run_tautulli_cycle)
+            except Exception:
+                pass
+            await asyncio.sleep(60)
+
     billing_task = asyncio.create_task(billing_loop())
     backup_task = asyncio.create_task(backup_loop())
+    tautulli_task = asyncio.create_task(tautulli_loop())
     try:
         yield
     finally:
         billing_task.cancel()
         backup_task.cancel()
+        tautulli_task.cancel()
         with suppress(asyncio.CancelledError):
             await billing_task
         with suppress(asyncio.CancelledError):
             await backup_task
+        with suppress(asyncio.CancelledError):
+            await tautulli_task
 
 
 app = FastAPI(title="Share Manager", version=APP_VERSION, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["format_duration"] = _format_duration
+templates.env.globals["relative_time"] = _relative_time
 
 
 def auth(request: Request):
@@ -287,7 +354,10 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "revenue": Decimal(revenue or 0),
     }
     recent = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(12).all()
-    return render(request, "dashboard.html", stats=stats, recent=recent, revenue_forecast=revenue_forecast)
+    tautulli_settings = get_tautulli_settings(db)
+    tautulli_enabled = bool(tautulli_settings.integration and tautulli_settings.integration.enabled)
+    tautulli_usage = dashboard_usage(db, now=now) if tautulli_enabled else None
+    return render(request, "dashboard.html", stats=stats, recent=recent, revenue_forecast=revenue_forecast, tautulli_usage=tautulli_usage, tautulli_settings=tautulli_settings if tautulli_enabled else None)
 
 
 @app.post("/billing/run")
@@ -312,12 +382,14 @@ def customers(request: Request, error: str | None = None, notice: str | None = N
     # rather than duplicating lifecycle rules in Jinja. Prefer a currently
     # assigned row, but retain the most recent historical tier as a fallback
     # so complimentary access can reactivate a former subscriber.
+    activities = {row.customer_id: row for row in db.query(TautulliActivity).all()}
     for customer in rows:
         ordered = sorted(customer.subscriptions, key=lambda sub: sub.id, reverse=True)
         customer.ui_subscription = next(
             (sub for sub in ordered if sub.status in ASSIGNED_SUBSCRIPTION_STATES),
             ordered[0] if ordered else None,
         )
+        customer.tautulli_activity = activities.get(customer.id)
     tiers = db.query(BillingTier).options(
         joinedload(BillingTier.package).joinedload(Package.entitlements).joinedload(PackageEntitlement.integration)
     ).filter(
@@ -883,7 +955,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
     gate = auth(request)
     if gate:
         return gate
-    rows = db.query(Integration).order_by(Integration.name).all()
+    rows = db.query(Integration).filter(Integration.kind == "plex").order_by(Integration.name).all()
     enriched = []
     for integration in rows:
         libraries = []
@@ -910,6 +982,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         notification_deliveries=notification_deliveries,
         notification_events=EVENT_DEFINITIONS,
         notification_default_due_days=max(0, int(settings.notification_due_soon_days)),
+        tautulli_settings=get_tautulli_settings(db),
         error=error,
         notice=notice,
     )
@@ -950,6 +1023,92 @@ def import_plex_users(request: Request, integration_id: int, db: Session = Depen
     db.add(AuditLog(actor=settings.admin_username, action="plex.import_users", target_type="integration", target_id=str(integration.id), detail=f"Imported {created} users"))
     db.commit()
     return RedirectResponse("/customers", status_code=303)
+
+
+@app.post("/integrations/tautulli")
+def save_tautulli(
+    request: Request,
+    base_url: str = Form(...),
+    api_key: str = Form(""),
+    enabled: str | None = Form(None),
+    sync_interval_minutes: int = Form(30),
+    live_refresh_seconds: int = Form(10),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    if not 5 <= sync_interval_minutes <= 1440:
+        return RedirectResponse("/integrations?error=Tautulli+sync+interval+must+be+between+5+and+1440+minutes", status_code=303)
+    if live_refresh_seconds not in {10, 15, 30, 60}:
+        return RedirectResponse("/integrations?error=Invalid+live+refresh+interval", status_code=303)
+    row = get_tautulli_settings(db)
+    integration = row.integration
+    clean_url = base_url.strip().rstrip("/")
+    clean_key = api_key.strip()
+    if integration is None:
+        if not clean_key:
+            return RedirectResponse("/integrations?error=Tautulli+API+key+is+required", status_code=303)
+        integration = Integration(kind="tautulli", name="Tautulli", enabled=True, base_url=clean_url, secret=clean_key)
+        db.add(integration)
+        db.flush()
+        row.integration_id = integration.id
+    else:
+        integration.base_url = clean_url
+        if clean_key:
+            integration.secret = clean_key
+    integration.enabled = enabled == "on"
+    row.sync_interval_minutes = sync_interval_minutes
+    row.live_refresh_seconds = live_refresh_seconds
+    row.updated_at = datetime.utcnow()
+    db.add(AuditLog(actor=settings.admin_username, action="tautulli.settings.updated", target_type="integration", target_id=str(integration.id), detail=f"enabled={integration.enabled}; sync={sync_interval_minutes}m; live={live_refresh_seconds}s"))
+    db.commit()
+    return RedirectResponse("/integrations?notice=Tautulli+settings+saved", status_code=303)
+
+
+@app.post("/integrations/tautulli/test")
+def test_tautulli(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    row = get_tautulli_settings(db)
+    if not row.integration:
+        return RedirectResponse("/integrations?error=Configure+Tautulli+first", status_code=303)
+    try:
+        info = TautulliIntegration(row.integration.base_url or "", row.integration.secret or "").test()
+        return RedirectResponse(f"/integrations?notice={quote_plus('Tautulli connected: v' + str(info['version']) + ', ' + str(info['user_count']) + ' users visible')}", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f"/integrations?error={quote_plus('Tautulli test failed: ' + str(exc))}", status_code=303)
+
+
+@app.post("/integrations/tautulli/sync")
+def sync_tautulli_now(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    try:
+        result = sync_tautulli(db)
+        return RedirectResponse(f"/integrations?notice={quote_plus(f'Tautulli sync complete: {result.matched} matched, {result.unmatched} unmatched')}", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f"/integrations?error={quote_plus('Tautulli sync failed: ' + str(exc))}", status_code=303)
+
+
+@app.get("/api/tautulli/live")
+def tautulli_live(request: Request, db: Session = Depends(get_db)):
+    if not logged_in(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    row = get_tautulli_settings(db)
+    if not row.integration or not row.integration.enabled:
+        return {"enabled": False, "sessions": [], "refresh_seconds": row.live_refresh_seconds}
+    live = get_live_activity(db, max_age_seconds=row.live_refresh_seconds)
+    sampled = live.get("sampled_at")
+    return {
+        "enabled": True,
+        "sampled_at": sampled.isoformat() + "Z" if sampled else None,
+        "sessions": live.get("sessions", []),
+        "error": live.get("error"),
+        "refresh_seconds": row.live_refresh_seconds,
+    }
 
 
 @app.post("/notifications")
@@ -1329,7 +1488,8 @@ def customer_history(request: Request, customer_id: int, db: Session = Depends(g
     for log in logs:
         events.append({"when": log.created_at, "kind": log.action, "detail": log.detail or "", "voided": False})
     events.sort(key=lambda item: item["when"], reverse=True)
-    return render(request, "customer_history.html", customer=customer, events=events)
+    tautulli_activity = db.query(TautulliActivity).filter(TautulliActivity.customer_id == customer.id).first()
+    return render(request, "customer_history.html", customer=customer, events=events, tautulli_activity=tautulli_activity)
 
 
 @app.get("/backups", response_class=HTMLResponse)

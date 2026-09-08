@@ -170,6 +170,37 @@ class BackupSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class TautulliSettings(Base):
+    __tablename__ = "tautulli_settings"
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    integration_id: Mapped[int | None] = mapped_column(ForeignKey("integrations.id", ondelete="SET NULL"), nullable=True)
+    sync_interval_minutes: Mapped[int] = mapped_column(Integer, default=30)
+    live_refresh_seconds: Mapped[int] = mapped_column(Integer, default=10)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_sync_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_matched_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_unmatched_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    integration: Mapped[Integration | None] = relationship()
+
+
+class TautulliActivity(Base):
+    __tablename__ = "tautulli_activity"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), unique=True)
+    tautulli_user_id: Mapped[str] = mapped_column(String(64))
+    tautulli_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_streamed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    watch_time_30d: Mapped[int] = mapped_column(Integer, default=0)
+    plays_30d: Mapped[int] = mapped_column(Integer, default=0)
+    watch_time_lifetime: Mapped[int] = mapped_column(Integer, default=0)
+    plays_lifetime: Mapped[int] = mapped_column(Integer, default=0)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    customer: Mapped[Customer] = relationship()
+
+
 class NotificationEndpoint(Base):
     __tablename__ = "notification_endpoints"
     id: Mapped[int] = mapped_column(primary_key=True)

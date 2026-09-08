@@ -27,5 +27,48 @@
     {% else %}<p class="muted">No revenue-bearing subscriptions yet.</p>{% endfor %}
   </div>
 </section>
+{% if tautulli_usage %}
+<section class="tautulli-dashboard" data-live-refresh="{{ tautulli_settings.live_refresh_seconds }}">
+  <div class="row between tautulli-heading"><div><h2>Plex activity</h2><p class="muted">Customer usage from Tautulli. Historical metrics update every {{ tautulli_settings.sync_interval_minutes }} minutes; live sessions refresh asynchronously.</p></div><span id="tautulli-live-age" class="muted"></span></div>
+  <div class="tautulli-dashboard-stats">
+    <div class="tautulli-stat live"><strong id="tautulli-live-count">—</strong><span>Watching now</span></div>
+    <div class="tautulli-stat"><strong>{{ tautulli_usage.active_7d }}</strong><span>Active last 7 days</span></div>
+    <div class="tautulli-stat"><strong>{{ tautulli_usage.active_30d }}</strong><span>Active last 30 days</span></div>
+    <div class="tautulli-stat"><strong>{{ tautulli_usage.inactive_90d }}</strong><span>Inactive 90+ days</span></div>
+    <div class="tautulli-stat"><strong>{{ tautulli_usage.never }}</strong><span>Never streamed</span></div>
+    <div class="tautulli-stat"><strong>{{ format_duration(tautulli_usage.watch_time_30d) }}</strong><span>Watch time · 30d</span></div>
+    <div class="tautulli-stat"><strong>{{ format_duration(tautulli_usage.average_30d) }}</strong><span>Avg / active user · 30d</span></div>
+  </div>
+  <div id="tautulli-live-sessions" class="tautulli-live-sessions"><p class="muted">Loading live sessions…</p></div>
+</section>
+<script>
+(() => {
+  const section = document.querySelector('.tautulli-dashboard');
+  if (!section) return;
+  const count = document.getElementById('tautulli-live-count');
+  const list = document.getElementById('tautulli-live-sessions');
+  const age = document.getElementById('tautulli-live-age');
+  const refreshMs = Math.max(10000, Number(section.dataset.liveRefresh || 10) * 1000);
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  async function refresh() {
+    try {
+      const response = await fetch('/api/tautulli/live', {cache:'no-store'});
+      if (!response.ok) throw new Error('live request failed');
+      const data = await response.json();
+      const sessions = data.sessions || [];
+      count.textContent = sessions.length;
+      if (data.error) age.textContent = 'Live activity unavailable · showing last known state';
+      else age.textContent = data.sampled_at ? 'Live sample updated' : '';
+      if (!sessions.length) { list.innerHTML = '<p class="muted">Nobody is streaming right now.</p>'; return; }
+      list.innerHTML = sessions.map(s => `<div class="tautulli-live-row"><span class="live-dot"></span><div><strong>${escapeHtml(s.customer_name || s.username || 'Unknown user')}</strong><span>${escapeHtml(s.title || 'Unknown title')}</span></div><small>${escapeHtml(s.state || 'playing')}</small></div>`).join('');
+    } catch (_) {
+      age.textContent = 'Live activity unavailable';
+    }
+  }
+  refresh();
+  setInterval(refresh, refreshMs);
+})();
+</script>
+{% endif %}
 <section><h2>Recent activity</h2><div class="table-wrap"><table><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>{% for a in recent %}<tr><td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td><code>{{ a.action }}</code></td><td>{{ a.detail or '' }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No activity yet.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}

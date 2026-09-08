@@ -7,6 +7,17 @@
     <div><span class="muted">Status</span><strong>{{ 'exempt' if customer.exempt else customer.status }}</strong></div>
   </div>
 </section>
+{% if tautulli_activity %}
+<section class="tautulli-customer-history">
+  <div class="row between"><div><h2>Plex activity</h2><p class="muted">Cached Tautulli usage analytics.</p></div><span class="muted">Synced {{ relative_time(tautulli_activity.synced_at) }}</span></div>
+  <div class="tautulli-history-grid">
+    <div><span>Last streamed</span><strong>{{ relative_time(tautulli_activity.last_streamed_at) }}</strong><small>{{ tautulli_activity.last_streamed_at.strftime('%Y-%m-%d %H:%M') if tautulli_activity.last_streamed_at else 'No playback history' }}</small></div>
+    <div><span>Last title</span><strong>{{ tautulli_activity.last_title or '—' }}</strong></div>
+    <div><span>Last 30 days</span><strong>{{ tautulli_activity.plays_30d }} plays · {{ format_duration(tautulli_activity.watch_time_30d) }}</strong></div>
+    <div><span>Lifetime</span><strong>{{ tautulli_activity.plays_lifetime }} plays · {{ format_duration(tautulli_activity.watch_time_lifetime) }}</strong></div>
+  </div>
+</section>
+{% endif %}
 <section><h2>Timeline</h2>
   <div class="timeline">
   {% for event in events %}

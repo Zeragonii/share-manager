@@ -34,9 +34,21 @@
 <div class="customer-toolbar">
   <label class="customer-search">Search customers<input id="customer-search" type="search" placeholder="Name, email or Plex username…" autocomplete="off"></label>
   <label class="customer-package-filter">Package<select id="customer-package-filter"><option value="all">All packages</option></select></label>
+  <label class="customer-activity-filter">Activity<select id="customer-activity-filter">
+    <option value="all">All activity</option>
+    <option value="watching">Watching now</option>
+    <option value="7d">Active in last 7 days</option>
+    <option value="30d">Active in last 30 days</option>
+    <option value="inactive30">Inactive 30+ days</option>
+    <option value="inactive90">Inactive 90+ days</option>
+    <option value="never">Never streamed</option>
+  </select></label>
   <label class="customer-sort">Sort by<select id="customer-sort">
     <option value="expiry-asc">Expiring soonest</option>
     <option value="expiry-desc">Expiring latest</option>
+    <option value="last-streamed-desc">Last streamed</option>
+    <option value="activity-desc">Most active · 30d</option>
+    <option value="activity-asc">Least active · 30d</option>
     <option value="name-asc">Name A–Z</option>
     <option value="name-desc">Name Z–A</option>
     <option value="status">Status</option>
@@ -55,11 +67,13 @@
 {% for c in customers %}
 {% set sub = c.ui_subscription %}
 {% set effective_expiry = sub.manual_access_end if sub and sub.manual_access_end and sub.manual_access_end > today_dt else (sub.grace_until if sub and sub.grace_until else (sub.current_period_end if sub else none)) %}
-<article class="card customer-card" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}" data-name="{{ c.name|lower|e }}" data-expiry="{{ effective_expiry.isoformat() if effective_expiry else '' }}" data-package="{{ sub.billing_tier.package.name|lower|e if sub else '' }}" data-package-label="{{ sub.billing_tier.package.name|e if sub else '' }}">
+{% set ta = c.tautulli_activity %}
+<article class="card customer-card" data-customer-id="{{ c.id }}" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}" data-name="{{ c.name|lower|e }}" data-expiry="{{ effective_expiry.isoformat() if effective_expiry else '' }}" data-package="{{ sub.billing_tier.package.name|lower|e if sub else '' }}" data-package-label="{{ sub.billing_tier.package.name|e if sub else '' }}" data-last-streamed="{{ ta.last_streamed_at.isoformat() if ta and ta.last_streamed_at else '' }}" data-watch-time-30d="{{ ta.watch_time_30d if ta else 0 }}" data-tautulli="{{ '1' if ta else '0' }}" data-watching="0">
   <button type="button" class="customer-mobile-summary" aria-expanded="false">
     <span class="customer-mobile-identity">
       <strong>{{ c.name }}</strong>
       <span class="muted">{% if sub %}{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}{% else %}No package assigned{% endif %}</span>
+      {% if ta %}<span class="customer-mobile-activity" data-live-customer="{{ c.id }}">Last streamed {{ relative_time(ta.last_streamed_at) }}</span>{% endif %}
     </span>
     <span class="customer-mobile-state">
       <span class="badge {{ 'exempt' if c.exempt else c.status }}">{{ 'exempt' if c.exempt else c.status }}</span>
@@ -85,6 +99,12 @@
   <div class="credit-summary muted">Latest complimentary credit: +{{ credits[0].billing_periods }} period{{ '' if credits[0].billing_periods == 1 else 's' }} · through {{ credits[0].coverage_end.strftime('%Y-%m-%d') }}{% if credits[0].reason %} · {{ credits[0].reason }}{% endif %}</div>
   {% endif %}
   {% else %}<div class="subtle">No subscription history yet — assign a package/tier before granting complimentary access.</div>{% endif %}
+  {% if ta %}
+  <div class="tautulli-customer-summary" data-live-customer="{{ c.id }}">
+    <span class="tautulli-live-label" hidden><span class="live-dot"></span><strong>Watching now</strong><span class="tautulli-live-title"></span></span>
+    <span class="tautulli-cached-label"><strong>Last streamed {{ relative_time(ta.last_streamed_at) }}</strong><span>30d {{ format_duration(ta.watch_time_30d) }} · {{ ta.plays_30d }} plays · lifetime {{ format_duration(ta.watch_time_lifetime) }}</span></span>
+  </div>
+  {% endif %}
   {% if c.exempt %}<div class="exempt-note">Automation is disabled for this customer. Billing records can still be maintained, but automatic status/Plex changes will leave them alone.</div>{% endif %}
   </div>
 
@@ -142,11 +162,13 @@
   const search = document.getElementById('customer-search');
   const sort = document.getElementById('customer-sort');
   const packageFilter = document.getElementById('customer-package-filter');
+  const activityFilter = document.getElementById('customer-activity-filter');
   const list = document.querySelector('.customer-list');
   const filterButtons = [...document.querySelectorAll('.customer-filter')];
   const empty = document.getElementById('customer-filter-empty');
   let currentStatus = 'all';
   let currentPackage = 'all';
+  let currentActivity = 'all';
 
   if (packageFilter) {
     const packages = new Map();
@@ -183,6 +205,18 @@
       const expiryB = b.dataset.expiry || '';
       if (mode === 'name-asc') return nameA.localeCompare(nameB);
       if (mode === 'name-desc') return nameB.localeCompare(nameA);
+      if (mode === 'last-streamed-desc') {
+        const aDate = a.dataset.lastStreamed || '';
+        const bDate = b.dataset.lastStreamed || '';
+        if (!aDate && !bDate) return nameA.localeCompare(nameB);
+        if (!aDate) return 1;
+        if (!bDate) return -1;
+        return bDate.localeCompare(aDate) || nameA.localeCompare(nameB);
+      }
+      if (mode === 'activity-desc' || mode === 'activity-asc') {
+        const diff = Number(a.dataset.watchTime30d || 0) - Number(b.dataset.watchTime30d || 0);
+        return (mode === 'activity-desc' ? -diff : diff) || nameA.localeCompare(nameB);
+      }
       if (mode === 'status') {
         const rank = (statusRank[a.dataset.status] ?? 99) - (statusRank[b.dataset.status] ?? 99);
         return rank || nameA.localeCompare(nameB);
@@ -205,7 +239,16 @@
       const statusMatch = currentStatus === 'all' || card.dataset.status === currentStatus;
       const textMatch = !query || (card.dataset.search || '').includes(query);
       const packageMatch = currentPackage === 'all' || card.dataset.package === currentPackage;
-      const show = statusMatch && textMatch && packageMatch;
+      const last = card.dataset.lastStreamed ? new Date(card.dataset.lastStreamed) : null;
+      const daysAgo = last ? (Date.now() - last.getTime()) / 86400000 : Infinity;
+      const activityMatch = currentActivity === 'all'
+        || (currentActivity === 'watching' && card.dataset.watching === '1')
+        || (currentActivity === '7d' && daysAgo <= 7)
+        || (currentActivity === '30d' && daysAgo <= 30)
+        || (currentActivity === 'inactive30' && daysAgo > 30 && daysAgo !== Infinity)
+        || (currentActivity === 'inactive90' && daysAgo > 90 && daysAgo !== Infinity)
+        || (currentActivity === 'never' && !last && card.dataset.tautulli === '1');
+      const show = statusMatch && textMatch && packageMatch && activityMatch;
       card.hidden = !show;
       if (show) visible += 1;
     });
@@ -220,7 +263,44 @@
   search.addEventListener('input', applyFilters);
   sort?.addEventListener('change', applyFilters);
   packageFilter?.addEventListener('change', () => { currentPackage = packageFilter.value; applyFilters(); });
+  activityFilter?.addEventListener('change', () => { currentActivity = activityFilter.value; applyFilters(); });
   applyFilters();
+
+  async function liveLoop() {
+    let delay = 10000;
+    try {
+      const response = await fetch('/api/tautulli/live', {cache:'no-store'});
+      if (response.ok) {
+        const data = await response.json();
+        delay = Math.max(10000, Number(data.refresh_seconds || 10) * 1000);
+        if (data.enabled) {
+          const byCustomer = new Map((data.sessions || []).filter(s => s.customer_id).map(s => [String(s.customer_id), s]));
+          cards.forEach(card => {
+            const session = byCustomer.get(card.dataset.customerId);
+            card.dataset.watching = session ? '1' : '0';
+            card.querySelectorAll('[data-live-customer]').forEach(node => {
+              const live = node.querySelector('.tautulli-live-label');
+              const cached = node.querySelector('.tautulli-cached-label');
+              if (live) {
+                live.hidden = !session;
+                const title = live.querySelector('.tautulli-live-title');
+                if (title && session) title.textContent = session.title || '';
+              }
+              if (cached) cached.hidden = !!session;
+              if (node.classList.contains('customer-mobile-activity')) {
+                if (!node.dataset.cachedText) node.dataset.cachedText = node.textContent;
+                node.textContent = session ? `● Watching now · ${session.title || ''}` : node.dataset.cachedText;
+                node.classList.toggle('watching-now', !!session);
+              }
+            });
+          });
+          if (currentActivity === 'watching') applyFilters();
+        }
+      }
+    } catch (_) {}
+    setTimeout(liveLoop, delay);
+  }
+  liveLoop();
 })();
 
 

@@ -136,3 +136,6 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 
 ## v0.4.2
 - Polished the Disaster Recovery automation UI by grouping schedule and retention settings into aligned rows with consistent control heights and helper text, while keeping the existing backup behaviour unchanged.
+
+## v0.5.0 Tautulli integration
+Tautulli is an observational integration, not an entitlement authority. Historical usage is cached in `tautulli_activity` by a background sync. Live sessions use Tautulli `get_activity` through a short in-process cache exposed by `/api/tautulli/live`; browser heartbeats query Share Manager rather than Tautulli directly. User matching prefers stored Plex numeric user ID, then Plex username/email identity matching. Inactivity can notify administrators but never changes customer subscription status or Plex access.

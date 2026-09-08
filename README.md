@@ -228,3 +228,21 @@ The database backup does **not** contain Portainer environment variables, passwo
 
 ## v0.4.2
 - Polished the Disaster Recovery automation UI by grouping schedule and retention settings into aligned rows with consistent control heights and helper text, while keeping the existing backup behaviour unchanged.
+
+## v0.5.0 — Tautulli customer intelligence
+- Connect one Tautulli instance from Integrations using URL + API key.
+- Cached historical sync for user matching, last streamed, latest title, 30-day plays/watch time, and lifetime plays/watch time.
+- Configurable historical sync interval (5 minutes to 24 hours) and live refresh interval (10/15/30/60 seconds).
+- Live `get_activity` heartbeat is served through Share Manager with a short shared server-side cache; browsers never call Tautulli directly.
+- Customer cards show usage summaries and update to **Watching now** asynchronously without a page reload.
+- Customer Activity filter: watching now, active 7/30 days, inactive 30/90 days, never streamed.
+- Customer sorting adds last streamed / most active / least active.
+- Dashboard Plex activity summary and live sessions panel.
+- Customer History gains a detailed Plex activity panel.
+- Notification events for sync failure, unmatched users, 90+ day inactivity, never-streamed customers, and suspended customers streaming.
+- Tautulli is advisory only: usage never changes billing or entitlement state automatically.
+
+### Tautulli setup
+Open **Integrations → Tautulli** and enter the URL Share Manager can reach (for example `http://tautulli:8181` on a shared Docker network, or the Tautulli host/LAN URL) plus the Tautulli API key. Save, use **Test connection**, then **Sync now** for the initial customer match. No additional Docker environment variables are required.
+
+Matching prefers the stored Plex numeric user ID and falls back to Plex username/email. Historical analytics are cached in PostgreSQL; the UI never waits for Tautulli during normal page loads. Live activity is fetched through Share Manager's `/api/tautulli/live` endpoint and is server-cached so multiple open browsers share one lightweight Tautulli `get_activity` sample per refresh interval.
