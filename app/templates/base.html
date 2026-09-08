@@ -6,9 +6,16 @@
   <link rel="stylesheet" href="/static/app.css?v={{ app_version }}">
 </head>
 <body>
+<button type="button" class="mobile-nav-toggle ghost" aria-label="Open navigation" aria-controls="site-sidebar" aria-expanded="false">
+  <span></span><span></span><span></span>
+</button>
+<div class="mobile-nav-overlay" hidden></div>
 <div class="layout">
-  <aside>
-    <div class="brand">Share Manager <span>{{ app_version }}</span></div>
+  <aside id="site-sidebar" aria-label="Sidebar navigation">
+    <div class="aside-top">
+      <div class="brand">Share Manager <span>{{ app_version }}</span></div>
+      <button type="button" class="ghost aside-close" aria-label="Close navigation">×</button>
+    </div>
     <nav>
       <a href="/">Dashboard</a><a href="/customers">Customers</a><a href="/packages">Packages</a><a href="/payments">Payments</a><a href="/integrations">Integrations</a><a href="/backups">Backups</a>
     </nav>
@@ -16,5 +23,33 @@
   </aside>
   <main>{% block content %}{% endblock %}</main>
 </div>
+<script>
+(() => {
+  const body = document.body;
+  const toggle = document.querySelector('.mobile-nav-toggle');
+  const closeButton = document.querySelector('.aside-close');
+  const overlay = document.querySelector('.mobile-nav-overlay');
+  const sidebar = document.getElementById('site-sidebar');
+  const navLinks = sidebar ? [...sidebar.querySelectorAll('nav a')] : [];
+  if (!toggle || !overlay || !sidebar) return;
+
+  function setOpen(open) {
+    body.classList.toggle('nav-open', open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    overlay.hidden = !open;
+  }
+
+  toggle.addEventListener('click', () => setOpen(!body.classList.contains('nav-open')));
+  overlay.addEventListener('click', () => setOpen(false));
+  closeButton?.addEventListener('click', () => setOpen(false));
+  navLinks.forEach(link => link.addEventListener('click', () => setOpen(false)));
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && body.classList.contains('nav-open')) setOpen(false);
+  });
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 900 && body.classList.contains('nav-open')) setOpen(false);
+  });
+})();
+</script>
 </body>
 </html>

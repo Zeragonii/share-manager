@@ -75,3 +75,11 @@ Home Assistant uses its authenticated REST service-call pipeline (`/api/services
 ## v0.3.1 notification timing
 
 `NotificationEndpoint.due_reminder_days` stores a normalized comma-separated set of calendar-day offsets. Renewal reminder generation is endpoint-specific; each successful threshold delivery receives an event key containing endpoint, subscription, expiry date and day offset, making scheduled checks idempotent. Grace and suspension notifications continue to be emitted by billing-state transitions rather than reminder polling.
+
+## v0.3.2 onboarding
+
+Brand-new Plex users can be created directly from the Customers page. Onboarding persists the customer and subscription first, then runs the normal reconciliation engine. This deliberately reuses the same invitation, entitlement, audit and notification paths as suspension/reactivation rather than introducing a second Plex-sharing implementation. Failed Plex invitations do not roll back the local customer record, allowing correction and retry through normal reconciliation.
+
+
+## v0.3.3
+- Added a mobile-friendly responsive UI with an off-canvas navigation drawer, improved phone/tablet spacing, touch-friendly stacked controls, and horizontal-scroll wrappers for wide tables without disrupting the desktop layout.

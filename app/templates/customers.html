@@ -2,7 +2,34 @@
 <header><h1>Customers</h1><p>Link people to packages, billing periods and Plex access.</p></header>
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
-<section><h2>Add customer</h2><form method="post" class="grid-form"><label>Name<input name="name" required></label><label>Email<input name="email" type="email"></label><label>Plex username/email<input name="plex_username"></label><label>Notes<input name="notes"></label><button>Add customer</button></form></section>
+<section class="customer-onboarding">
+  <div class="row between">
+    <div><h2>Add customer</h2><p>Create a local record, or onboard a brand-new Plex user with their package access in one step.</p></div>
+    <button type="button" onclick="document.getElementById('onboard-customer-modal').showModal()">Invite new Plex customer</button>
+  </div>
+  <details class="manual-customer-add">
+    <summary>Add local customer without sending a Plex invitation</summary>
+    <form method="post" class="grid-form manual-customer-form"><label>Name<input name="name" required></label><label>Email<input name="email" type="email"></label><label>Plex username/email<input name="plex_username"></label><label>Notes<input name="notes"></label><button>Add customer</button></form>
+  </details>
+</section>
+
+<dialog id="onboard-customer-modal" class="customer-modal">
+  <div class="modal-heading"><div><h3>Invite new Plex customer</h3><span class="muted">Create the customer, start their subscription and send the Plex library invitation.</span></div><button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
+  <form method="post" action="/customers/onboard" class="modal-form">
+    <label>Name<input name="name" required autocomplete="name"></label>
+    <label>Email<input name="email" type="email" autocomplete="email" placeholder="Contact / Plex email"></label>
+    <label>Plex username or email <span class="muted">(uses Email if blank)</span><input name="plex_username" placeholder="Plex username or account email"></label>
+    <label>Package / billing tier
+      <select name="billing_tier_id" required>
+      {% for t in tiers %}{% if t.id in plex_ready_tier_ids %}<option value="{{ t.id }}">{{ t.package.name }} — {{ t.name }} (£{{ '%.2f'|format(t.price) }})</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>Subscription start date<input type="date" name="start_date" value="{{ today }}" required></label>
+    <label>Notes<input name="notes"></label>
+    <div class="modal-help muted">The selected package must already have Plex libraries mapped. The first billing period starts on this date; the Plex invite is sent with those libraries attached.</div>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Create &amp; invite</button></div>
+  </form>
+</dialog>
 <section><h2>Managed customers</h2>
 <div class="customer-toolbar">
   <label class="customer-search">Search customers<input id="customer-search" type="search" placeholder="Name, email or Plex username…" autocomplete="off"></label>

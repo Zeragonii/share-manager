@@ -142,3 +142,15 @@ Discord:        7,3,1,0
 `0` means the paid-through date itself. Grace and suspension alerts remain state-transition events: if those events are enabled for a destination, Share Manager sends them when the customer actually enters grace or becomes suspended. This provides a staged sequence such as 3-day warning → grace alert → suspension alert without repeated notifications every billing cycle.
 
 The legacy `NOTIFICATION_DUE_SOON_DAYS` environment setting is retained as the default for new notification destinations and is copied into existing destinations during the v0.3.0 → v0.3.1 schema upgrade.
+
+## New customer onboarding (v0.3.2)
+
+The Customers page includes **Invite new Plex customer** for people who have never been synced before. The onboarding flow creates the customer and first subscription period, then reconciles the selected package immediately. If no accepted Plex share exists, Share Manager sends an invitation containing the package's mapped Plex libraries.
+
+Fields include the customer name, contact email, Plex username/account email, billing tier, subscription start date, and notes. If the Plex identity field is blank, the contact email is used as the Plex invitation target. If both are supplied, the explicit Plex identity wins.
+
+If the Plex invitation fails, the customer and subscription are retained and the error is shown in the UI. Correct the Plex identity if needed and use **Reconcile Plex** to retry. Packages without an enabled Plex library mapping are not offered in the onboarding selector.
+
+
+## v0.3.3
+- Added a mobile-friendly responsive UI with an off-canvas navigation drawer, improved phone/tablet spacing, touch-friendly stacked controls, and horizontal-scroll wrappers for wide tables without disrupting the desktop layout.

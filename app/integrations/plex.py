@@ -143,7 +143,9 @@ class PlexIntegration:
         the requested section IDs as part of the invite, so accepting the invitation
         should immediately grant the intended package libraries.
         """
-        target = email or plex_username
+        # An explicitly stored Plex username/account email is authoritative. The
+        # customer's contact email may be different and should only be a fallback.
+        target = plex_username or email
         if target:
             account.inviteFriend(user=target, server=server, sections=sections)
             return

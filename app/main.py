@@ -212,10 +212,105 @@ def customers(request: Request, error: str | None = None, notice: str | None = N
             (sub for sub in ordered if sub.status in ASSIGNED_SUBSCRIPTION_STATES),
             ordered[0] if ordered else None,
         )
-    tiers = db.query(BillingTier).options(joinedload(BillingTier.package)).filter(
+    tiers = db.query(BillingTier).options(
+        joinedload(BillingTier.package).joinedload(Package.entitlements).joinedload(PackageEntitlement.integration)
+    ).filter(
         BillingTier.active == True, BillingTier.package.has(active=True)  # noqa: E712
     ).order_by(BillingTier.package_id, BillingTier.price).all()
-    return render(request, "customers.html", customers=rows, tiers=tiers, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"))
+    plex_ready_tier_ids = set()
+    for tier in tiers:
+        if any(
+            entitlement.resource_type == "library"
+            and entitlement.integration.kind == "plex"
+            and entitlement.integration.enabled
+            for entitlement in tier.package.entitlements
+        ):
+            plex_ready_tier_ids.add(tier.id)
+    return render(request, "customers.html", customers=rows, tiers=tiers, plex_ready_tier_ids=plex_ready_tier_ids, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"))
+
+
+@app.post("/customers/onboard")
+def onboard_customer(
+    request: Request,
+    name: str = Form(...),
+    email: str = Form(""),
+    plex_username: str = Form(""),
+    billing_tier_id: int = Form(...),
+    start_date: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+
+    clean_name = name.strip()
+    clean_email = email.strip() or None
+    clean_plex = plex_username.strip() or clean_email
+    if not clean_name or not clean_plex:
+        return RedirectResponse("/customers?error=Name+and+Plex+username%2Femail+are+required", status_code=303)
+
+    duplicate = db.query(Customer).filter(
+        or_(
+            func.lower(Customer.plex_username) == clean_plex.lower(),
+            func.lower(Customer.email) == clean_email.lower() if clean_email else False,
+        )
+    ).first()
+    if duplicate:
+        return RedirectResponse(f"/customers?error={quote_plus('A customer with that Plex identity or email already exists')}", status_code=303)
+
+    tier = (
+        db.query(BillingTier)
+        .options(joinedload(BillingTier.package).joinedload(Package.entitlements).joinedload(PackageEntitlement.integration))
+        .filter(BillingTier.id == billing_tier_id)
+        .first()
+    )
+    if not tier or not tier.active or not tier.package.active:
+        return RedirectResponse("/customers?error=Invalid+customer+or+billing+tier", status_code=303)
+
+    plex_entitlements = [
+        entitlement for entitlement in tier.package.entitlements
+        if entitlement.resource_type == "library"
+        and entitlement.integration.kind == "plex"
+        and entitlement.integration.enabled
+    ]
+    if not plex_entitlements:
+        return RedirectResponse("/customers?error=That+package+has+no+enabled+Plex+library+entitlements", status_code=303)
+
+    start = _parse_date(start_date, datetime.utcnow())
+    customer = Customer(
+        name=clean_name,
+        email=clean_email,
+        plex_username=clean_plex,
+        notes=notes.strip() or None,
+        status="active",
+    )
+    db.add(customer)
+    db.flush()
+    subscription = Subscription(customer=customer, billing_tier=tier, status="active")
+    initialize_subscription_period(subscription, start)
+    db.add(subscription)
+    db.add(AuditLog(
+        actor=settings.admin_username,
+        action="customer.onboard",
+        target_type="customer",
+        target_id=str(customer.id),
+        detail=f"{tier.package.name} / {tier.name}; starts {start:%Y-%m-%d}; Plex identity {clean_plex}",
+    ))
+    db.commit()
+
+    try:
+        messages = reconcile_customer(db, customer)
+    except Exception as exc:
+        _notify_reconcile_failure(db, customer, exc)
+        return RedirectResponse(
+            f"/customers?error={quote_plus('Customer created, but Plex invitation failed: ' + str(exc))}",
+            status_code=303,
+        )
+
+    invited = any("invitation" in message.lower() for message in messages)
+    notice = "Customer created and Plex invitation sent" if invited else "Customer created and Plex access reconciled"
+    return RedirectResponse(f"/customers?notice={quote_plus(notice)}", status_code=303)
 
 
 @app.post("/customers")
