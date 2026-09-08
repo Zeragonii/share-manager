@@ -5,9 +5,10 @@ import tempfile
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from urllib.parse import quote_plus, urlsplit
 
-from fastapi import Depends, FastAPI, Form, Request
+from fastapi import Depends, FastAPI, Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.engine import make_url
 
 from .config import settings
-from .db import get_db, SessionLocal
+from .db import get_db, SessionLocal, engine
 from .models import (
     ACCESS_SUBSCRIPTION_STATES,
     ASSIGNED_SUBSCRIPTION_STATES,
@@ -40,6 +41,7 @@ from .services.billing import apply_payment, apply_subscription_credit, desired_
 from .services.reconcile import reconcile_customer
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
+from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup
 from .version import APP_VERSION
 
 
@@ -66,6 +68,35 @@ def _notify_reconcile_failure(db: Session, customer: Customer, exc: Exception) -
 def _notify_due_soon(db: Session, now: datetime) -> None:
     notify_due_reminders(db, now=now, fallback_days=settings.notification_due_soon_days)
 
+
+
+
+def run_backup_cycle() -> bool:
+    """Create the daily scheduled backup when due and apply GFS-style retention."""
+    now = datetime.utcnow()
+    if not scheduled_backup_due(settings.backup_dir, now=now, hour=settings.backup_schedule_hour):
+        return False
+    db = SessionLocal()
+    try:
+        try:
+            backup = create_backup(settings.database_url, settings.backup_dir, automatic=True, now=now)
+            removed = apply_retention(
+                settings.backup_dir,
+                daily=settings.backup_retention_daily,
+                weekly=settings.backup_retention_weekly,
+                monthly=settings.backup_retention_monthly,
+            )
+            db.add(AuditLog(actor="system", action="backup.scheduled", target_type="backup", target_id=backup.name, detail=f"{backup.size} bytes; pruned {len(removed)} old automatic backup(s)"))
+            db.commit()
+            notify_event(db, event="backup.created", title="Scheduled database backup created", message=f"{backup.name} was created successfully.", target_type="backup", target_id=backup.name, data={"filename": backup.name, "size": backup.size, "automatic": True})
+            return True
+        except Exception as exc:
+            db.add(AuditLog(actor="system", action="backup.failed", target_type="backup", detail=type(exc).__name__))
+            db.commit()
+            notify_event(db, event="backup.failed", title="Scheduled backup failed", message="Share Manager could not create its scheduled database backup.", severity="critical", target_type="backup", data={"error_type": type(exc).__name__})
+            return False
+    finally:
+        db.close()
 
 def run_billing_cycle() -> int:
     """Run automatic expiry/grace transitions, notifications and Plex reconciliation."""
@@ -106,13 +137,26 @@ async def lifespan(_app: FastAPI):
                 pass
             await asyncio.sleep(max(1, settings.billing_check_interval_minutes) * 60)
 
-    task = asyncio.create_task(billing_loop())
+    async def backup_loop():
+        await asyncio.sleep(10)
+        while True:
+            try:
+                await asyncio.to_thread(run_backup_cycle)
+            except Exception:
+                pass
+            await asyncio.sleep(max(1, settings.backup_check_interval_minutes) * 60)
+
+    billing_task = asyncio.create_task(billing_loop())
+    backup_task = asyncio.create_task(backup_loop())
     try:
         yield
     finally:
-        task.cancel()
+        billing_task.cancel()
+        backup_task.cancel()
         with suppress(asyncio.CancelledError):
-            await task
+            await billing_task
+        with suppress(asyncio.CancelledError):
+            await backup_task
 
 
 app = FastAPI(title="Share Manager", version=APP_VERSION, lifespan=lifespan)
@@ -1282,11 +1326,47 @@ def backups_page(request: Request, error: str | None = None, notice: str | None 
     gate = auth(request)
     if gate:
         return gate
-    return render(request, "backups.html", error=error, notice=notice)
+    backups = list_backups(settings.backup_dir)
+    latest = backups[0] if backups else None
+    return render(
+        request,
+        "backups.html",
+        error=error,
+        notice=notice,
+        backups=backups,
+        latest=latest,
+        backup_dir=settings.backup_dir,
+        schedule_hour=settings.backup_schedule_hour,
+        retention_daily=settings.backup_retention_daily,
+        retention_weekly=settings.backup_retention_weekly,
+        retention_monthly=settings.backup_retention_monthly,
+    )
+
+
+@app.post("/backups/run")
+def create_manual_backup(request: Request):
+    gate = auth(request)
+    if gate:
+        return gate
+    db = SessionLocal()
+    try:
+        try:
+            backup = create_backup(settings.database_url, settings.backup_dir, automatic=False)
+            db.add(AuditLog(actor=settings.admin_username, action="backup.manual", target_type="backup", target_id=backup.name, detail=f"{backup.size} bytes"))
+            db.commit()
+            notify_event(db, event="backup.created", title="Database backup created", message=f"{backup.name} was created successfully.", target_type="backup", target_id=backup.name, data={"filename": backup.name, "size": backup.size, "automatic": False})
+            return RedirectResponse("/backups?notice=Backup+created+successfully", status_code=303)
+        except Exception as exc:
+            db.rollback()
+            notify_event(db, event="backup.failed", title="Database backup failed", message="Share Manager could not create a manual database backup.", severity="critical", target_type="backup", data={"error_type": type(exc).__name__})
+            return RedirectResponse(f"/backups?error={quote_plus('Backup failed: ' + str(exc))}", status_code=303)
+    finally:
+        db.close()
 
 
 @app.get("/backups/database")
 def download_database_backup(request: Request):
+    """Backwards-compatible one-click download: create a temp dump and return it."""
     gate = auth(request)
     if gate:
         return gate
@@ -1311,12 +1391,87 @@ def download_database_backup(request: Request):
         except OSError:
             pass
         return RedirectResponse(f"/backups?error={quote_plus('Backup failed: ' + (exc.stderr or str(exc)))}", status_code=303)
-    db = SessionLocal()
-    try:
-        notify_event(db, event="backup.created", title="Database backup created", message=f"Share Manager database backup share-manager-{stamp}.dump was created.", target_type="backup", target_id=stamp, data={"filename": f"share-manager-{stamp}.dump"})
-    finally:
-        db.close()
     return FileResponse(path, filename=f"share-manager-{stamp}.dump", media_type="application/octet-stream", background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
+
+
+@app.get("/backups/files/{filename}")
+def download_stored_backup(request: Request, filename: str):
+    gate = auth(request)
+    if gate:
+        return gate
+    try:
+        path = safe_backup_path(settings.backup_dir, filename)
+    except ValueError:
+        return RedirectResponse("/backups?error=Backup+not+found", status_code=303)
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+
+
+@app.post("/backups/files/{filename}/restore")
+def restore_stored_backup(request: Request, filename: str, confirmation: str = Form("")):
+    gate = auth(request)
+    if gate:
+        return gate
+    if confirmation.strip().upper() != "RESTORE":
+        return RedirectResponse("/backups?error=Type+RESTORE+to+confirm", status_code=303)
+    try:
+        path = safe_backup_path(settings.backup_dir, filename)
+        ok, detail = validate_backup(settings.database_url, path)
+        if not ok:
+            return RedirectResponse(f"/backups?error={quote_plus('Restore validation failed: ' + detail)}", status_code=303)
+        safety = create_backup(settings.database_url, settings.backup_dir, automatic=False)
+        engine.dispose()
+        restore_backup(settings.database_url, path)
+        engine.dispose()
+        db = SessionLocal()
+        try:
+            db.add(AuditLog(actor=settings.admin_username, action="backup.restore", target_type="backup", target_id=filename, detail=f"Safety backup: {safety.name}"))
+            db.commit()
+            notify_event(db, event="backup.restored", title="Database restore completed", message=f"Share Manager restored {filename}. Safety backup: {safety.name}.", severity="warning", target_type="backup", target_id=filename, data={"filename": filename, "safety_backup": safety.name})
+        finally:
+            db.close()
+        return RedirectResponse(f"/backups?notice={quote_plus('Restore completed. Safety backup: ' + safety.name + '. Restart the app container now.')}", status_code=303)
+    except Exception as exc:
+        engine.dispose()
+        return RedirectResponse(f"/backups?error={quote_plus('Restore failed: ' + str(exc))}", status_code=303)
+
+
+@app.post("/backups/upload-restore")
+async def restore_uploaded_backup(request: Request, backup_file: UploadFile = File(...), confirmation: str = Form("")):
+    gate = auth(request)
+    if gate:
+        return gate
+    if confirmation.strip().upper() != "RESTORE":
+        return RedirectResponse("/backups?error=Type+RESTORE+to+confirm", status_code=303)
+    suffix = Path(backup_file.filename or "").suffix.lower()
+    if suffix not in {".dump", ".sqlite"}:
+        return RedirectResponse("/backups?error=Upload+a+.dump+or+.sqlite+backup", status_code=303)
+    fd, temp_name = tempfile.mkstemp(prefix="share-manager-restore-", suffix=suffix)
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        with temp_path.open("wb") as handle:
+            while chunk := await backup_file.read(1024 * 1024):
+                handle.write(chunk)
+        ok, detail = validate_backup(settings.database_url, temp_path)
+        if not ok:
+            return RedirectResponse(f"/backups?error={quote_plus('Restore validation failed: ' + detail)}", status_code=303)
+        safety = create_backup(settings.database_url, settings.backup_dir, automatic=False)
+        engine.dispose()
+        restore_backup(settings.database_url, temp_path)
+        engine.dispose()
+        db = SessionLocal()
+        try:
+            db.add(AuditLog(actor=settings.admin_username, action="backup.restore.upload", target_type="backup", target_id=backup_file.filename, detail=f"Safety backup: {safety.name}"))
+            db.commit()
+            notify_event(db, event="backup.restored", title="Database restore completed", message=f"Share Manager restored uploaded backup {backup_file.filename}. Safety backup: {safety.name}.", severity="warning", target_type="backup", target_id=backup_file.filename, data={"filename": backup_file.filename, "safety_backup": safety.name})
+        finally:
+            db.close()
+        return RedirectResponse(f"/backups?notice={quote_plus('Restore completed. Safety backup: ' + safety.name + '. Restart the app container now.')}", status_code=303)
+    except Exception as exc:
+        engine.dispose()
+        return RedirectResponse(f"/backups?error={quote_plus('Restore failed: ' + str(exc))}", status_code=303)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 @app.get("/api/integrations/{integration_id}/libraries")

@@ -185,3 +185,40 @@ If the Plex invitation fails, the customer and subscription are retained and the
 
 ## v0.3.10
 - Added an Edit customer modal beside Reconcile Plex. Friendly name, contact email, Plex username/email and notes can be updated without changing customer IDs, subscription history, payment history or package assignments. Changing Plex identity clears the cached numeric Plex user ID so future reconciliation safely resolves the new account.
+
+
+## v0.4.0 — Disaster recovery
+
+Share Manager 0.4 adds persistent scheduled backups and a restore pipeline.
+
+### Backup schedule
+
+The app checks for a missing daily automatic backup and creates one after the configured UTC hour. If the app was offline at the scheduled hour, it catches up after the next start instead of silently skipping the day.
+
+Portainer/environment settings:
+
+```env
+BACKUP_HOST_PATH=/path/on/independent/storage/share-manager
+BACKUP_SCHEDULE_HOUR=3
+BACKUP_CHECK_INTERVAL_MINUTES=5
+BACKUP_RETENTION_DAILY=7
+BACKUP_RETENTION_WEEKLY=4
+BACKUP_RETENTION_MONTHLY=6
+```
+
+`BACKUP_HOST_PATH` is mounted at `/backups` inside the app container. For genuine disaster recovery, put this on storage independent from the PostgreSQL volume (for example an Unraid/NFS location or another physical disk/server).
+
+Automatic retention uses one set of dump files and keeps the union of:
+- the newest N daily restore points;
+- one representative restore point from each of the newest N ISO weeks;
+- one representative restore point from each of the newest N calendar months.
+
+Manual backups and automatic pre-restore safety backups are not pruned automatically.
+
+### Restore pipeline
+
+The Backups page can restore either a stored backup or an uploaded `.dump`. A PostgreSQL dump is first validated with `pg_restore --list`. Immediately before the destructive restore, Share Manager creates a fresh safety backup of the current database. PostgreSQL sessions are disconnected and the dump is restored with `--clean --if-exists --no-owner --no-privileges --exit-on-error`.
+
+After a successful restore, restart the Share Manager app container so all workers and connection pools start cleanly against the restored database.
+
+The database backup does **not** contain Portainer environment variables, passwords, secrets, or the stack definition. Back up that deployment configuration separately.

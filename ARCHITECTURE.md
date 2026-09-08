@@ -114,3 +114,14 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 
 ## v0.3.10
 - Added an Edit customer modal beside Reconcile Plex. Friendly name, contact email, Plex username/email and notes can be updated without changing customer IDs, subscription history, payment history or package assignments. Changing Plex identity clears the cached numeric Plex user ID so future reconciliation safely resolves the new account.
+
+
+## v0.4 disaster recovery architecture
+
+- `app/services/backups.py` owns database dump creation, validation, restore, filesystem discovery, schedule-due checks, and grandfather/father/son-style retention selection.
+- PostgreSQL backups use `pg_dump --format=custom`; validation uses `pg_restore --list`; restores use `pg_restore --clean --if-exists --exit-on-error`.
+- `/backups` is a bind-mounted persistence boundary. The host-side path is selected by `BACKUP_HOST_PATH` in Compose.
+- The FastAPI lifespan starts a backup scheduler alongside the billing scheduler. It catches up if the configured daily backup is absent after the scheduled UTC hour.
+- Automatic retention operates only on `share-manager-auto-*` dumps. Manual and pre-restore safety dumps are intentionally preserved.
+- Restore is deliberately two-stage from an operator perspective: validate source, create safety backup, then destructive restore. The UI requires the explicit confirmation token `RESTORE`.
+- Backup success/failure and restore completion integrate into the existing notification event system.

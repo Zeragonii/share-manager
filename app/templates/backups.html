@@ -1,15 +1,71 @@
 {% extends 'base.html' %}{% block content %}
-<header><h1>Backups</h1><p>Download a point-in-time backup of Share Manager's database.</p></header>
+<header><h1>Disaster recovery</h1><p>Scheduled database backups, retention and verified restore tooling.</p></header>
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
+
+<div class="backup-status-grid">
+  <section class="backup-status-card">
+    <span>Last backup</span>
+    <strong>{% if latest %}{{ latest.created_at.strftime('%Y-%m-%d %H:%M') }}{% else %}Never{% endif %}</strong>
+    <small>{% if latest %}{{ latest.name }}{% else %}Create a backup to initialise disaster recovery.{% endif %}</small>
+  </section>
+  <section class="backup-status-card">
+    <span>Schedule</span>
+    <strong>Daily · {{ '%02d:00'|format(schedule_hour) }} UTC</strong>
+    <small>The scheduler catches up after restarts if today's automatic backup is missing.</small>
+  </section>
+  <section class="backup-status-card">
+    <span>Retention</span>
+    <strong>{{ retention_daily }} / {{ retention_weekly }} / {{ retention_monthly }}</strong>
+    <small>Daily / weekly / monthly automatic restore points.</small>
+  </section>
+</div>
+
 <section>
-  <h2>Database backup</h2>
-  <p>The download is generated from the live PostgreSQL database using <code>pg_dump</code> in custom/compressed format. Creating it does not stop or modify Share Manager.</p>
-  <a class="button-link" href="/backups/database">Download database backup</a>
-  <div class="backup-note">
-    <strong>Restore</strong>
-    <p class="muted">Restore into an empty Share Manager database with:</p>
-    <pre>pg_restore --clean --if-exists --no-owner -d sharemanager share-manager-YYYYMMDD-HHMMSS.dump</pre>
-    <p class="muted">Stop the Share Manager app while restoring, and take a fresh backup first. Your Docker/Portainer environment variables and stack definition are not stored inside the database dump.</p>
+  <div class="row between backup-heading">
+    <div><h2>Stored backups</h2><p>Backups are stored in <code>{{ backup_dir }}</code> inside the container. Map this to storage outside the PostgreSQL disk.</p></div>
+    <form method="post" action="/backups/run"><button>Create backup now</button></form>
   </div>
+  {% if backups %}
+  <div class="table-wrap backup-table"><table>
+    <thead><tr><th>Backup</th><th>Created</th><th>Type</th><th>Size</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for b in backups %}
+      <tr>
+        <td><strong>{{ b.name }}</strong></td>
+        <td>{{ b.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td><span class="badge {{ 'ok' if b.automatic else '' }}">{{ 'Scheduled' if b.automatic else 'Manual / safety' }}</span></td>
+        <td>{{ '%.2f'|format(b.size / 1048576) }} MB</td>
+        <td class="backup-actions"><a class="button-link secondary small-action" href="/backups/files/{{ b.name }}">Download</a><button type="button" class="secondary small-action" onclick="document.getElementById('restore-{{ loop.index }}').showModal()">Restore</button></td>
+      </tr>
+      <dialog id="restore-{{ loop.index }}" class="customer-modal">
+        <div class="modal-heading"><div><h3>Restore database</h3><span class="muted">{{ b.name }}</span></div><button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
+        <form method="post" action="/backups/files/{{ b.name }}/restore" class="modal-form">
+          <div class="restore-warning"><strong>This replaces the live database.</strong><p>Share Manager validates the dump and creates a fresh safety backup immediately before restoring. Restart the app container after a successful restore.</p></div>
+          <label>Type RESTORE to confirm<input name="confirmation" autocomplete="off" required></label>
+          <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button class="danger">Restore database</button></div>
+        </form>
+      </dialog>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="empty-state">No persistent backups exist yet.</div>{% endif %}
+</section>
+
+<section>
+  <h2>Restore an external backup</h2>
+  <p>Use this after rebuilding the stack or when importing a backup copied from another machine. PostgreSQL custom-format <code>.dump</code> files are validated with <code>pg_restore --list</code> before anything is changed.</p>
+  <form method="post" action="/backups/upload-restore" enctype="multipart/form-data" class="restore-upload-form">
+    <label>Backup file<input type="file" name="backup_file" accept=".dump,.sqlite" required></label>
+    <label>Type RESTORE to confirm<input name="confirmation" autocomplete="off" required></label>
+    <button class="danger">Validate &amp; restore</button>
+  </form>
+</section>
+
+<section class="backup-note">
+  <h2>Storage warning</h2>
+  <p><strong>A backup on the same failed disk is not a disaster-recovery backup.</strong> In Portainer, set <code>BACKUP_HOST_PATH</code> to a path on your Unraid/NFS/other independent storage before relying on the schedule.</p>
+  <p class="muted">Automatic retention keeps the newest {{ retention_daily }} backups, plus one representative restore point from each of the newest {{ retention_weekly }} ISO weeks and {{ retention_monthly }} calendar months. Manual and pre-restore safety backups are never automatically pruned.</p>
+  <p class="muted">The database dump contains Share Manager data, but not your Portainer stack environment variables/secrets. Back those up separately.</p>
 </section>
 {% endblock %}

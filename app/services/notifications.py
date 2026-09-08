@@ -53,6 +53,8 @@ EVENT_DEFINITIONS = {
     "plex.invite_sent": {"label": "Plex invitation sent", "severity": "info"},
     "plex.reconcile_failed": {"label": "Plex reconciliation failed", "severity": "critical"},
     "backup.created": {"label": "Database backup created", "severity": "info"},
+    "backup.failed": {"label": "Database backup failed", "severity": "critical"},
+    "backup.restored": {"label": "Database restored", "severity": "warning"},
 }
 
 
