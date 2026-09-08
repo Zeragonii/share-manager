@@ -106,3 +106,7 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 - Fixed the mobile hamburger icon so its bars render vertically.
 - Tightened the mobile Dashboard with a two-column headline-stat grid and smaller stat cards.
 - Added a native mobile revenue-package distribution layout, removing the need to horizontally scroll the desktop revenue table on phones.
+
+
+## v0.3.9
+- Added a client-side Package filter to the Customers page. Package filtering composes with status, text search and sorting, and the package list is generated from currently displayed customer assignments.

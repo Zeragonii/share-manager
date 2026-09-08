@@ -216,3 +216,8 @@ a.button-link, .button-link{white-space:nowrap}
   .forecast-stat small{font-size:9px}
   .forecast-heading p{font-size:11px;line-height:1.4}
 }
+
+
+/* v0.3.9 customer package filtering */
+.customer-package-filter,.customer-sort{min-width:170px}
+@media(max-width:900px){.customer-package-filter,.customer-sort{width:100%;min-width:0}}

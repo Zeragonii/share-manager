@@ -33,6 +33,7 @@
 <section><h2>Managed customers</h2>
 <div class="customer-toolbar">
   <label class="customer-search">Search customers<input id="customer-search" type="search" placeholder="Name, email or Plex username…" autocomplete="off"></label>
+  <label class="customer-package-filter">Package<select id="customer-package-filter"><option value="all">All packages</option></select></label>
   <label class="customer-sort">Sort by<select id="customer-sort">
     <option value="expiry-asc">Expiring soonest</option>
     <option value="expiry-desc">Expiring latest</option>
@@ -54,7 +55,7 @@
 {% for c in customers %}
 {% set sub = c.ui_subscription %}
 {% set effective_expiry = sub.manual_access_end if sub and sub.manual_access_end and sub.manual_access_end > today_dt else (sub.grace_until if sub and sub.grace_until else (sub.current_period_end if sub else none)) %}
-<article class="card customer-card" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}" data-name="{{ c.name|lower|e }}" data-expiry="{{ effective_expiry.isoformat() if effective_expiry else '' }}">
+<article class="card customer-card" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}" data-name="{{ c.name|lower|e }}" data-expiry="{{ effective_expiry.isoformat() if effective_expiry else '' }}" data-package="{{ sub.billing_tier.package.name|lower|e if sub else '' }}" data-package-label="{{ sub.billing_tier.package.name|e if sub else '' }}">
   <button type="button" class="customer-mobile-summary" aria-expanded="false">
     <span class="customer-mobile-identity">
       <strong>{{ c.name }}</strong>
@@ -128,10 +129,27 @@
   const cards = [...document.querySelectorAll('.customer-card')];
   const search = document.getElementById('customer-search');
   const sort = document.getElementById('customer-sort');
+  const packageFilter = document.getElementById('customer-package-filter');
   const list = document.querySelector('.customer-list');
   const filterButtons = [...document.querySelectorAll('.customer-filter')];
   const empty = document.getElementById('customer-filter-empty');
   let currentStatus = 'all';
+  let currentPackage = 'all';
+
+  if (packageFilter) {
+    const packages = new Map();
+    cards.forEach(card => {
+      const key = card.dataset.package || '';
+      const label = card.dataset.packageLabel || '';
+      if (key && label && !packages.has(key)) packages.set(key, label);
+    });
+    [...packages.entries()].sort((a,b) => a[1].localeCompare(b[1])).forEach(([key,label]) => {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = label;
+      packageFilter.appendChild(option);
+    });
+  }
 
   const counts = {all: cards.length, active: 0, grace: 0, suspended: 0, cancelled: 0, exempt: 0};
   cards.forEach(card => {
@@ -174,7 +192,8 @@
     cards.forEach(card => {
       const statusMatch = currentStatus === 'all' || card.dataset.status === currentStatus;
       const textMatch = !query || (card.dataset.search || '').includes(query);
-      const show = statusMatch && textMatch;
+      const packageMatch = currentPackage === 'all' || card.dataset.package === currentPackage;
+      const show = statusMatch && textMatch && packageMatch;
       card.hidden = !show;
       if (show) visible += 1;
     });
@@ -188,6 +207,7 @@
   }));
   search.addEventListener('input', applyFilters);
   sort?.addEventListener('change', applyFilters);
+  packageFilter?.addEventListener('change', () => { currentPackage = packageFilter.value; applyFilters(); });
   applyFilters();
 })();
 
