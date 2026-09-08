@@ -171,3 +171,9 @@ If the Plex invitation fails, the customer and subscription are retained and the
 
 ## v0.3.7
 - Added client-side customer sorting by effective access expiry, name, or status. Effective expiry prefers an active manual-access-until date, then grace-until, then paid-through; customers without a date sort last.
+
+
+## v0.3.8
+- Fixed the mobile hamburger icon so its bars render vertically.
+- Tightened the mobile Dashboard with a two-column headline-stat grid and smaller stat cards.
+- Added a native mobile revenue-package distribution layout, removing the need to horizontally scroll the desktop revenue table on phones.

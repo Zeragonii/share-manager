@@ -183,3 +183,36 @@ a.button-link, .button-link{white-space:nowrap}
 .customer-sort{min-width:190px}
 .customer-sort select{min-width:190px}
 @media(max-width:900px){.customer-sort{width:100%;min-width:0}.customer-sort select{min-width:0}}
+
+
+/* v0.3.8 mobile dashboard polish and corrected hamburger icon. */
+.mobile-nav-toggle{flex-direction:column;gap:3px}
+.mobile-nav-toggle span{margin:0 auto}
+.forecast-mobile-list{display:none}
+
+@media(max-width:700px){
+  .forecast-desktop-table{display:none}
+  .forecast-mobile-list{display:grid;gap:9px}
+  .forecast-package-card{padding:12px;border:1px solid var(--line);border-radius:9px;background:#0e141d}
+  .forecast-package-card>.row{margin-bottom:10px}
+  .forecast-package-card>.row .muted{font-size:10px}
+  .forecast-package-values{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .forecast-package-values>div{display:grid;gap:2px;padding:9px 10px;border-radius:7px;background:#121a25}
+  .forecast-package-values span{font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .forecast-package-values strong{font-size:18px}
+  .forecast-package-values small{font-size:9px;color:var(--muted)}
+}
+
+@media(max-width:520px){
+  /* Keep dashboard metrics dense on phones rather than one giant card per row. */
+  .stats.billing-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .billing-stats .stat{padding:13px 14px;margin-bottom:0;min-height:92px;display:flex;flex-direction:column;justify-content:center}
+  .billing-stats .stat strong{font-size:25px;line-height:1.05}
+  .billing-stats .stat span{font-size:12px;margin-top:5px}
+  .revenue-forecast{padding:14px}
+  .forecast-totals{gap:8px;margin:12px 0}
+  .forecast-stat{padding:11px 12px}
+  .forecast-stat strong{font-size:20px}
+  .forecast-stat small{font-size:9px}
+  .forecast-heading p{font-size:11px;line-height:1.4}
+}
