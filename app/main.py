@@ -277,7 +277,7 @@ def customers(request: Request, error: str | None = None, notice: str | None = N
             for entitlement in tier.package.entitlements
         ):
             plex_ready_tier_ids.add(tier.id)
-    return render(request, "customers.html", customers=rows, tiers=tiers, plex_ready_tier_ids=plex_ready_tier_ids, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"))
+    return render(request, "customers.html", customers=rows, tiers=tiers, plex_ready_tier_ids=plex_ready_tier_ids, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"), today_dt=datetime.utcnow())
 
 
 @app.post("/customers/onboard")

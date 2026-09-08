@@ -96,3 +96,7 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 
 ## v0.3.6
 - Fixed a desktop Customers-page layout regression so each customer tile again behaves as a top/bottom flex layout, keeping summary content aligned at the top and action controls pinned to the bottom of equal-height cards.
+
+
+## v0.3.7
+- Added client-side customer sorting by effective access expiry, name, or status. Effective expiry prefers an active manual-access-until date, then grace-until, then paid-through; customers without a date sort last.

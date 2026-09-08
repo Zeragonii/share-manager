@@ -33,6 +33,13 @@
 <section><h2>Managed customers</h2>
 <div class="customer-toolbar">
   <label class="customer-search">Search customers<input id="customer-search" type="search" placeholder="Name, email or Plex username…" autocomplete="off"></label>
+  <label class="customer-sort">Sort by<select id="customer-sort">
+    <option value="expiry-asc">Expiring soonest</option>
+    <option value="expiry-desc">Expiring latest</option>
+    <option value="name-asc">Name A–Z</option>
+    <option value="name-desc">Name Z–A</option>
+    <option value="status">Status</option>
+  </select></label>
   <div class="customer-filters" role="group" aria-label="Filter customers by status">
     <button type="button" class="secondary customer-filter active" data-status="all">All <span class="filter-count" data-count="all">0</span></button>
     <button type="button" class="secondary customer-filter" data-status="active">Active <span class="filter-count" data-count="active">0</span></button>
@@ -46,7 +53,8 @@
 <div class="cards customer-list">
 {% for c in customers %}
 {% set sub = c.ui_subscription %}
-<article class="card customer-card" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}">
+{% set effective_expiry = sub.manual_access_end if sub and sub.manual_access_end and sub.manual_access_end > today_dt else (sub.grace_until if sub and sub.grace_until else (sub.current_period_end if sub else none)) %}
+<article class="card customer-card" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}" data-name="{{ c.name|lower|e }}" data-expiry="{{ effective_expiry.isoformat() if effective_expiry else '' }}">
   <button type="button" class="customer-mobile-summary" aria-expanded="false">
     <span class="customer-mobile-identity">
       <strong>{{ c.name }}</strong>
@@ -119,6 +127,8 @@
 (() => {
   const cards = [...document.querySelectorAll('.customer-card')];
   const search = document.getElementById('customer-search');
+  const sort = document.getElementById('customer-sort');
+  const list = document.querySelector('.customer-list');
   const filterButtons = [...document.querySelectorAll('.customer-filter')];
   const empty = document.getElementById('customer-filter-empty');
   let currentStatus = 'all';
@@ -132,7 +142,33 @@
     node.textContent = counts[node.dataset.count] ?? 0;
   });
 
+  const statusRank = {grace: 0, active: 1, suspended: 2, cancelled: 3, exempt: 4};
+
+  function sortCards() {
+    const mode = sort?.value || 'expiry-asc';
+    const sorted = [...cards].sort((a, b) => {
+      const nameA = a.dataset.name || '';
+      const nameB = b.dataset.name || '';
+      const expiryA = a.dataset.expiry || '';
+      const expiryB = b.dataset.expiry || '';
+      if (mode === 'name-asc') return nameA.localeCompare(nameB);
+      if (mode === 'name-desc') return nameB.localeCompare(nameA);
+      if (mode === 'status') {
+        const rank = (statusRank[a.dataset.status] ?? 99) - (statusRank[b.dataset.status] ?? 99);
+        return rank || nameA.localeCompare(nameB);
+      }
+      // Blank expiry dates always sort last. ISO dates are safely lexicographically sortable.
+      if (!expiryA && !expiryB) return nameA.localeCompare(nameB);
+      if (!expiryA) return 1;
+      if (!expiryB) return -1;
+      const cmp = expiryA.localeCompare(expiryB);
+      return (mode === 'expiry-desc' ? -cmp : cmp) || nameA.localeCompare(nameB);
+    });
+    sorted.forEach(card => list.appendChild(card));
+  }
+
   function applyFilters() {
+    sortCards();
     const query = (search.value || '').trim().toLowerCase();
     let visible = 0;
     cards.forEach(card => {
@@ -151,6 +187,7 @@
     applyFilters();
   }));
   search.addEventListener('input', applyFilters);
+  sort?.addEventListener('change', applyFilters);
   applyFilters();
 })();
 
