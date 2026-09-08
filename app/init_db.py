@@ -49,7 +49,7 @@ print("Database schema ready")
 # Seed editable payment-source choices. Payments keep their source text so historical
 # ledger entries remain unchanged if a source is later renamed or archived.
 from .db import SessionLocal
-from .models import Payment, PaymentSource
+from .models import BackupSettings, Payment, PaymentSource
 
 db = SessionLocal()
 try:
@@ -60,6 +60,19 @@ try:
         if name.lower() not in existing:
             db.add(PaymentSource(name=name, active=True))
             existing.add(name.lower())
+
+    # v0.4.1: move backup automation policy into the database. Environment
+    # variables remain first-run defaults so existing deployments migrate cleanly.
+    if db.get(BackupSettings, 1) is None:
+        db.add(BackupSettings(
+            id=1,
+            enabled=True,
+            schedule_hour=max(0, min(23, int(settings.backup_schedule_hour))),
+            check_interval_minutes=max(1, int(settings.backup_check_interval_minutes)),
+            retention_daily=max(1, int(settings.backup_retention_daily)),
+            retention_weekly=max(0, int(settings.backup_retention_weekly)),
+            retention_monthly=max(0, int(settings.backup_retention_monthly)),
+        ))
     db.commit()
 finally:
     db.close()

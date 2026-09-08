@@ -199,14 +199,9 @@ Portainer/environment settings:
 
 ```env
 BACKUP_HOST_PATH=/path/on/independent/storage/share-manager
-BACKUP_SCHEDULE_HOUR=3
-BACKUP_CHECK_INTERVAL_MINUTES=5
-BACKUP_RETENTION_DAILY=7
-BACKUP_RETENTION_WEEKLY=4
-BACKUP_RETENTION_MONTHLY=6
 ```
 
-`BACKUP_HOST_PATH` is mounted at `/backups` inside the app container. For genuine disaster recovery, put this on storage independent from the PostgreSQL volume (for example an Unraid/NFS location or another physical disk/server).
+`BACKUP_HOST_PATH` is mounted at `/backups` inside the app container. For genuine disaster recovery, put this on storage independent from the PostgreSQL volume (for example an Unraid/NFS location or another physical disk/server). The backup schedule and retention policy are configured from **Disaster Recovery → Backup automation** in the web UI.
 
 Automatic retention uses one set of dump files and keeps the union of:
 - the newest N daily restore points;
@@ -222,3 +217,10 @@ The Backups page can restore either a stored backup or an uploaded `.dump`. A Po
 After a successful restore, restart the Share Manager app container so all workers and connection pools start cleanly against the restored database.
 
 The database backup does **not** contain Portainer environment variables, passwords, secrets, or the stack definition. Back up that deployment configuration separately.
+
+
+## v0.4.1 — in-app backup automation settings
+- Backup schedule, scheduler check interval, scheduled-backup enable/disable, and daily/weekly/monthly retention are now stored in PostgreSQL and editable on the Disaster Recovery page.
+- Existing `BACKUP_SCHEDULE_HOUR`, `BACKUP_CHECK_INTERVAL_MINUTES`, and retention environment variables are retained only as first-run defaults for compatibility.
+- `BACKUP_HOST_PATH` remains a deployment/Compose setting because Docker must mount the host/NAS path before the application starts.
+- Scheduler settings are re-read at runtime; changing the policy does not require an app restart (the check interval itself updates after the current sleep finishes).

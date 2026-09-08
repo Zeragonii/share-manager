@@ -125,3 +125,10 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 - Automatic retention operates only on `share-manager-auto-*` dumps. Manual and pre-restore safety dumps are intentionally preserved.
 - Restore is deliberately two-stage from an operator perspective: validate source, create safety backup, then destructive restore. The UI requires the explicit confirmation token `RESTORE`.
 - Backup success/failure and restore completion integrate into the existing notification event system.
+
+
+## v0.4.1 — in-app backup automation settings
+- Backup schedule, scheduler check interval, scheduled-backup enable/disable, and daily/weekly/monthly retention are now stored in PostgreSQL and editable on the Disaster Recovery page.
+- Existing `BACKUP_SCHEDULE_HOUR`, `BACKUP_CHECK_INTERVAL_MINUTES`, and retention environment variables are retained only as first-run defaults for compatibility.
+- `BACKUP_HOST_PATH` remains a deployment/Compose setting because Docker must mount the host/NAS path before the application starts.
+- Scheduler settings are re-read at runtime; changing the policy does not require an app restart (the check interval itself updates after the current sleep finishes).

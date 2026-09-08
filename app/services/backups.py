@@ -7,6 +7,8 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+
+from ..models import BackupSettings
 from typing import Iterable
 
 from sqlalchemy.engine import make_url
@@ -211,3 +213,38 @@ def safe_backup_path(root: str, filename: str) -> Path:
     if not path.is_file() or not filename.startswith("share-manager-") or path.suffix not in {".dump", ".sqlite"}:
         raise ValueError("Backup not found")
     return path
+
+
+@dataclass(frozen=True)
+class BackupPolicy:
+    enabled: bool
+    schedule_hour: int
+    check_interval_minutes: int
+    retention_daily: int
+    retention_weekly: int
+    retention_monthly: int
+
+
+def get_backup_policy(db, defaults) -> BackupPolicy:
+    row = db.get(BackupSettings, 1)
+    if row is None:
+        row = BackupSettings(
+            id=1,
+            enabled=True,
+            schedule_hour=max(0, min(23, int(defaults.backup_schedule_hour))),
+            check_interval_minutes=max(1, int(defaults.backup_check_interval_minutes)),
+            retention_daily=max(1, int(defaults.backup_retention_daily)),
+            retention_weekly=max(0, int(defaults.backup_retention_weekly)),
+            retention_monthly=max(0, int(defaults.backup_retention_monthly)),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return BackupPolicy(
+        enabled=bool(row.enabled),
+        schedule_hour=max(0, min(23, int(row.schedule_hour))),
+        check_interval_minutes=max(1, int(row.check_interval_minutes)),
+        retention_daily=max(1, int(row.retention_daily)),
+        retention_weekly=max(0, int(row.retention_weekly)),
+        retention_monthly=max(0, int(row.retention_monthly)),
+    )

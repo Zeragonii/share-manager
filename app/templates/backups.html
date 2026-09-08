@@ -11,8 +11,8 @@
   </section>
   <section class="backup-status-card">
     <span>Schedule</span>
-    <strong>Daily · {{ '%02d:00'|format(schedule_hour) }} UTC</strong>
-    <small>The scheduler catches up after restarts if today's automatic backup is missing.</small>
+    <strong>{% if backup_enabled %}Daily · {{ '%02d:00'|format(schedule_hour) }} UTC{% else %}Disabled{% endif %}</strong>
+    <small>{% if backup_enabled %}Checks every {{ check_interval_minutes }} minute{{ '' if check_interval_minutes == 1 else 's' }} and catches up after restarts.{% else %}Manual backups and restores remain available.{% endif %}</small>
   </section>
   <section class="backup-status-card">
     <span>Retention</span>
@@ -20,6 +20,19 @@
     <small>Daily / weekly / monthly automatic restore points.</small>
   </section>
 </div>
+
+<section class="backup-settings-panel">
+  <div class="backup-settings-heading"><h2>Backup automation</h2><p>Manage the schedule and retention policy here. Changes are stored in the Share Manager database and do not require a container restart.</p></div>
+  <form method="post" action="/backups/settings" class="backup-settings-form">
+    <label class="backup-toggle"><input type="checkbox" name="enabled" {% if backup_enabled %}checked{% endif %}><span><strong>Enable scheduled backups</strong><small>Manual backup and restore remain available when disabled.</small></span></label>
+    <label>Daily backup hour (UTC)<select name="schedule_hour">{% for hour in range(24) %}<option value="{{ hour }}" {% if hour == schedule_hour %}selected{% endif %}>{{ '%02d:00'|format(hour) }}</option>{% endfor %}</select></label>
+    <label>Scheduler check interval<input type="number" name="check_interval_minutes" min="1" max="60" value="{{ check_interval_minutes }}" required><span class="field-help">Minutes. Changes take effect on the scheduler's next wake-up.</span></label>
+    <label>Daily restore points<input type="number" name="retention_daily" min="1" max="365" value="{{ retention_daily }}" required></label>
+    <label>Weekly restore points<input type="number" name="retention_weekly" min="0" max="104" value="{{ retention_weekly }}" required></label>
+    <label>Monthly restore points<input type="number" name="retention_monthly" min="0" max="120" value="{{ retention_monthly }}" required></label>
+    <div class="backup-settings-actions"><button>Save automation settings</button></div>
+  </form>
+</section>
 
 <section>
   <div class="row between backup-heading">
@@ -65,7 +78,7 @@
 <section class="backup-note">
   <h2>Storage warning</h2>
   <p><strong>A backup on the same failed disk is not a disaster-recovery backup.</strong> In Portainer, set <code>BACKUP_HOST_PATH</code> to a path on your Unraid/NFS/other independent storage before relying on the schedule.</p>
-  <p class="muted">Automatic retention keeps the newest {{ retention_daily }} backups, plus one representative restore point from each of the newest {{ retention_weekly }} ISO weeks and {{ retention_monthly }} calendar months. Manual and pre-restore safety backups are never automatically pruned.</p>
+  <p class="muted">Automatic retention keeps the newest {{ retention_daily }} backups, plus one representative restore point from each of the newest {{ retention_weekly }} ISO weeks and {{ retention_monthly }} calendar months. Manual and pre-restore safety backups are never automatically pruned. Schedule and retention are configured above; the old BACKUP_* automation environment variables are now only first-run defaults.</p>
   <p class="muted">The database dump contains Share Manager data, but not your Portainer stack environment variables/secrets. Back those up separately.</p>
 </section>
 {% endblock %}

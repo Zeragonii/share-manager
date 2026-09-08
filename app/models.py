@@ -158,6 +158,18 @@ class AuditLog(Base):
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class BackupSettings(Base):
+    __tablename__ = "backup_settings"
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    schedule_hour: Mapped[int] = mapped_column(Integer, default=3)
+    check_interval_minutes: Mapped[int] = mapped_column(Integer, default=5)
+    retention_daily: Mapped[int] = mapped_column(Integer, default=7)
+    retention_weekly: Mapped[int] = mapped_column(Integer, default=4)
+    retention_monthly: Mapped[int] = mapped_column(Integer, default=6)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class NotificationEndpoint(Base):
     __tablename__ = "notification_endpoints"
     id: Mapped[int] = mapped_column(primary_key=True)

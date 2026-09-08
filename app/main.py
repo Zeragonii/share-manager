@@ -24,6 +24,7 @@ from .models import (
     ASSIGNED_SUBSCRIPTION_STATES,
     AuditLog,
     BillingTier,
+    BackupSettings,
     Customer,
     Integration,
     Package,
@@ -41,7 +42,7 @@ from .services.billing import apply_payment, apply_subscription_credit, desired_
 from .services.reconcile import reconcile_customer
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
-from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup
+from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy
 from .version import APP_VERSION
 
 
@@ -72,19 +73,22 @@ def _notify_due_soon(db: Session, now: datetime) -> None:
 
 
 def run_backup_cycle() -> bool:
-    """Create the daily scheduled backup when due and apply GFS-style retention."""
+    """Create the daily scheduled backup when due and apply the database-backed retention policy."""
     now = datetime.utcnow()
-    if not scheduled_backup_due(settings.backup_dir, now=now, hour=settings.backup_schedule_hour):
-        return False
     db = SessionLocal()
     try:
+        policy = get_backup_policy(db, settings)
+        if not policy.enabled:
+            return False
+        if not scheduled_backup_due(settings.backup_dir, now=now, hour=policy.schedule_hour):
+            return False
         try:
             backup = create_backup(settings.database_url, settings.backup_dir, automatic=True, now=now)
             removed = apply_retention(
                 settings.backup_dir,
-                daily=settings.backup_retention_daily,
-                weekly=settings.backup_retention_weekly,
-                monthly=settings.backup_retention_monthly,
+                daily=policy.retention_daily,
+                weekly=policy.retention_weekly,
+                monthly=policy.retention_monthly,
             )
             db.add(AuditLog(actor="system", action="backup.scheduled", target_type="backup", target_id=backup.name, detail=f"{backup.size} bytes; pruned {len(removed)} old automatic backup(s)"))
             db.commit()
@@ -144,7 +148,14 @@ async def lifespan(_app: FastAPI):
                 await asyncio.to_thread(run_backup_cycle)
             except Exception:
                 pass
-            await asyncio.sleep(max(1, settings.backup_check_interval_minutes) * 60)
+            # Read the interval from the database after every cycle so UI changes
+            # take effect without a container restart.
+            db = SessionLocal()
+            try:
+                interval = get_backup_policy(db, settings).check_interval_minutes
+            finally:
+                db.close()
+            await asyncio.sleep(max(1, interval) * 60)
 
     billing_task = asyncio.create_task(billing_loop())
     backup_task = asyncio.create_task(backup_loop())
@@ -1328,6 +1339,11 @@ def backups_page(request: Request, error: str | None = None, notice: str | None 
         return gate
     backups = list_backups(settings.backup_dir)
     latest = backups[0] if backups else None
+    db = SessionLocal()
+    try:
+        policy = get_backup_policy(db, settings)
+    finally:
+        db.close()
     return render(
         request,
         "backups.html",
@@ -1336,11 +1352,61 @@ def backups_page(request: Request, error: str | None = None, notice: str | None 
         backups=backups,
         latest=latest,
         backup_dir=settings.backup_dir,
-        schedule_hour=settings.backup_schedule_hour,
-        retention_daily=settings.backup_retention_daily,
-        retention_weekly=settings.backup_retention_weekly,
-        retention_monthly=settings.backup_retention_monthly,
+        backup_enabled=policy.enabled,
+        schedule_hour=policy.schedule_hour,
+        check_interval_minutes=policy.check_interval_minutes,
+        retention_daily=policy.retention_daily,
+        retention_weekly=policy.retention_weekly,
+        retention_monthly=policy.retention_monthly,
     )
+
+
+@app.post("/backups/settings")
+def update_backup_settings(
+    request: Request,
+    enabled: str | None = Form(None),
+    schedule_hour: int = Form(...),
+    check_interval_minutes: int = Form(...),
+    retention_daily: int = Form(...),
+    retention_weekly: int = Form(...),
+    retention_monthly: int = Form(...),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    if not 0 <= schedule_hour <= 23:
+        return RedirectResponse("/backups?error=Schedule+hour+must+be+between+0+and+23", status_code=303)
+    if not 1 <= check_interval_minutes <= 60:
+        return RedirectResponse("/backups?error=Check+interval+must+be+between+1+and+60+minutes", status_code=303)
+    if not 1 <= retention_daily <= 365:
+        return RedirectResponse("/backups?error=Daily+retention+must+be+between+1+and+365", status_code=303)
+    if not 0 <= retention_weekly <= 104 or not 0 <= retention_monthly <= 120:
+        return RedirectResponse("/backups?error=Weekly+or+monthly+retention+is+outside+the+allowed+range", status_code=303)
+
+    db = SessionLocal()
+    try:
+        row = db.get(BackupSettings, 1)
+        if row is None:
+            row = BackupSettings(id=1)
+            db.add(row)
+        row.enabled = enabled == "on"
+        row.schedule_hour = schedule_hour
+        row.check_interval_minutes = check_interval_minutes
+        row.retention_daily = retention_daily
+        row.retention_weekly = retention_weekly
+        row.retention_monthly = retention_monthly
+        row.updated_at = datetime.utcnow()
+        db.add(AuditLog(
+            actor=settings.admin_username,
+            action="backup.settings.updated",
+            target_type="backup_settings",
+            target_id="1",
+            detail=f"enabled={row.enabled}; hour={schedule_hour}; check={check_interval_minutes}m; retention={retention_daily}/{retention_weekly}/{retention_monthly}",
+        ))
+        db.commit()
+    finally:
+        db.close()
+    return RedirectResponse("/backups?notice=Backup+automation+settings+saved", status_code=303)
 
 
 @app.post("/backups/run")
