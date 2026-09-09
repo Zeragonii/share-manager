@@ -166,3 +166,6 @@ Tautulli is an observational integration, not an entitlement authority. Historic
 ## v0.5.4 runtime database policy
 
 Production/runtime Share Manager is PostgreSQL-only. Configuration validation rejects non-PostgreSQL `DATABASE_URL` values before the application engine is created. Backup and restore support is PostgreSQL-only (`pg_dump` custom format and transactional `pg_restore`). SQLite usage is limited to isolated unit-test fixtures and is not reachable from deployed application configuration.
+
+## v0.5.5
+- Desktop navigation sidebar now stays anchored to the viewport while main page content scrolls. Mobile off-canvas navigation is unchanged.

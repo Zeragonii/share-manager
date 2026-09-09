@@ -242,3 +242,8 @@ a.button-link, .button-link{white-space:nowrap}
 
 /* v0.5.1: keep Tautulli usage visually attached to the package controls. */
 .tautulli-package-summary{margin:0 0 8px}
+
+/* v0.5.5: keep desktop navigation anchored while main content scrolls. */
+@media(min-width:901px){
+  aside{position:sticky;top:0;height:100vh;overflow-y:auto;align-self:start}
+}

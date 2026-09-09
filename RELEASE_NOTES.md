@@ -48,3 +48,6 @@ The repository contains 58 tests after this release (53 from v0.5.2 plus five ad
 - Removed SQLite-specific SQLAlchemy runtime connection arguments.
 - Kept SQLite only in isolated unit-test fixtures; it is not a deployable Share Manager backend.
 - Fixed a v0.5.3 regression where downloading a stored backup incorrectly entered restore maintenance mode and acquired the database worker lock.
+
+## v0.5.5
+- Desktop navigation sidebar now stays anchored to the viewport while main page content scrolls. Mobile off-canvas navigation is unchanged.

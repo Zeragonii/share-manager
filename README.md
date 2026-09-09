@@ -265,3 +265,6 @@ For HTTPS deployments, set `SESSION_COOKIE_SECURE=true`. The backup mount itself
 ## v0.5.4 — PostgreSQL-only hardening
 
 Share Manager now requires PostgreSQL at runtime. `DATABASE_URL` has no SQLite fallback and startup fails clearly if it is missing, malformed, or points to a non-PostgreSQL backend. Disaster Recovery accepts only PostgreSQL custom-format `.dump` files and uses `pg_dump`/`pg_restore` exclusively. SQLite may still appear in unit-test fixtures as a fast isolated SQLAlchemy test backend; it is not a supported deployment/runtime database.
+
+## v0.5.5
+- Desktop navigation sidebar now stays anchored to the viewport while main page content scrolls. Mobile off-canvas navigation is unchanged.
