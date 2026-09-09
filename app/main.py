@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import subprocess
 import tempfile
@@ -6,6 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from threading import Event, Lock
 from urllib.parse import quote_plus, urlsplit
 
 from fastapi import Depends, FastAPI, Form, Request, UploadFile, File
@@ -45,9 +47,22 @@ from .services.billing import apply_payment, apply_subscription_credit, desired_
 from .services.reconcile import reconcile_customer, retry_pending_reconciliations
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
-from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy
+from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy, validate_application_schema, BackupStorageError
 from .services.tautulli import get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage
 from .version import APP_VERSION
+
+
+
+logger = logging.getLogger("share-manager")
+
+RESTORE_IN_PROGRESS = Event()
+DB_WORK_LOCK = Lock()
+
+def serialized_db_worker(func):
+    def wrapped(*args, **kwargs):
+        with DB_WORK_LOCK:
+            return func(*args, **kwargs)
+    return wrapped
 
 
 def _parse_date(value: str | None, fallback: datetime | None = None) -> datetime | None:
@@ -110,17 +125,20 @@ def _notify_due_soon(db: Session, now: datetime) -> None:
 
 
 
+@serialized_db_worker
 def run_backup_cycle() -> bool:
     """Create the daily scheduled backup when due and apply the database-backed retention policy."""
+    if RESTORE_IN_PROGRESS.is_set():
+        return False
     now = datetime.utcnow()
     db = SessionLocal()
     try:
         policy = get_backup_policy(db, settings)
         if not policy.enabled:
             return False
-        if not scheduled_backup_due(settings.backup_dir, now=now, hour=policy.schedule_hour):
-            return False
         try:
+            if not scheduled_backup_due(settings.backup_dir, now=now, hour=policy.schedule_hour):
+                return False
             backup = create_backup(settings.database_url, settings.backup_dir, automatic=True, now=now)
             removed = apply_retention(
                 settings.backup_dir,
@@ -140,8 +158,11 @@ def run_backup_cycle() -> bool:
     finally:
         db.close()
 
+@serialized_db_worker
 def run_billing_cycle() -> int:
     """Run automatic expiry/grace transitions, notifications and Plex reconciliation."""
+    if RESTORE_IN_PROGRESS.is_set():
+        return 0
     db = SessionLocal()
     try:
         now = datetime.utcnow()
@@ -167,7 +188,10 @@ def run_billing_cycle() -> int:
         db.close()
 
 
+@serialized_db_worker
 def run_tautulli_cycle() -> bool:
+    if RESTORE_IN_PROGRESS.is_set():
+        return False
     db = SessionLocal()
     try:
         row = get_tautulli_settings(db)
@@ -191,23 +215,25 @@ async def lifespan(_app: FastAPI):
                 await asyncio.to_thread(run_billing_cycle)
             except Exception:
                 # The next scheduled cycle gets another chance; request handling stays up.
-                pass
+                logger.exception("Billing worker cycle failed")
             await asyncio.sleep(max(1, settings.billing_check_interval_minutes) * 60)
 
     async def backup_loop():
         await asyncio.sleep(10)
+        interval = max(1, settings.backup_check_interval_minutes)
         while True:
             try:
                 await asyncio.to_thread(run_backup_cycle)
+                # Read the interval from the database after every cycle so UI changes
+                # take effect without a container restart. Keep this inside the same
+                # failure boundary so a transient DB issue cannot kill the worker.
+                db = SessionLocal()
+                try:
+                    interval = get_backup_policy(db, settings).check_interval_minutes
+                finally:
+                    db.close()
             except Exception:
-                pass
-            # Read the interval from the database after every cycle so UI changes
-            # take effect without a container restart.
-            db = SessionLocal()
-            try:
-                interval = get_backup_policy(db, settings).check_interval_minutes
-            finally:
-                db.close()
+                logger.exception("Backup worker cycle failed")
             await asyncio.sleep(max(1, interval) * 60)
 
     async def tautulli_loop():
@@ -216,7 +242,7 @@ async def lifespan(_app: FastAPI):
             try:
                 await asyncio.to_thread(run_tautulli_cycle)
             except Exception:
-                pass
+                logger.exception("Tautulli worker cycle failed")
             await asyncio.sleep(60)
 
     billing_task = asyncio.create_task(billing_loop())
@@ -237,6 +263,12 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Share Manager", version=APP_VERSION, lifespan=lifespan)
+
+@app.middleware("http")
+async def restore_maintenance_mode(request: Request, call_next):
+    if RESTORE_IN_PROGRESS.is_set() and request.url.path not in {"/health"}:
+        return JSONResponse({"error": "Database restore in progress"}, status_code=503, headers={"Retry-After": "10"})
+    return await call_next(request)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["format_duration"] = _format_duration
@@ -270,7 +302,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     if not valid_credentials(username, password):
         return render(request, "login.html", error="Invalid username or password")
     response = RedirectResponse("/", status_code=303)
-    response.set_cookie("sm_session", make_session(), httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7)
+    response.set_cookie("sm_session", make_session(), httponly=True, samesite="lax", secure=settings.session_cookie_secure, max_age=settings.session_max_age_seconds)
     return response
 
 
@@ -1444,7 +1476,11 @@ def delete_payment(request: Request, payment_id: int, db: Session = Depends(get_
     if payment.subscription_id and payment.coverage_end and not payment_is_latest_coverage_event(db, payment):
         return RedirectResponse("/payments?error=Applied+payments+can+only+be+deleted+when+they+are+the+latest+coverage+event", status_code=303)
     if payment.subscription_id and payment.coverage_end:
-        rollback_voided_latest_payment(db, payment)
+        try:
+            rollback_voided_latest_payment(db, payment)
+        except ValueError as exc:
+            db.rollback()
+            return RedirectResponse(f"/payments?error={quote_plus(str(exc))}", status_code=303)
     payment.voided_at = datetime.utcnow()
     payment.voided_by = settings.admin_username
     db.add(AuditLog(actor=settings.admin_username, action="payment.delete", target_type="payment", target_id=str(payment.id), detail=f"Voided £{payment.amount} via {payment.source} received {payment.paid_at:%Y-%m-%d}"))
@@ -1500,7 +1536,13 @@ def backups_page(request: Request, error: str | None = None, notice: str | None 
     gate = auth(request)
     if gate:
         return gate
-    backups = list_backups(settings.backup_dir)
+    storage_error = None
+    try:
+        backups = list_backups(settings.backup_dir)
+    except BackupStorageError as exc:
+        backups = []
+        storage_error = str(exc)
+        error = error or storage_error
     latest = backups[0] if backups else None
     db = SessionLocal()
     try:
@@ -1521,6 +1563,7 @@ def backups_page(request: Request, error: str | None = None, notice: str | None 
         retention_daily=policy.retention_daily,
         retention_weekly=policy.retention_weekly,
         retention_monthly=policy.retention_monthly,
+        storage_error=storage_error,
     )
 
 
@@ -1628,6 +1671,10 @@ def download_stored_backup(request: Request, filename: str):
     gate = auth(request)
     if gate:
         return gate
+    if RESTORE_IN_PROGRESS.is_set():
+        return RedirectResponse("/backups?error=Another+restore+is+already+in+progress", status_code=303)
+    RESTORE_IN_PROGRESS.set()
+    DB_WORK_LOCK.acquire()
     try:
         path = safe_backup_path(settings.backup_dir, filename)
     except ValueError:
@@ -1651,6 +1698,9 @@ def restore_stored_backup(request: Request, filename: str, confirmation: str = F
         engine.dispose()
         restore_backup(settings.database_url, path)
         engine.dispose()
+        schema_ok, schema_detail = validate_application_schema(settings.database_url)
+        if not schema_ok:
+            raise RuntimeError(schema_detail)
         db = SessionLocal()
         try:
             db.add(AuditLog(actor=settings.admin_username, action="backup.restore", target_type="backup", target_id=filename, detail=f"Safety backup: {safety.name}"))
@@ -1662,6 +1712,9 @@ def restore_stored_backup(request: Request, filename: str, confirmation: str = F
     except Exception as exc:
         engine.dispose()
         return RedirectResponse(f"/backups?error={quote_plus('Restore failed: ' + str(exc))}", status_code=303)
+    finally:
+        DB_WORK_LOCK.release()
+        RESTORE_IN_PROGRESS.clear()
 
 
 @app.post("/backups/upload-restore")
@@ -1674,6 +1727,10 @@ async def restore_uploaded_backup(request: Request, backup_file: UploadFile = Fi
     suffix = Path(backup_file.filename or "").suffix.lower()
     if suffix not in {".dump", ".sqlite"}:
         return RedirectResponse("/backups?error=Upload+a+.dump+or+.sqlite+backup", status_code=303)
+    if RESTORE_IN_PROGRESS.is_set():
+        return RedirectResponse("/backups?error=Another+restore+is+already+in+progress", status_code=303)
+    RESTORE_IN_PROGRESS.set()
+    DB_WORK_LOCK.acquire()
     fd, temp_name = tempfile.mkstemp(prefix="share-manager-restore-", suffix=suffix)
     os.close(fd)
     temp_path = Path(temp_name)
@@ -1688,6 +1745,9 @@ async def restore_uploaded_backup(request: Request, backup_file: UploadFile = Fi
         engine.dispose()
         restore_backup(settings.database_url, temp_path)
         engine.dispose()
+        schema_ok, schema_detail = validate_application_schema(settings.database_url)
+        if not schema_ok:
+            raise RuntimeError(schema_detail)
         db = SessionLocal()
         try:
             db.add(AuditLog(actor=settings.admin_username, action="backup.restore.upload", target_type="backup", target_id=backup_file.filename, detail=f"Safety backup: {safety.name}"))
@@ -1701,6 +1761,8 @@ async def restore_uploaded_backup(request: Request, backup_file: UploadFile = Fi
         return RedirectResponse(f"/backups?error={quote_plus('Restore failed: ' + str(exc))}", status_code=303)
     finally:
         temp_path.unlink(missing_ok=True)
+        DB_WORK_LOCK.release()
+        RESTORE_IN_PROGRESS.clear()
 
 
 @app.get("/api/integrations/{integration_id}/libraries")

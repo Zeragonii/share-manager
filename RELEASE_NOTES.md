@@ -1,33 +1,41 @@
-# v0.5.2
+# v0.5.3
 
-This release fixes missed Plex access updates after failures and after payment maintenance. It keeps the existing renewal calculations, grace periods, complimentary credits, manual access overrides, and legacy uninitialized-subscription behavior.
+This release continues the v0.5.2 correctness work and hardens disaster recovery, payment rollback, pending Plex invitations, authentication sessions, CI, and worker failure visibility.
 
-## Fixes
+## Backups / restore
 
-- **Persistent Plex retries.** Every attempted customer/server reconciliation is recorded before contacting Plex. Successful work is removed; failed work remains in the database and is retried by the billing scheduler, including after an application restart. One failing server no longer prevents attempts on the customer's other enabled servers.
-- **Current access on retry.** Jobs store customer and server IDs, not an old access decision. Each attempt reloads current customer, subscription, package, and identity data. Exempt or unlinked customers are skipped and their outstanding work is cleared. Disabled servers are not contacted; their jobs wait until re-enabled.
-- **Bounded retry frequency.** Consecutive failures defer attempts by 1, 2, 4, 8, 16, 32, then at most 60 minutes. Due jobs are checked during the configured billing cycle, so actual retry timing is rounded up to a scheduler run (15 minutes by default). Explicit reconciliation and normal immediate actions can retry sooner. Retries do not repeat billing transition notifications.
-- **Scoped payment updates.** Editing coverage or voiding an applied payment refreshes billing only for that payment's customer. Other customers remain available to the regular billing cycle, which performs their status notifications and Plex reconciliation. This local billing refresh also runs for customers without a linked Plex account.
+- Backup storage failures such as an NFS/CIFS `ESTALE` (stale file handle) are now surfaced as an actionable Backups-page error instead of a raw 500.
+- The scheduled backup worker now catches storage/settings-read failures inside its retry boundary and logs worker exceptions.
+- PostgreSQL restore now uses `pg_restore --single-transaction` together with the existing validation and `--exit-on-error` flags, so restore changes are atomic where PostgreSQL supports them.
+- Restore enters application maintenance mode: new non-health requests return 503, new billing/backup/Tautulli cycles do not start, and restore waits for any already-running serialized background DB cycle to finish.
+- After restore, Share Manager verifies that core application tables exist before reporting success.
+- SQLite backup creation now uses SQLite's online backup API instead of a raw file copy. SQLite restore validation now runs `PRAGMA integrity_check` and verifies core Share Manager tables.
 
-## Upgrade
+A stale `/backups` mount still requires the host/container mount to be repaired. Application code can report this cleanly but cannot remount host NFS/CIFS storage from inside the container.
 
-Deploy using the existing procedure. The startup initializer automatically creates the new `plex_reconcile_jobs` table. No existing billing or payment columns are rewritten, and no new environment settings are required.
+## Billing / payment maintenance
 
-The supplied deployment runs a single application worker. An in-process lock serializes immediate and scheduled Plex attempts in that worker; multi-worker/distributed job claiming is not introduced in this release.
+- New applied payments capture the exact subscription/customer state they replaced.
+- Voiding the latest payment restores that captured state, including manually initialized coverage that was not represented by an earlier ledger event.
+- For pre-v0.5.3 legacy payments with no recoverable prior state, Share Manager now refuses the destructive void and presents a repair message instead of clearing dates and granting indefinite active access.
 
-The retry queue starts empty on upgrade. It does not infer unresolved failures from old audit history. If a customer already has incorrect Plex access from a v0.5.1 failure, use their existing **Reconcile Plex** action once; failed attempts from then on are retained for automatic retry.
+## Plex pending invitations
 
-Pending invitations retain their existing success/pending semantics. This release does not change payment rollback rules, pending-invitation management, restore behavior, or authentication.
+- Pending invitations are now treated as entitlement state.
+- Suspending a not-yet-accepted customer removes that server's pending invitation/share.
+- Changing package before acceptance replaces the pending server invitation with one carrying the current desired libraries.
+- Server-specific deletion is preferred; if Plex does not expose a server share id, Share Manager only falls back to cancelling the whole invite when it is safe to do so without affecting another server.
 
-## Verification
+## Authentication
 
-Run from the repository root:
+- Sessions are now server-expiring signed tokens with a seven-day default maximum age.
+- Session validity includes a derived version of the configured admin credentials, so changing the admin password invalidates existing sessions.
+- `SESSION_COOKIE_SECURE=true` can be used for HTTPS-only deployments. It remains false by default for local HTTP compatibility.
 
-```sh
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
-```
+## Release pipeline
 
-The release was checked with 53 passing tests on Python 3.12: all 37 existing tests plus 16 new regression cases. The new cases cover failed suspension recovery without a new status transition, persistence across a recreated database engine, interrupted attempts, payment reactivation and package changes before retry, exemptions/unlinking, disabled servers, retry delays, multiple servers, pending-invitation compatibility, scoped payment edit/void handling, and repeatable startup table creation.
+- GitHub release publishing now runs the Python test suite before creating/pushing a version tag or publishing the container.
 
-Tests use disposable SQLite databases and mocked Plex calls. No live Plex server or PostgreSQL restore was used, and no container build was performed as part of this release preparation.
+## Validation
+
+The repository contains 58 tests after this release (53 from v0.5.2 plus five additional regression tests). In the build sandbox, the full suite passed with a lightweight local PlexAPI import stub because external package installation was unavailable; service logic and all new regression tests passed. GitHub CI now installs the real pinned dependencies and runs the full suite before publishing.

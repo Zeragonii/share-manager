@@ -53,3 +53,29 @@ def test_voiding_latest_payment_rolls_subscription_back_to_previous_coverage():
     second.voided_at = datetime(2026, 9, 21)
     db.commit()
     assert sub.current_period_end == first.coverage_end
+
+
+def test_voiding_only_new_payment_restores_pre_payment_initialized_coverage():
+    db, customer, sub = make_db()
+    original_start = sub.current_period_start
+    original_end = sub.current_period_end
+    original_grace = sub.grace_until
+    payment = apply_payment(db, customer=customer, amount=Decimal("10"), paid_at=datetime(2026, 9, 10), source="manual", external_reference=None, note=None, apply_to_subscription=True)
+    db.commit()
+    rollback_voided_latest_payment(db, payment)
+    assert sub.current_period_start == original_start
+    assert sub.current_period_end == original_end
+    assert sub.grace_until == original_grace
+
+
+def test_legacy_only_payment_without_snapshot_refuses_destructive_rollback():
+    import pytest
+    db, customer, sub = make_db()
+    payment = apply_payment(db, customer=customer, amount=Decimal("10"), paid_at=datetime(2026, 9, 10), source="manual", external_reference=None, note=None, apply_to_subscription=True)
+    db.commit()
+    payment.prior_state_captured = False
+    payment.prior_period_start = None
+    payment.prior_period_end = None
+    db.commit()
+    with pytest.raises(ValueError, match="legacy payment"):
+        rollback_voided_latest_payment(db, payment)

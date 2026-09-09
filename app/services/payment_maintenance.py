@@ -48,15 +48,32 @@ def rollback_voided_latest_payment(db: Session, payment: Payment) -> None:
     if not payment.subscription:
         return
     sub = payment.subscription
+
+    # Newer payments carry an exact snapshot of the state they replaced. Prefer
+    # that over reconstructing history from ledger rows.
+    if getattr(payment, "prior_state_captured", False):
+        sub.started_at = payment.prior_started_at or sub.started_at
+        sub.current_period_start = payment.prior_period_start
+        sub.current_period_end = payment.prior_period_end
+        sub.grace_until = payment.prior_grace_until
+        if payment.prior_subscription_status:
+            sub.status = payment.prior_subscription_status
+        if not sub.customer.exempt and payment.prior_customer_status:
+            sub.customer.status = payment.prior_customer_status
+        return
+
+    # Historical rows created before v0.5.3 do not have a snapshot. We can still
+    # reconstruct safely when an older payment/credit exists. If there is no prior
+    # ledger event, refusing the void is safer than silently granting indefinite
+    # undated access or destroying manually initialised coverage.
     previous = latest_entitlement_event(db, sub.id, exclude_payment_id=payment.id)
     if previous:
         sub.current_period_start = previous[1]
         sub.current_period_end = previous[0]
         sub.grace_until = grace_end(previous[0], sub.billing_tier)
-    else:
-        sub.current_period_start = None
-        sub.current_period_end = None
-        sub.grace_until = None
-        sub.status = "active"
-        if not sub.customer.exempt:
-            sub.customer.status = "active"
+        return
+
+    raise ValueError(
+        "This legacy payment has no recoverable pre-payment billing state. "
+        "Set the customer's correct billing dates first or leave this payment in place."
+    )

@@ -153,3 +153,12 @@ Tautulli is an observational integration, not an entitlement authority. Historic
 
 ## v0.5.1
 - Moved the customer-card Tautulli usage/live activity summary out of the upper identity/billing content and into the package/control area so it stays visually anchored directly above the package selector. No Tautulli sync or heartbeat logic changed.
+
+## v0.5.3 reliability hardening
+
+- PostgreSQL restore uses a validated custom dump, exclusive application maintenance mode, `--single-transaction`, and post-restore schema verification.
+- Background database workers are serialized with restore operations so an already-running cycle completes before restore and no new cycle starts during maintenance.
+- SQLite backups use the SQLite online backup API and integrity/schema validation.
+- Applied payments snapshot prior entitlement coverage so a latest-payment void can restore exact previous state.
+- Pending Plex invitations are managed as entitlement state rather than treated as a passive duplicate-invite guard.
+- Admin sessions use timed signed tokens and a credential-derived session version.

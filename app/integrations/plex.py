@@ -126,6 +126,36 @@ class PlexIntegration:
                 f"Plex reported success but server access still exists for {user.title}"
             )
 
+    @staticmethod
+    def _pending_server_share(invite, machine_identifier: str):
+        servers = getattr(invite, "servers", [])
+        if callable(servers):
+            servers = servers()
+        return next((item for item in servers if getattr(item, "machineIdentifier", None) == machine_identifier), None)
+
+    def _remove_pending_server_invite(self, account: MyPlexAccount, invite, server: PlexServer) -> None:
+        """Remove only this server's pending share when Plex exposes a share id."""
+        pending_server = self._pending_server_share(invite, server.machineIdentifier)
+        if pending_server is not None and getattr(pending_server, "id", None) is not None:
+            url = account.FRIENDSERVERS.format(machineId=server.machineIdentifier, serverId=pending_server.id)
+            account.query(url, account._session.delete)
+            return
+
+        servers = getattr(invite, "servers", [])
+        if callable(servers):
+            servers = servers()
+        if len(servers) <= 1:
+            account.cancelInvite(invite)
+            return
+        raise RuntimeError("Plex pending invitation could not be removed safely without affecting another server")
+
+    def _replace_pending_server_invite(self, account: MyPlexAccount, invite, server: PlexServer, sections, plex_username: str, plex_user_id: str | None, email: str | None) -> None:
+        """Replace a pending entitlement so accepting the invite grants current libraries."""
+        self._remove_pending_server_invite(account, invite, server)
+        self._create_server_share(
+            account, server, sections, plex_username=plex_username, plex_user_id=plex_user_id, email=email
+        )
+
     def _create_server_share(
         self,
         account: MyPlexAccount,
@@ -211,15 +241,25 @@ class PlexIntegration:
         identifiers = (plex_user_id, plex_username, email)
         user = self._find_user(account, *identifiers)
 
+        pending_invite = self._find_pending_invite(account, server.machineIdentifier, *identifiers)
+
         if not library_names:
             if user is not None:
                 self._remove_server_share(account, user, server)
+            if pending_invite is not None:
+                self._remove_pending_server_invite(account, pending_invite, server)
             return {"state": "removed", "libraries": []}
 
         sections = [server.library.section(name) for name in library_names]
         share = self._server_share(user, server.machineIdentifier) if user is not None else None
 
-        if share is None and self._find_pending_invite(account, server.machineIdentifier, *identifiers) is not None:
+        if share is None and pending_invite is not None:
+            # A pending invitation is entitlement state too. Recreate this server's
+            # invitation with the current package libraries instead of assuming the
+            # old invite is still correct.
+            self._replace_pending_server_invite(
+                account, pending_invite, server, sections, plex_username, plex_user_id, email
+            )
             return {"state": "pending", "libraries": list(library_names)}
 
         # A pending invitation is already carrying the desired entitlement from the

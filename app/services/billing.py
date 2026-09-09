@@ -105,6 +105,16 @@ def apply_payment(
     )
 
     if apply_to_subscription and sub:
+        # Capture the exact pre-payment entitlement state so voiding the latest
+        # payment can faithfully restore it. This also covers manually initialised
+        # coverage that has no older payment/credit ledger event.
+        payment.prior_state_captured = True
+        payment.prior_started_at = sub.started_at
+        payment.prior_period_start = sub.current_period_start
+        payment.prior_period_end = sub.current_period_end
+        payment.prior_grace_until = sub.grace_until
+        payment.prior_subscription_status = sub.status
+        payment.prior_customer_status = customer.status
         tier = sub.billing_tier
         periods = payment_period_count(amount, tier, billing_periods)
         # Renewals paid before expiry OR during grace extend from the existing expiry.

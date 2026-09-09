@@ -254,3 +254,9 @@ Matching prefers the stored Plex numeric user ID and falls back to Plex username
 
 ## v0.5.1
 - Moved the customer-card Tautulli usage/live activity summary out of the upper identity/billing content and into the package/control area so it stays visually anchored directly above the package selector. No Tautulli sync or heartbeat logic changed.
+
+## v0.5.3 correctness and recovery hardening
+
+v0.5.3 hardens the v0.5.2 review changes. Backup storage errors (including stale NFS/CIFS file handles) are shown cleanly in the Disaster Recovery UI; PostgreSQL restores are transactional and run in maintenance mode with post-restore schema verification; SQLite backups use its online backup API and integrity validation; payment voids restore captured pre-payment state; pending Plex invitations follow current entitlement state; admin sessions expire server-side and are invalidated when credentials change; and release CI runs pytest before publishing.
+
+For HTTPS deployments, set `SESSION_COOKIE_SECURE=true`. The backup mount itself is still controlled by Docker/Portainer through `BACKUP_HOST_PATH`; if `/backups` reports a stale file handle, repair/remount the host storage and recreate/restart the app container before relying on backups again.

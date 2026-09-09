@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -11,7 +12,12 @@ from pathlib import Path
 from ..models import BackupSettings
 from typing import Iterable
 
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import make_url
+
+
+class BackupStorageError(RuntimeError):
+    """Raised when the configured backup mount cannot be accessed reliably."""
 
 
 @dataclass(frozen=True)
@@ -25,7 +31,18 @@ class BackupInfo:
 
 def backup_dir(path: str) -> Path:
     target = Path(path)
-    target.mkdir(parents=True, exist_ok=True)
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        # Force a metadata lookup as NFS/CIFS stale handles can make an existing
+        # mount path fail even when mkdir(exist_ok=True) is used.
+        if not target.is_dir():
+            raise BackupStorageError(f"Backup path is not a directory: {target}")
+        next(target.iterdir(), None)
+    except BackupStorageError:
+        raise
+    except OSError as exc:
+        hint = " The host/NAS mount may be stale; remount it and recreate/restart the app container." if getattr(exc, "errno", None) == 116 else ""
+        raise BackupStorageError(f"Backup storage is unavailable at {target}: {exc}.{hint}") from exc
     return target
 
 
@@ -87,7 +104,15 @@ def create_backup(database_url: str, target_dir: str, *, automatic: bool = False
             db_path = Path(url.database or "")
             if not db_path.exists():
                 raise RuntimeError("SQLite database file not found")
-            shutil.copy2(db_path, temp_path)
+            # SQLite's online backup API produces a transactionally consistent
+            # snapshot even while the application is running.
+            source = sqlite3.connect(str(db_path))
+            dest = sqlite3.connect(str(temp_path))
+            try:
+                source.backup(dest)
+            finally:
+                dest.close()
+                source.close()
         else:
             cmd = [
                 "pg_dump", "--format=custom", "--no-owner", "--no-privileges",
@@ -110,7 +135,24 @@ def validate_backup(database_url: str, path: Path) -> tuple[bool, str]:
     if url.get_backend_name() == "sqlite":
         if path.suffix != ".sqlite":
             return False, "Expected a .sqlite backup for this database"
-        return (path.stat().st_size > 0, "SQLite backup file is readable" if path.stat().st_size > 0 else "Backup is empty")
+        if path.stat().st_size <= 0:
+            return False, "Backup is empty"
+        try:
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            try:
+                integrity = conn.execute("PRAGMA integrity_check").fetchone()
+                tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            finally:
+                conn.close()
+        except sqlite3.DatabaseError as exc:
+            return False, f"SQLite backup is not a valid database: {exc}"
+        if not integrity or integrity[0] != "ok":
+            return False, "SQLite integrity check failed"
+        required = {"customers", "subscriptions", "payments"}
+        missing = sorted(required - tables)
+        if missing:
+            return False, "Backup is missing required Share Manager tables: " + ", ".join(missing)
+        return True, "SQLite backup passed integrity and schema checks"
     if path.suffix != ".dump":
         return False, "Expected a PostgreSQL .dump backup"
     result = subprocess.run(["pg_restore", "--list", str(path)], capture_output=True, text=True)
@@ -144,13 +186,30 @@ def restore_backup(database_url: str, path: Path) -> None:
 
     result = subprocess.run(
         [
-            "pg_restore", "--clean", "--if-exists", "--no-owner", "--no-privileges", "--exit-on-error",
+            "pg_restore", "--clean", "--if-exists", "--no-owner", "--no-privileges",
+            "--exit-on-error", "--single-transaction",
             *_pg_args(url), "--dbname", db_name, str(path),
         ],
         env=env, capture_output=True, text=True,
     )
     if result.returncode != 0:
         raise RuntimeError((result.stderr or "pg_restore failed").strip())
+
+
+def validate_application_schema(database_url: str) -> tuple[bool, str]:
+    """Verify that a restored database still contains the minimum app schema."""
+    check_engine = create_engine(database_url, pool_pre_ping=True)
+    try:
+        tables = set(inspect(check_engine).get_table_names())
+    except Exception as exc:
+        return False, f"Could not inspect restored database: {exc}"
+    finally:
+        check_engine.dispose()
+    required = {"customers", "subscriptions", "payments", "packages", "billing_tiers"}
+    missing = sorted(required - tables)
+    if missing:
+        return False, "Restored database is missing required tables: " + ", ".join(missing)
+    return True, "Restored Share Manager schema verified"
 
 
 def retention_keep_set(backups: Iterable[BackupInfo], *, daily: int, weekly: int, monthly: int) -> set[Path]:

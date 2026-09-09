@@ -44,3 +44,12 @@ def test_retention_keeps_daily_weekly_and_monthly_union():
     assert any(p not in {r.path for r in rows[:7]} for p in keep)
     months = {(r.created_at.year, r.created_at.month) for r in rows if r.path in keep}
     assert len(months) >= 3
+
+
+def test_sqlite_validation_rejects_plain_text_with_sqlite_extension(tmp_path):
+    from app.services.backups import validate_backup
+    path = tmp_path / "invalid.sqlite"
+    path.write_text("not a database")
+    ok, detail = validate_backup("sqlite:///ignored.db", path)
+    assert ok is False
+    assert "valid database" in detail.lower()
