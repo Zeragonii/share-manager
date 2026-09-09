@@ -40,13 +40,13 @@ def _norm(value: str | None) -> str:
 
 def match_customer(db: Session, user: TautulliUser) -> Customer | None:
     if user.user_id:
-        by_id = db.query(Customer).filter(Customer.plex_user_id == str(user.user_id)).first()
+        by_id = db.query(Customer).filter(Customer.plex_user_id == str(user.user_id), Customer.archived.is_(False)).first()
         if by_id:
             return by_id
     identities = {_norm(user.username), _norm(user.email), _norm(user.friendly_name)} - {""}
     if not identities:
         return None
-    customers = db.query(Customer).filter(Customer.plex_username.is_not(None)).all()
+    customers = db.query(Customer).filter(Customer.plex_username.is_not(None), Customer.archived.is_(False)).all()
     for customer in customers:
         if _norm(customer.plex_username) in identities or (_norm(customer.email) and _norm(customer.email) in identities):
             return customer
@@ -179,10 +179,10 @@ def get_live_activity(db: Session, *, max_age_seconds: int | None = None, now: d
                 activity = activities.get(user_id)
                 customer = db.get(Customer, activity.customer_id) if activity else None
                 if customer is None and user_id:
-                    customer = db.query(Customer).filter(Customer.plex_user_id == user_id).first()
+                    customer = db.query(Customer).filter(Customer.plex_user_id == user_id, Customer.archived.is_(False)).first()
                 if customer is None and session.get("username"):
                     identity = str(session.get("username")).strip().lower()
-                    customer = db.query(Customer).filter(or_(func.lower(Customer.plex_username) == identity, func.lower(Customer.email) == identity)).first()
+                    customer = db.query(Customer).filter(Customer.archived.is_(False), or_(func.lower(Customer.plex_username) == identity, func.lower(Customer.email) == identity)).first()
                 item = {**session, "customer_id": customer.id if customer else None, "customer_name": customer.name if customer else session.get("username")}
                 sessions.append(item)
                 if customer and customer.status == "suspended" and not customer.exempt:
@@ -202,7 +202,7 @@ def get_live_activity(db: Session, *, max_age_seconds: int | None = None, now: d
 
 def dashboard_usage(db: Session, *, now: datetime | None = None) -> dict[str, int]:
     now = now or datetime.utcnow()
-    rows = db.query(TautulliActivity).all()
+    rows = (db.query(TautulliActivity).join(Customer, Customer.id == TautulliActivity.customer_id).filter(Customer.archived.is_(False)).all())
     active_7d = sum(1 for a in rows if a.last_streamed_at and a.last_streamed_at >= now - timedelta(days=7))
     active_30d = sum(1 for a in rows if a.last_streamed_at and a.last_streamed_at >= now - timedelta(days=30))
     inactive_90d = sum(1 for a in rows if a.last_streamed_at and a.last_streamed_at < now - timedelta(days=90))

@@ -1,8 +1,8 @@
 {% extends 'base.html' %}{% block content %}
-<header><h1>Customers</h1><p>Link people to packages, billing periods and Plex access.</p></header>
+<header class="row between customer-page-heading"><div><h1>{{ 'Archived customers' if archived_mode else 'Customers' }}</h1><p>{{ 'Historical customer records hidden from the operational customer list.' if archived_mode else 'Link people to packages, billing periods and Plex access.' }}</p></div><a class="button-link secondary" href="{{ '/customers' if archived_mode else '/customers?archived=1' }}">{{ 'Back to customers' if archived_mode else 'Archived customers' }}</a></header>
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
-<section class="customer-onboarding">
+{% if not archived_mode %}<section class="customer-onboarding">
   <div class="row between">
     <div><h2>Add customer</h2><p>Create a local record, or onboard a brand-new Plex user with their package access in one step.</p></div>
     <button type="button" onclick="document.getElementById('onboard-customer-modal').showModal()">Invite new Plex customer</button>
@@ -29,8 +29,8 @@
     <div class="modal-help muted">The selected package must already have Plex libraries mapped. The first billing period starts on this date; the Plex invite is sent with those libraries attached.</div>
     <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Create &amp; invite</button></div>
   </form>
-</dialog>
-<section><h2>Managed customers</h2>
+</dialog>{% endif %}
+<section><h2>{{ 'Archived customers' if archived_mode else 'Managed customers' }}</h2>{% if archived_mode %}<p class="muted archived-customer-help">Archived customers remain in payment, subscription, audit and Tautulli history. Restore one to return it to the normal customer list.</p>{% endif %}
 <div class="customer-toolbar">
   <label class="customer-search">Search customers<input id="customer-search" type="search" placeholder="Name, email or Plex username…" autocomplete="off"></label>
   <label class="customer-package-filter">Package<select id="customer-package-filter"><option value="all">All packages</option></select></label>
@@ -103,6 +103,10 @@
   </div>
 
   <div class="customer-card-controls">
+  {% if archived_mode %}
+  <div class="archived-customer-meta muted">Archived {{ c.archived_at.strftime('%Y-%m-%d %H:%M') if c.archived_at else '—' }}</div>
+  <div class="row customer-actions archived-customer-actions"><a class="button-link secondary small-action" href="/customers/{{ c.id }}/history">History</a><button type="button" class="secondary" onclick="document.getElementById('customer-edit-{{ c.id }}').showModal()">Edit customer</button><form method="post" action="/customers/{{ c.id }}/restore"><button>Restore customer</button></form></div>
+  {% else %}
   {% if ta %}
   <div class="tautulli-customer-summary tautulli-package-summary" data-live-customer="{{ c.id }}">
     <span class="tautulli-live-label" hidden><span class="live-dot"></span><strong>Watching now</strong><span class="tautulli-live-title"></span></span>
@@ -115,7 +119,8 @@
     <button>{{ 'Change package' if sub else 'Assign' }}</button>
   </form>
 
-  <div class="row customer-actions"><a class="button-link secondary small-action" href="/customers/{{ c.id }}/history">History</a><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option value="active" {% if not c.exempt and c.status == 'active' %}selected{% endif %}>active</option><option value="grace" {% if not c.exempt and c.status == 'grace' %}selected{% endif %}>grace</option><option value="suspended" {% if not c.exempt and c.status == 'suspended' %}selected{% endif %}>suspended</option><option value="cancelled" {% if not c.exempt and c.status == 'cancelled' %}selected{% endif %}>cancelled</option><option value="exempt" {% if c.exempt %}selected{% endif %}>exempt</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary" {% if c.exempt %}title="This customer is exempt; reconciliation will skip them."{% endif %}>Reconcile Plex</button></form><button type="button" class="secondary" onclick="document.getElementById('customer-edit-{{ c.id }}').showModal()">Edit customer</button></div>
+  <div class="row customer-actions"><a class="button-link secondary small-action" href="/customers/{{ c.id }}/history">History</a><form method="post" action="/customers/{{ c.id }}/status" class="inline"><select name="status"><option value="active" {% if not c.exempt and c.status == 'active' %}selected{% endif %}>active</option><option value="grace" {% if not c.exempt and c.status == 'grace' %}selected{% endif %}>grace</option><option value="suspended" {% if not c.exempt and c.status == 'suspended' %}selected{% endif %}>suspended</option><option value="cancelled" {% if not c.exempt and c.status == 'cancelled' %}selected{% endif %}>cancelled</option><option value="exempt" {% if c.exempt %}selected{% endif %}>exempt</option></select><button class="secondary">Set status</button></form><form method="post" action="/customers/{{ c.id }}/reconcile"><button class="secondary" {% if c.exempt %}title="This customer is exempt; reconciliation will skip them."{% endif %}>Reconcile Plex</button></form><button type="button" class="secondary" onclick="document.getElementById('customer-edit-{{ c.id }}').showModal()">Edit customer</button><form method="post" action="/customers/{{ c.id }}/archive" onsubmit="return confirm('Archive {{ c.name|e }}? Their history will be preserved and they can be restored later.');"><button type="submit" class="secondary" {% if c.exempt or c.status != 'cancelled' %}disabled title="Set this customer to Cancelled before archiving."{% endif %}>Remove customer</button></form></div>
+  {% endif %}
   </div>
   </div>
 </article>
@@ -155,7 +160,7 @@
   </form>
 </dialog>
 {% endif %}
-{% else %}<p class="muted">No customers yet.</p>{% endfor %}</div></section>
+{% else %}<p class="muted">{{ 'No archived customers.' if archived_mode else 'No customers yet.' }}</p>{% endfor %}</div></section>
 <script>
 (() => {
   const cards = [...document.querySelectorAll('.customer-card')];

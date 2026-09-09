@@ -247,3 +247,8 @@ a.button-link, .button-link{white-space:nowrap}
 @media(min-width:901px){
   aside{position:sticky;top:0;height:100vh;overflow-y:auto;align-self:start}
 }
+
+
+/* v0.5.6 customer archive / restore */
+.customer-page-heading{align-items:flex-start}.customer-page-heading p{margin:5px 0 0}.archived-customer-help{margin-top:-4px}.archived-customer-meta{font-size:11px;margin-bottom:10px}.archived-customer-actions form{margin:0}.customer-actions button:disabled{opacity:.42;cursor:not-allowed}
+@media(max-width:900px){.customer-page-heading{gap:12px}.customer-page-heading .button-link{width:100%;text-align:center}.archived-customer-actions>*{width:100%}.archived-customer-actions form button{width:100%}}

@@ -169,3 +169,10 @@ Production/runtime Share Manager is PostgreSQL-only. Configuration validation re
 
 ## v0.5.5
 - Desktop navigation sidebar now stays anchored to the viewport while main page content scrolls. Mobile off-canvas navigation is unchanged.
+
+
+## v0.5.6 — Customer archiving
+- Added reversible customer archiving so stale customers can be removed from the operational Customers view without deleting payments, subscriptions, credits, audit history, or Tautulli activity.
+- Customers must be Cancelled before they can be archived, preventing active Plex access from being hidden accidentally.
+- Added an Archived customers view with History, Edit, and Restore controls.
+- Archived customers are excluded from dashboard operational counts, revenue forecasts, billing processing, payment-entry customer selection, Tautulli matching, and Tautulli dashboard aggregates.

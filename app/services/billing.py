@@ -243,7 +243,7 @@ def process_billing(db: Session, now: datetime | None = None, *, customer_id: in
     query = (
         db.query(Subscription)
         .options(joinedload(Subscription.customer), joinedload(Subscription.billing_tier))
-        .filter(Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES))
+        .filter(Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES), Subscription.customer.has(Customer.archived.is_(False)))
     )
     if customer_id is not None:
         query = query.filter(Subscription.customer_id == customer_id)

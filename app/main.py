@@ -320,8 +320,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         return gate
     now = datetime.utcnow()
     month_start = datetime(now.year, now.month, 1)
-    due_soon = db.query(Subscription).filter(
+    due_soon = db.query(Subscription).join(Subscription.customer).filter(
         Subscription.status == "active",
+        Customer.archived.is_(False),
         Subscription.current_period_end.is_not(None),
         Subscription.current_period_end >= now,
         Subscription.current_period_end <= now + timedelta(days=7),
@@ -338,6 +339,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         .filter(
             Subscription.status.in_(["active", "grace"]),
             Customer.exempt == False,  # noqa: E712
+            Customer.archived.is_(False),
         )
         .all()
     )
@@ -379,10 +381,10 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     }
 
     stats = {
-        "customers": db.query(Customer).count(),
-        "active": db.query(Customer).filter(Customer.status == "active").count(),
-        "grace": db.query(Customer).filter(Customer.status == "grace", Customer.exempt == False).count(),  # noqa: E712
-        "suspended": db.query(Customer).filter(Customer.status == "suspended", Customer.exempt == False).count(),  # noqa: E712
+        "customers": db.query(Customer).filter(Customer.archived.is_(False)).count(),
+        "active": db.query(Customer).filter(Customer.archived.is_(False), Customer.status == "active").count(),
+        "grace": db.query(Customer).filter(Customer.archived.is_(False), Customer.status == "grace", Customer.exempt == False).count(),  # noqa: E712
+        "suspended": db.query(Customer).filter(Customer.archived.is_(False), Customer.status == "suspended", Customer.exempt == False).count(),  # noqa: E712
         "due_soon": due_soon,
         "revenue": Decimal(revenue or 0),
     }
@@ -403,14 +405,15 @@ def billing_run(request: Request):
 
 
 @app.get("/customers", response_class=HTMLResponse)
-def customers(request: Request, error: str | None = None, notice: str | None = None, db: Session = Depends(get_db)):
+def customers(request: Request, error: str | None = None, notice: str | None = None, archived: int = 0, db: Session = Depends(get_db)):
     gate = auth(request)
     if gate:
         return gate
+    archived_mode = bool(archived)
     rows = db.query(Customer).options(
         joinedload(Customer.subscriptions).joinedload(Subscription.billing_tier).joinedload(BillingTier.package),
         joinedload(Customer.credits),
-    ).order_by(Customer.name).all()
+    ).filter(Customer.archived.is_(archived_mode)).order_by(Customer.name).all()
     # Resolve the subscription shown/acted on by the customer card in Python,
     # rather than duplicating lifecycle rules in Jinja. Prefer a currently
     # assigned row, but retain the most recent historical tier as a fallback
@@ -437,7 +440,7 @@ def customers(request: Request, error: str | None = None, notice: str | None = N
             for entitlement in tier.package.entitlements
         ):
             plex_ready_tier_ids.add(tier.id)
-    return render(request, "customers.html", customers=rows, tiers=tiers, plex_ready_tier_ids=plex_ready_tier_ids, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"), today_dt=datetime.utcnow())
+    return render(request, "customers.html", customers=rows, tiers=tiers, plex_ready_tier_ids=plex_ready_tier_ids, archived_mode=archived_mode, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"), today_dt=datetime.utcnow())
 
 
 @app.post("/customers/onboard")
@@ -598,6 +601,43 @@ def edit_customer(
     ))
     db.commit()
     return RedirectResponse("/customers?notice=Customer+updated", status_code=303)
+
+
+@app.post("/customers/{customer_id}/archive")
+def archive_customer(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return RedirectResponse("/customers?error=Customer+not+found", status_code=303)
+    if customer.archived:
+        return RedirectResponse("/customers?notice=Customer+already+archived", status_code=303)
+    if customer.exempt or customer.status != "cancelled":
+        return RedirectResponse(
+            "/customers?error=Customer+must+be+Cancelled+before+archiving",
+            status_code=303,
+        )
+    customer.archived = True
+    customer.archived_at = datetime.utcnow()
+    db.add(AuditLog(actor=settings.admin_username, action="customer.archive", target_type="customer", target_id=str(customer.id), detail=customer.name))
+    db.commit()
+    return RedirectResponse("/customers?notice=Customer+archived", status_code=303)
+
+
+@app.post("/customers/{customer_id}/restore")
+def restore_customer(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return RedirectResponse("/customers?archived=1&error=Customer+not+found", status_code=303)
+    customer.archived = False
+    customer.archived_at = None
+    db.add(AuditLog(actor=settings.admin_username, action="customer.restore", target_type="customer", target_id=str(customer.id), detail=customer.name))
+    db.commit()
+    return RedirectResponse("/customers?notice=Customer+restored", status_code=303)
 
 
 @app.post("/customers/{customer_id}/status")
@@ -1284,7 +1324,7 @@ def payments(request: Request, error: str | None = None, notice: str | None = No
     if gate:
         return gate
     rows = db.query(Payment).options(joinedload(Payment.customer), joinedload(Payment.subscription).joinedload(Subscription.billing_tier)).order_by(Payment.paid_at.desc(), Payment.id.desc()).limit(250).all()
-    customers = db.query(Customer).options(joinedload(Customer.subscriptions).joinedload(Subscription.billing_tier).joinedload(BillingTier.package)).order_by(Customer.name).all()
+    customers = db.query(Customer).options(joinedload(Customer.subscriptions).joinedload(Subscription.billing_tier).joinedload(BillingTier.package)).filter(Customer.archived.is_(False)).order_by(Customer.name).all()
     payment_sources = db.query(PaymentSource).order_by(PaymentSource.active.desc(), PaymentSource.name.asc()).all()
     return render(request, "payments.html", payments=rows, customers=customers, payment_sources=payment_sources, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"))
 
@@ -1367,6 +1407,8 @@ def add_payment(
     customer = db.get(Customer, customer_id)
     if not customer:
         return RedirectResponse("/payments?error=Customer+not+found", status_code=303)
+    if customer.archived:
+        return RedirectResponse("/payments?error=Archived+customers+must+be+restored+before+recording+new+payments", status_code=303)
     selected_source = db.query(PaymentSource).filter(PaymentSource.name == source, PaymentSource.active.is_(True)).first()
     if not selected_source:
         return RedirectResponse("/payments?error=Payment+source+is+not+available", status_code=303)

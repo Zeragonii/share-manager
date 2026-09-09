@@ -1,10 +1,10 @@
 {% extends 'base.html' %}{% block content %}
-<header class="row between"><div><h1>{{ customer.name }}</h1><p>Combined subscription, payment, complimentary-credit and access history.</p></div><a class="button-link secondary" href="/customers">Back to customers</a></header>
+<header class="row between"><div><h1>{{ customer.name }}</h1><p>Combined subscription, payment, complimentary-credit and access history.</p></div><a class="button-link secondary" href="{{ '/customers?archived=1' if customer.archived else '/customers' }}">Back to {{ 'archived customers' if customer.archived else 'customers' }}</a></header>
 <section>
   <div class="history-summary">
     <div><span class="muted">Email</span><strong>{{ customer.email or '—' }}</strong></div>
     <div><span class="muted">Plex</span><strong>{{ customer.plex_username or '—' }}</strong></div>
-    <div><span class="muted">Status</span><strong>{{ 'exempt' if customer.exempt else customer.status }}</strong></div>
+    <div><span class="muted">Status</span><strong>{{ ('archived · ' ~ customer.status) if customer.archived else ('exempt' if customer.exempt else customer.status) }}</strong></div>
   </div>
 </section>
 {% if tautulli_activity %}
