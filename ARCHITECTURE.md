@@ -179,3 +179,12 @@ Production/runtime Share Manager is PostgreSQL-only. Configuration validation re
 
 ## v0.5.7 — customer bulk operations
 Bulk customer changes are handled by `/customers/bulk`. Selected customer IDs are resolved server-side against non-archived records. Status/package changes preserve the existing per-customer subscription state transitions and reconciliation behavior. Archive is non-destructive and only applies to Cancelled, non-exempt customers; ineligible selections are reported as skipped.
+
+
+## v0.5.8 — bulk action performance
+- Bulk status and package changes no longer wait for sequential Plex API calls.
+- Bulk manual Reconcile Plex queues durable work and returns immediately.
+- Added a dedicated 5-second Plex reconciliation queue worker.
+- Queued work stores identities only and recalculates the latest desired entitlement at execution time.
+- Fresh operator changes reset any existing retry backoff so they are picked up promptly, while failures continue to use the existing exponential retry policy.
+- Bulk archive remains synchronous because it is database-only.

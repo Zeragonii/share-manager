@@ -278,3 +278,12 @@ Share Manager now requires PostgreSQL at runtime. `DATABASE_URL` has no SQLite f
 
 ## v0.5.7 — customer bulk actions
 The Customers page supports multi-select with Select visible / Clear selection controls. Bulk actions include status changes, package/tier changes with an explicit billing start date, Plex reconciliation, and safe archive/remove. Bulk operations preserve the same entitlement rules as individual operations; archive skips customers that are not Cancelled and non-exempt.
+
+
+## v0.5.8 — bulk action performance
+- Bulk status and package changes no longer wait for sequential Plex API calls.
+- Bulk manual Reconcile Plex queues durable work and returns immediately.
+- Added a dedicated 5-second Plex reconciliation queue worker.
+- Queued work stores identities only and recalculates the latest desired entitlement at execution time.
+- Fresh operator changes reset any existing retry backoff so they are picked up promptly, while failures continue to use the existing exponential retry policy.
+- Bulk archive remains synchronous because it is database-only.

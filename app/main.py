@@ -44,7 +44,7 @@ from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
 from .security import logged_in, make_session, valid_credentials
 from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
-from .services.reconcile import reconcile_customer, retry_pending_reconciliations
+from .services.reconcile import enqueue_reconciliation, reconcile_customer, retry_pending_reconciliations
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy, validate_application_schema, BackupStorageError
@@ -189,6 +189,22 @@ def run_billing_cycle() -> int:
 
 
 @serialized_db_worker
+def run_reconcile_queue_cycle() -> int:
+    """Process due durable Plex reconciliation jobs independently of billing."""
+    if RESTORE_IN_PROGRESS.is_set():
+        return 0
+    db = SessionLocal()
+    try:
+        return retry_pending_reconciliations(
+            db,
+            now=datetime.utcnow(),
+            on_error=_notify_reconcile_failure,
+        )
+    finally:
+        db.close()
+
+
+@serialized_db_worker
 def run_tautulli_cycle() -> bool:
     if RESTORE_IN_PROGRESS.is_set():
         return False
@@ -236,6 +252,16 @@ async def lifespan(_app: FastAPI):
                 logger.exception("Backup worker cycle failed")
             await asyncio.sleep(max(1, interval) * 60)
 
+    async def reconcile_queue_loop():
+        # Bulk/operator changes are queued instead of blocking HTTP requests on Plex.
+        await asyncio.sleep(3)
+        while True:
+            try:
+                await asyncio.to_thread(run_reconcile_queue_cycle)
+            except Exception:
+                logger.exception("Plex reconciliation queue worker cycle failed")
+            await asyncio.sleep(5)
+
     async def tautulli_loop():
         await asyncio.sleep(15)
         while True:
@@ -247,17 +273,21 @@ async def lifespan(_app: FastAPI):
 
     billing_task = asyncio.create_task(billing_loop())
     backup_task = asyncio.create_task(backup_loop())
+    reconcile_task = asyncio.create_task(reconcile_queue_loop())
     tautulli_task = asyncio.create_task(tautulli_loop())
     try:
         yield
     finally:
         billing_task.cancel()
         backup_task.cancel()
+        reconcile_task.cancel()
         tautulli_task.cancel()
         with suppress(asyncio.CancelledError):
             await billing_task
         with suppress(asyncio.CancelledError):
             await backup_task
+        with suppress(asyncio.CancelledError):
+            await reconcile_task
         with suppress(asyncio.CancelledError):
             await tautulli_task
 
@@ -711,14 +741,13 @@ def bulk_customers(
             elif transition == "active":
                 notify_event(db, event="customer.reactivated", title="Customer reactivated", message=f"{customer.name} is active again.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
 
-        failed = 0
+        queued_customers = 0
         for customer in reconcile_targets:
-            try:
-                reconcile_customer(db, customer)
-            except Exception as exc:
-                failed += 1
-                _notify_reconcile_failure(db, customer, exc)
-        suffix = f"; {failed} Plex reconciliation(s) failed" if failed else ""
+            count = enqueue_reconciliation(db, customer)
+            if count:
+                queued_customers += 1
+        db.commit()
+        suffix = f"; queued Plex reconciliation for {queued_customers} customer(s)" if queued_customers else ""
         return RedirectResponse(f"/customers?notice={quote_plus(f'Updated {selected_count} customer(s) to {status}{suffix}')}" , status_code=303)
 
     if action == "package":
@@ -756,37 +785,34 @@ def bulk_customers(
             if settings.reconcile_on_assign and customer.plex_username:
                 reconcile_targets.append(customer)
         db.commit()
-        failed = 0
+        queued_customers = 0
         for customer in reconcile_targets:
-            try:
-                reconcile_customer(db, customer)
-            except Exception as exc:
-                failed += 1
-                _notify_reconcile_failure(db, customer, exc)
-        suffix = f"; {failed} Plex reconciliation(s) failed" if failed else ""
+            if enqueue_reconciliation(db, customer):
+                queued_customers += 1
+        db.commit()
+        suffix = f"; queued Plex reconciliation for {queued_customers} customer(s)" if queued_customers else ""
         return RedirectResponse(f"/customers?notice={quote_plus(f'Changed package for {selected_count} customer(s){suffix}')}" , status_code=303)
 
     if action == "reconcile":
-        success = 0
-        failed = 0
+        queued = 0
         for customer in customers:
-            if not customer.plex_username:
+            if customer.exempt or not customer.plex_username:
                 skipped += 1
                 continue
-            try:
-                messages = reconcile_customer(db, customer)
-                db.add(AuditLog(actor=settings.admin_username, action="reconcile.manual", target_type="customer", target_id=str(customer.id), detail="; ".join(messages) + " (bulk)"))
-                db.commit()
-                success += 1
-            except Exception as exc:
-                db.rollback()
-                failed += 1
-                db.add(AuditLog(actor=settings.admin_username, action="reconcile.error", target_type="customer", target_id=str(customer.id), detail=f"{exc} (bulk)"))
-                db.commit()
-                _notify_reconcile_failure(db, customer, exc)
-        detail = f"Reconciled {success} customer(s)"
-        if failed:
-            detail += f"; {failed} failed"
+            count = enqueue_reconciliation(db, customer)
+            if not count:
+                skipped += 1
+                continue
+            queued += 1
+            db.add(AuditLog(
+                actor=settings.admin_username,
+                action="reconcile.queued",
+                target_type="customer",
+                target_id=str(customer.id),
+                detail="Queued manual Plex reconciliation (bulk)",
+            ))
+        db.commit()
+        detail = f"Queued Plex reconciliation for {queued} customer(s)"
         if skipped:
             detail += f"; {skipped} skipped"
         return RedirectResponse(f"/customers?notice={quote_plus(detail)}", status_code=303)

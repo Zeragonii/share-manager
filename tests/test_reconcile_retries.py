@@ -231,3 +231,25 @@ def test_retry_reads_new_package_assignment(setup):
     client.apply_libraries.side_effect = None
     service.retry_pending_reconciliations(db, now=NOW + timedelta(minutes=15))
     assert client.apply_libraries.call_args.args[1] == ["TV"]
+
+
+def test_enqueue_reconciliation_does_not_call_plex_and_is_due_immediately(setup):
+    db, factory, customer, sub, integration, client = setup
+    count = service.enqueue_reconciliation(db, customer, now=NOW)
+    db.commit()
+    assert count == 1
+    assert client.apply_libraries.call_count == 0
+    job = db.get(PlexReconcileJob, (customer.id, integration.id))
+    assert job is not None
+    assert job.attempts == 0
+    assert job.next_attempt_at == NOW
+
+
+def test_dedicated_queue_cycle_processes_enqueued_work(setup):
+    db, factory, customer, sub, integration, client = setup
+    service.enqueue_reconciliation(db, customer, now=NOW)
+    db.commit()
+    assert main.run_reconcile_queue_cycle() == 1
+    assert client.apply_libraries.call_count == 1
+    db.expire_all()
+    assert db.get(PlexReconcileJob, (customer.id, integration.id)) is None

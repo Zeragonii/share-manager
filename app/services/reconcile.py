@@ -40,6 +40,55 @@ def _result_detail(integration_name: str, result: dict) -> tuple[str, str]:
     )
 
 
+
+
+def enqueue_reconciliation(
+    db: Session,
+    customer: Customer,
+    *,
+    integration_ids: list[int] | None = None,
+    now: datetime | None = None,
+    reset_backoff: bool = True,
+) -> int:
+    """Queue the customer's latest desired Plex state without contacting Plex.
+
+    The queue stores only customer/integration identities; the worker recalculates
+    desired access at execution time, so later payments/status/package changes
+    cannot be overwritten by stale queued intent. Explicit/manual queueing resets
+    any existing retry delay so operator actions are picked up promptly.
+    """
+    now = now or datetime.utcnow()
+    if customer.exempt or not customer.plex_username:
+        return 0
+
+    query = db.query(Integration).filter(Integration.kind == "plex", Integration.enabled.is_(True))
+    if integration_ids is not None:
+        query = query.filter(Integration.id.in_(integration_ids))
+    integrations = query.order_by(Integration.id).all()
+
+    queued = 0
+    for integration in integrations:
+        job = db.get(PlexReconcileJob, (customer.id, integration.id))
+        if job is None:
+            job = PlexReconcileJob(
+                customer_id=customer.id,
+                integration_id=integration.id,
+                attempts=0,
+                next_attempt_at=now,
+                last_error=None,
+            )
+            db.add(job)
+            queued += 1
+        else:
+            # The desired state is evaluated when the job runs. Bump an existing
+            # delayed retry to now for a fresh operator/customer-state change.
+            if reset_backoff:
+                job.attempts = 0
+                job.next_attempt_at = now
+                job.last_error = None
+            queued += 1
+    return queued
+
 def reconcile_customer(
     db: Session,
     customer: Customer,

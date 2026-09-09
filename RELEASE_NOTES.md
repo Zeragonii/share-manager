@@ -65,3 +65,12 @@ The repository contains 58 tests after this release (53 from v0.5.2 plus five ad
 - Added bulk status updates, package/tier changes, Plex reconciliation, and safe archival.
 - Bulk package changes require an explicit start date and use the same new-period semantics as the existing Change package action.
 - Bulk archive preserves history and skips any customer that is not Cancelled and non-exempt.
+
+
+## v0.5.8 — bulk action performance
+- Bulk status and package changes no longer wait for sequential Plex API calls.
+- Bulk manual Reconcile Plex queues durable work and returns immediately.
+- Added a dedicated 5-second Plex reconciliation queue worker.
+- Queued work stores identities only and recalculates the latest desired entitlement at execution time.
+- Fresh operator changes reset any existing retry backoff so they are picked up promptly, while failures continue to use the existing exponential retry policy.
+- Bulk archive remains synchronous because it is database-only.
