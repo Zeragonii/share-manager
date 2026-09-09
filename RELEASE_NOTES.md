@@ -39,3 +39,12 @@ A stale `/backups` mount still requires the host/container mount to be repaired.
 ## Validation
 
 The repository contains 58 tests after this release (53 from v0.5.2 plus five additional regression tests). In the build sandbox, the full suite passed with a lightweight local PlexAPI import stub because external package installation was unavailable; service logic and all new regression tests passed. GitHub CI now installs the real pinned dependencies and runs the full suite before publishing.
+
+
+## v0.5.4
+
+- Removed the runtime SQLite fallback. `DATABASE_URL` is now mandatory and must resolve to PostgreSQL.
+- Removed SQLite creation, validation, restore and upload handling from Disaster Recovery. Only PostgreSQL `.dump` files are accepted.
+- Removed SQLite-specific SQLAlchemy runtime connection arguments.
+- Kept SQLite only in isolated unit-test fixtures; it is not a deployable Share Manager backend.
+- Fixed a v0.5.3 regression where downloading a stored backup incorrectly entered restore maintenance mode and acquired the database worker lock.

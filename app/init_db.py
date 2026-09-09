@@ -6,7 +6,7 @@ from . import models  # noqa: F401
 
 Base.metadata.create_all(bind=engine)
 
-# Lightweight in-place migration path for existing v0.1 PostgreSQL/SQLite installs.
+# Lightweight in-place migration path for existing PostgreSQL installs.
 # We can move to Alembic later; these additive migrations keep 0.2 a drop-in upgrade.
 def add_column_if_missing(table: str, column: str, ddl: str):
     inspector = inspect(engine)

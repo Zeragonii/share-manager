@@ -257,6 +257,11 @@ Matching prefers the stored Plex numeric user ID and falls back to Plex username
 
 ## v0.5.3 correctness and recovery hardening
 
-v0.5.3 hardens the v0.5.2 review changes. Backup storage errors (including stale NFS/CIFS file handles) are shown cleanly in the Disaster Recovery UI; PostgreSQL restores are transactional and run in maintenance mode with post-restore schema verification; SQLite backups use its online backup API and integrity validation; payment voids restore captured pre-payment state; pending Plex invitations follow current entitlement state; admin sessions expire server-side and are invalidated when credentials change; and release CI runs pytest before publishing.
+v0.5.3 hardens the v0.5.2 review changes. Backup storage errors (including stale NFS/CIFS file handles) are shown cleanly in the Disaster Recovery UI; PostgreSQL restores are transactional and run in maintenance mode with post-restore schema verification; payment voids restore captured pre-payment state; pending Plex invitations follow current entitlement state; admin sessions expire server-side and are invalidated when credentials change; and release CI runs pytest before publishing.
 
 For HTTPS deployments, set `SESSION_COOKIE_SECURE=true`. The backup mount itself is still controlled by Docker/Portainer through `BACKUP_HOST_PATH`; if `/backups` reports a stale file handle, repair/remount the host storage and recreate/restart the app container before relying on backups again.
+
+
+## v0.5.4 — PostgreSQL-only hardening
+
+Share Manager now requires PostgreSQL at runtime. `DATABASE_URL` has no SQLite fallback and startup fails clearly if it is missing, malformed, or points to a non-PostgreSQL backend. Disaster Recovery accepts only PostgreSQL custom-format `.dump` files and uses `pg_dump`/`pg_restore` exclusively. SQLite may still appear in unit-test fixtures as a fast isolated SQLAlchemy test backend; it is not a supported deployment/runtime database.

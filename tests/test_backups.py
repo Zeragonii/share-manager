@@ -46,10 +46,10 @@ def test_retention_keeps_daily_weekly_and_monthly_union():
     assert len(months) >= 3
 
 
-def test_sqlite_validation_rejects_plain_text_with_sqlite_extension(tmp_path):
+def test_runtime_backup_service_rejects_non_postgresql_backend(tmp_path):
     from app.services.backups import validate_backup
-    path = tmp_path / "invalid.sqlite"
-    path.write_text("not a database")
-    ok, detail = validate_backup("sqlite:///ignored.db", path)
-    assert ok is False
-    assert "valid database" in detail.lower()
+    path = tmp_path / "invalid.dump"
+    path.write_bytes(b"not a database")
+    import pytest
+    with pytest.raises(RuntimeError, match="require PostgreSQL"):
+        validate_backup("sqlite:///ignored.db", path)

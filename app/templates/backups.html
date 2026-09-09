@@ -82,7 +82,7 @@
   <h2>Restore an external backup</h2>
   <p>Use this after rebuilding the stack or when importing a backup copied from another machine. PostgreSQL custom-format <code>.dump</code> files are validated with <code>pg_restore --list</code> before anything is changed.</p>
   <form method="post" action="/backups/upload-restore" enctype="multipart/form-data" class="restore-upload-form">
-    <label>Backup file<input type="file" name="backup_file" accept=".dump,.sqlite" required></label>
+    <label>Backup file<input type="file" name="backup_file" accept=".dump" required></label>
     <label>Type RESTORE to confirm<input name="confirmation" autocomplete="off" required></label>
     <button class="danger">Validate &amp; restore</button>
   </form>

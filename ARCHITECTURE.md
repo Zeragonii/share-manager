@@ -158,7 +158,11 @@ Tautulli is an observational integration, not an entitlement authority. Historic
 
 - PostgreSQL restore uses a validated custom dump, exclusive application maintenance mode, `--single-transaction`, and post-restore schema verification.
 - Background database workers are serialized with restore operations so an already-running cycle completes before restore and no new cycle starts during maintenance.
-- SQLite backups use the SQLite online backup API and integrity/schema validation.
 - Applied payments snapshot prior entitlement coverage so a latest-payment void can restore exact previous state.
 - Pending Plex invitations are managed as entitlement state rather than treated as a passive duplicate-invite guard.
 - Admin sessions use timed signed tokens and a credential-derived session version.
+
+
+## v0.5.4 runtime database policy
+
+Production/runtime Share Manager is PostgreSQL-only. Configuration validation rejects non-PostgreSQL `DATABASE_URL` values before the application engine is created. Backup and restore support is PostgreSQL-only (`pg_dump` custom format and transactional `pg_restore`). SQLite usage is limited to isolated unit-test fixtures and is not reachable from deployed application configuration.

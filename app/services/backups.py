@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
-import sqlite3
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -50,17 +48,16 @@ def _stamp(now: datetime) -> str:
     return now.strftime("%Y%m%d-%H%M%S")
 
 
-def backup_filename(now: datetime, *, automatic: bool, sqlite: bool = False) -> str:
+def backup_filename(now: datetime, *, automatic: bool) -> str:
     kind = "auto" if automatic else "manual"
-    ext = "sqlite" if sqlite else "dump"
-    return f"share-manager-{kind}-{_stamp(now)}.{ext}"
+    return f"share-manager-{kind}-{_stamp(now)}.dump"
 
 
 def list_backups(path: str) -> list[BackupInfo]:
     root = backup_dir(path)
     rows: list[BackupInfo] = []
     for item in root.iterdir():
-        if not item.is_file() or not item.name.startswith("share-manager-") or item.suffix not in {".dump", ".sqlite"}:
+        if not item.is_file() or not item.name.startswith("share-manager-") or item.suffix != ".dump":
             continue
         stat = item.stat()
         rows.append(
@@ -90,37 +87,30 @@ def _pg_args(url) -> list[str]:
     ]
 
 
+def _postgres_url(database_url: str):
+    url = make_url(database_url)
+    backend = url.get_backend_name()
+    if backend != "postgresql":
+        raise RuntimeError(f"Unsupported database backend '{backend}'. Share Manager backups require PostgreSQL.")
+    return url
+
+
 def create_backup(database_url: str, target_dir: str, *, automatic: bool = False, now: datetime | None = None) -> BackupInfo:
     now = now or datetime.utcnow()
-    url = make_url(database_url)
-    sqlite = url.get_backend_name() == "sqlite"
+    url = _postgres_url(database_url)
     root = backup_dir(target_dir)
-    name = backup_filename(now, automatic=automatic, sqlite=sqlite)
+    name = backup_filename(now, automatic=automatic)
     final_path = root / name
     temp_path = root / f".{name}.tmp"
 
     try:
-        if sqlite:
-            db_path = Path(url.database or "")
-            if not db_path.exists():
-                raise RuntimeError("SQLite database file not found")
-            # SQLite's online backup API produces a transactionally consistent
-            # snapshot even while the application is running.
-            source = sqlite3.connect(str(db_path))
-            dest = sqlite3.connect(str(temp_path))
-            try:
-                source.backup(dest)
-            finally:
-                dest.close()
-                source.close()
-        else:
-            cmd = [
-                "pg_dump", "--format=custom", "--no-owner", "--no-privileges",
-                *_pg_args(url), "--file", str(temp_path), url.database or "postgres",
-            ]
-            result = subprocess.run(cmd, env=_pg_env(url), capture_output=True, text=True)
-            if result.returncode != 0:
-                raise RuntimeError((result.stderr or "pg_dump failed").strip())
+        cmd = [
+            "pg_dump", "--format=custom", "--no-owner", "--no-privileges",
+            *_pg_args(url), "--file", str(temp_path), url.database or "postgres",
+        ]
+        result = subprocess.run(cmd, env=_pg_env(url), capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or "pg_dump failed").strip())
         os.replace(temp_path, final_path)
     finally:
         if temp_path.exists():
@@ -131,30 +121,11 @@ def create_backup(database_url: str, target_dir: str, *, automatic: bool = False
 
 
 def validate_backup(database_url: str, path: Path) -> tuple[bool, str]:
-    url = make_url(database_url)
-    if url.get_backend_name() == "sqlite":
-        if path.suffix != ".sqlite":
-            return False, "Expected a .sqlite backup for this database"
-        if path.stat().st_size <= 0:
-            return False, "Backup is empty"
-        try:
-            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-            try:
-                integrity = conn.execute("PRAGMA integrity_check").fetchone()
-                tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            finally:
-                conn.close()
-        except sqlite3.DatabaseError as exc:
-            return False, f"SQLite backup is not a valid database: {exc}"
-        if not integrity or integrity[0] != "ok":
-            return False, "SQLite integrity check failed"
-        required = {"customers", "subscriptions", "payments"}
-        missing = sorted(required - tables)
-        if missing:
-            return False, "Backup is missing required Share Manager tables: " + ", ".join(missing)
-        return True, "SQLite backup passed integrity and schema checks"
+    _postgres_url(database_url)
     if path.suffix != ".dump":
         return False, "Expected a PostgreSQL .dump backup"
+    if path.stat().st_size <= 0:
+        return False, "Backup is empty"
     result = subprocess.run(["pg_restore", "--list", str(path)], capture_output=True, text=True)
     if result.returncode != 0:
         return False, (result.stderr or "pg_restore could not read this backup").strip()
@@ -162,14 +133,8 @@ def validate_backup(database_url: str, path: Path) -> tuple[bool, str]:
         return False, "Backup contains no restorable objects"
     return True, "PostgreSQL custom-format dump validated successfully"
 
-
 def restore_backup(database_url: str, path: Path) -> None:
-    url = make_url(database_url)
-    if url.get_backend_name() == "sqlite":
-        db_path = Path(url.database or "")
-        shutil.copy2(path, db_path)
-        return
-
+    url = _postgres_url(database_url)
     env = _pg_env(url)
     db_name = url.database or "postgres"
     # Disconnect pooled/request sessions before pg_restore drops/recreates objects.
@@ -197,7 +162,8 @@ def restore_backup(database_url: str, path: Path) -> None:
 
 
 def validate_application_schema(database_url: str) -> tuple[bool, str]:
-    """Verify that a restored database still contains the minimum app schema."""
+    """Verify that a restored PostgreSQL database still contains the minimum app schema."""
+    _postgres_url(database_url)
     check_engine = create_engine(database_url, pool_pre_ping=True)
     try:
         tables = set(inspect(check_engine).get_table_names())
@@ -269,7 +235,7 @@ def safe_backup_path(root: str, filename: str) -> Path:
     if filename != Path(filename).name:
         raise ValueError("Invalid backup filename")
     path = backup_dir(root) / filename
-    if not path.is_file() or not filename.startswith("share-manager-") or path.suffix not in {".dump", ".sqlite"}:
+    if not path.is_file() or not filename.startswith("share-manager-") or path.suffix != ".dump":
         raise ValueError("Backup not found")
     return path
 

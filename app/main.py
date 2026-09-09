@@ -1644,11 +1644,6 @@ def download_database_backup(request: Request):
         return gate
     url = make_url(settings.database_url)
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    if url.get_backend_name() == "sqlite":
-        db_path = url.database
-        if not db_path or not os.path.exists(db_path):
-            return RedirectResponse("/backups?error=SQLite+database+file+not+found", status_code=303)
-        return FileResponse(db_path, filename=f"share-manager-{stamp}.sqlite", media_type="application/octet-stream")
     fd, path = tempfile.mkstemp(prefix="share-manager-", suffix=".dump")
     os.close(fd)
     env = os.environ.copy()
@@ -1671,10 +1666,6 @@ def download_stored_backup(request: Request, filename: str):
     gate = auth(request)
     if gate:
         return gate
-    if RESTORE_IN_PROGRESS.is_set():
-        return RedirectResponse("/backups?error=Another+restore+is+already+in+progress", status_code=303)
-    RESTORE_IN_PROGRESS.set()
-    DB_WORK_LOCK.acquire()
     try:
         path = safe_backup_path(settings.backup_dir, filename)
     except ValueError:
@@ -1689,6 +1680,10 @@ def restore_stored_backup(request: Request, filename: str, confirmation: str = F
         return gate
     if confirmation.strip().upper() != "RESTORE":
         return RedirectResponse("/backups?error=Type+RESTORE+to+confirm", status_code=303)
+    if RESTORE_IN_PROGRESS.is_set():
+        return RedirectResponse("/backups?error=Another+restore+is+already+in+progress", status_code=303)
+    RESTORE_IN_PROGRESS.set()
+    DB_WORK_LOCK.acquire()
     try:
         path = safe_backup_path(settings.backup_dir, filename)
         ok, detail = validate_backup(settings.database_url, path)
@@ -1725,8 +1720,8 @@ async def restore_uploaded_backup(request: Request, backup_file: UploadFile = Fi
     if confirmation.strip().upper() != "RESTORE":
         return RedirectResponse("/backups?error=Type+RESTORE+to+confirm", status_code=303)
     suffix = Path(backup_file.filename or "").suffix.lower()
-    if suffix not in {".dump", ".sqlite"}:
-        return RedirectResponse("/backups?error=Upload+a+.dump+or+.sqlite+backup", status_code=303)
+    if suffix != ".dump":
+        return RedirectResponse("/backups?error=Upload+a+PostgreSQL+.dump+backup", status_code=303)
     if RESTORE_IN_PROGRESS.is_set():
         return RedirectResponse("/backups?error=Another+restore+is+already+in+progress", status_code=303)
     RESTORE_IN_PROGRESS.set()
