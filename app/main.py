@@ -640,6 +640,178 @@ def restore_customer(request: Request, customer_id: int, db: Session = Depends(g
     return RedirectResponse("/customers?notice=Customer+restored", status_code=303)
 
 
+@app.post("/customers/bulk")
+def bulk_customers(
+    request: Request,
+    customer_ids: list[int] = Form(...),
+    action: str = Form(...),
+    status: str = Form(""),
+    billing_tier_id: str = Form(""),
+    start_date: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+
+    ids = sorted(set(customer_ids))
+    if not ids:
+        return RedirectResponse("/customers?error=Select+at+least+one+customer", status_code=303)
+
+    customers = db.query(Customer).filter(Customer.id.in_(ids), Customer.archived.is_(False)).order_by(Customer.name).all()
+    if not customers:
+        return RedirectResponse("/customers?error=No+active+customer+records+were+selected", status_code=303)
+
+    selected_count = len(customers)
+    skipped = len(ids) - selected_count
+    reconcile_targets: list[Customer] = []
+    notification_transitions: list[tuple[Customer, str]] = []
+
+    if action == "status":
+        allowed = {"active", "grace", "suspended", "cancelled", "exempt"}
+        if status not in allowed:
+            return RedirectResponse("/customers?error=Choose+a+valid+bulk+status", status_code=303)
+        now = datetime.utcnow()
+        for customer in customers:
+            previous_status = customer.status
+            if status == "exempt":
+                customer.exempt = True
+                detail = "exempt"
+            else:
+                customer.exempt = False
+                customer.status = status
+                detail = status
+                current = db.query(Subscription).filter(
+                    Subscription.customer_id == customer.id,
+                    Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES),
+                ).order_by(Subscription.id.desc()).first()
+                if current:
+                    if status == "cancelled":
+                        current.status = "cancelled"
+                        current.cancelled_at = now
+                    elif status in ASSIGNED_SUBSCRIPTION_STATES:
+                        current.status = status
+            db.add(AuditLog(actor=settings.admin_username, action="customer.status", target_type="customer", target_id=str(customer.id), detail=f"{detail} (bulk)"))
+            if not customer.exempt:
+                if customer.status == "grace" and previous_status != "grace":
+                    notification_transitions.append((customer, "grace"))
+                elif customer.status == "suspended" and previous_status != "suspended":
+                    notification_transitions.append((customer, "suspended"))
+                elif customer.status == "active" and previous_status == "suspended":
+                    notification_transitions.append((customer, "active"))
+            if settings.reconcile_on_assign and customer.plex_username:
+                reconcile_targets.append(customer)
+        db.commit()
+
+        for customer, transition in notification_transitions:
+            if transition == "grace":
+                notify_event(db, event="customer.entered_grace", title="Customer entered grace", message=f"{customer.name} has entered their billing grace period.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
+            elif transition == "suspended":
+                notify_event(db, event="customer.suspended", title="Customer suspended", message=f"{customer.name} has been suspended.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
+            elif transition == "active":
+                notify_event(db, event="customer.reactivated", title="Customer reactivated", message=f"{customer.name} is active again.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
+
+        failed = 0
+        for customer in reconcile_targets:
+            try:
+                reconcile_customer(db, customer)
+            except Exception as exc:
+                failed += 1
+                _notify_reconcile_failure(db, customer, exc)
+        suffix = f"; {failed} Plex reconciliation(s) failed" if failed else ""
+        return RedirectResponse(f"/customers?notice={quote_plus(f'Updated {selected_count} customer(s) to {status}{suffix}')}" , status_code=303)
+
+    if action == "package":
+        if not billing_tier_id.strip():
+            return RedirectResponse("/customers?error=Choose+a+billing+tier+for+the+bulk+package+change", status_code=303)
+        try:
+            tier_id = int(billing_tier_id)
+        except ValueError:
+            return RedirectResponse("/customers?error=Invalid+bulk+billing+tier", status_code=303)
+        tier = db.query(BillingTier).options(joinedload(BillingTier.package)).filter(BillingTier.id == tier_id).first()
+        if not tier or not tier.active or not tier.package.active:
+            return RedirectResponse("/customers?error=Invalid+bulk+billing+tier", status_code=303)
+        start = _parse_date(start_date, datetime.utcnow())
+        now = datetime.utcnow()
+        for customer in customers:
+            existing = db.query(Subscription).filter(
+                Subscription.customer_id == customer.id,
+                Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES),
+            ).all()
+            for old in existing:
+                old.status = "cancelled"
+                old.cancelled_at = now
+            sub = Subscription(customer_id=customer.id, billing_tier_id=tier.id, status="active")
+            sub.billing_tier = tier
+            initialize_subscription_period(sub, start)
+            customer.status = "active"
+            db.add(sub)
+            db.add(AuditLog(
+                actor=settings.admin_username,
+                action="subscription.assign",
+                target_type="customer",
+                target_id=str(customer.id),
+                detail=f"{tier.package.name} / {tier.name}; starts {start:%Y-%m-%d}; paid through {sub.current_period_end:%Y-%m-%d} (bulk)",
+            ))
+            if settings.reconcile_on_assign and customer.plex_username:
+                reconcile_targets.append(customer)
+        db.commit()
+        failed = 0
+        for customer in reconcile_targets:
+            try:
+                reconcile_customer(db, customer)
+            except Exception as exc:
+                failed += 1
+                _notify_reconcile_failure(db, customer, exc)
+        suffix = f"; {failed} Plex reconciliation(s) failed" if failed else ""
+        return RedirectResponse(f"/customers?notice={quote_plus(f'Changed package for {selected_count} customer(s){suffix}')}" , status_code=303)
+
+    if action == "reconcile":
+        success = 0
+        failed = 0
+        for customer in customers:
+            if not customer.plex_username:
+                skipped += 1
+                continue
+            try:
+                messages = reconcile_customer(db, customer)
+                db.add(AuditLog(actor=settings.admin_username, action="reconcile.manual", target_type="customer", target_id=str(customer.id), detail="; ".join(messages) + " (bulk)"))
+                db.commit()
+                success += 1
+            except Exception as exc:
+                db.rollback()
+                failed += 1
+                db.add(AuditLog(actor=settings.admin_username, action="reconcile.error", target_type="customer", target_id=str(customer.id), detail=f"{exc} (bulk)"))
+                db.commit()
+                _notify_reconcile_failure(db, customer, exc)
+        detail = f"Reconciled {success} customer(s)"
+        if failed:
+            detail += f"; {failed} failed"
+        if skipped:
+            detail += f"; {skipped} skipped"
+        return RedirectResponse(f"/customers?notice={quote_plus(detail)}", status_code=303)
+
+    if action == "archive":
+        archived = 0
+        ineligible = skipped
+        now = datetime.utcnow()
+        for customer in customers:
+            if customer.exempt or customer.status != "cancelled":
+                ineligible += 1
+                continue
+            customer.archived = True
+            customer.archived_at = now
+            db.add(AuditLog(actor=settings.admin_username, action="customer.archive", target_type="customer", target_id=str(customer.id), detail=f"{customer.name} (bulk)"))
+            archived += 1
+        db.commit()
+        detail = f"Archived {archived} customer(s)"
+        if ineligible:
+            detail += f"; {ineligible} skipped because they were not eligible"
+        return RedirectResponse(f"/customers?notice={quote_plus(detail)}", status_code=303)
+
+    return RedirectResponse("/customers?error=Choose+a+valid+bulk+action", status_code=303)
+
+
 @app.post("/customers/{customer_id}/status")
 def customer_status(request: Request, customer_id: int, status: str = Form(...), db: Session = Depends(get_db)):
     gate = auth(request)

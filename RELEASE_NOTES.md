@@ -58,3 +58,10 @@ The repository contains 58 tests after this release (53 from v0.5.2 plus five ad
 - Customers must be Cancelled before they can be archived, preventing active Plex access from being hidden accidentally.
 - Added an Archived customers view with History, Edit, and Restore controls.
 - Archived customers are excluded from dashboard operational counts, revenue forecasts, billing processing, payment-entry customer selection, Tautulli matching, and Tautulli dashboard aggregates.
+
+## v0.5.7
+- Added customer multi-select and a sticky bulk-action bar.
+- Added Select visible and Clear selection controls that work with current filters.
+- Added bulk status updates, package/tier changes, Plex reconciliation, and safe archival.
+- Bulk package changes require an explicit start date and use the same new-period semantics as the existing Change package action.
+- Bulk archive preserves history and skips any customer that is not Cancelled and non-exempt.

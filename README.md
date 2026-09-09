@@ -275,3 +275,6 @@ Share Manager now requires PostgreSQL at runtime. `DATABASE_URL` has no SQLite f
 - Customers must be Cancelled before they can be archived, preventing active Plex access from being hidden accidentally.
 - Added an Archived customers view with History, Edit, and Restore controls.
 - Archived customers are excluded from dashboard operational counts, revenue forecasts, billing processing, payment-entry customer selection, Tautulli matching, and Tautulli dashboard aggregates.
+
+## v0.5.7 — customer bulk actions
+The Customers page supports multi-select with Select visible / Clear selection controls. Bulk actions include status changes, package/tier changes with an explicit billing start date, Plex reconciliation, and safe archive/remove. Bulk operations preserve the same entitlement rules as individual operations; archive skips customers that are not Cancelled and non-exempt.

@@ -176,3 +176,6 @@ Production/runtime Share Manager is PostgreSQL-only. Configuration validation re
 - Customers must be Cancelled before they can be archived, preventing active Plex access from being hidden accidentally.
 - Added an Archived customers view with History, Edit, and Restore controls.
 - Archived customers are excluded from dashboard operational counts, revenue forecasts, billing processing, payment-entry customer selection, Tautulli matching, and Tautulli dashboard aggregates.
+
+## v0.5.7 — customer bulk operations
+Bulk customer changes are handled by `/customers/bulk`. Selected customer IDs are resolved server-side against non-archived records. Status/package changes preserve the existing per-customer subscription state transitions and reconciliation behavior. Archive is non-destructive and only applies to Cancelled, non-exempt customers; ineligible selections are reported as skipped.

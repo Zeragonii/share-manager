@@ -252,3 +252,18 @@ a.button-link, .button-link{white-space:nowrap}
 /* v0.5.6 customer archive / restore */
 .customer-page-heading{align-items:flex-start}.customer-page-heading p{margin:5px 0 0}.archived-customer-help{margin-top:-4px}.archived-customer-meta{font-size:11px;margin-bottom:10px}.archived-customer-actions form{margin:0}.customer-actions button:disabled{opacity:.42;cursor:not-allowed}
 @media(max-width:900px){.customer-page-heading{gap:12px}.customer-page-heading .button-link{width:100%;text-align:center}.archived-customer-actions>*{width:100%}.archived-customer-actions form button{width:100%}}
+
+/* v0.5.7 customer bulk selection/actions */
+.customer-card{position:relative}
+.customer-select-control{position:absolute;top:14px;left:14px;z-index:4;width:18px;height:18px;display:block!important;cursor:pointer}
+.customer-select-control input{width:18px;height:18px;margin:0;accent-color:var(--accent);cursor:pointer}
+.customer-card:not(.customer-selected){transition:border-color .14s ease,box-shadow .14s ease}
+.customer-card.customer-selected{border-color:#8b6a16;box-shadow:0 0 0 1px rgba(229,160,13,.18)}
+.customer-card-details>.customer-card-main>.row.between:first-child{padding-left:28px}
+.customer-bulk-bar{position:sticky;top:12px;z-index:20;margin:0 0 14px;padding:12px;border:1px solid #725916;border-radius:10px;background:#151b24;box-shadow:0 10px 26px rgba(0,0,0,.28)}
+.customer-bulk-selection{display:flex;align-items:center;gap:8px;margin-bottom:10px}.customer-bulk-selection strong{margin-right:auto;font-size:13px}
+.customer-bulk-controls{display:grid;grid-template-columns:minmax(150px,.9fr) minmax(150px,1fr) minmax(220px,1.5fr) minmax(140px,.7fr) auto;gap:10px;align-items:end}
+.customer-bulk-controls label[hidden]{display:none!important}.customer-bulk-submit{display:flex;align-items:flex-end}.customer-bulk-submit button{white-space:nowrap;height:38px}
+.customer-bulk-help{font-size:10px;margin-top:8px;line-height:1.4}
+@media(max-width:1100px){.customer-bulk-controls{grid-template-columns:1fr 1fr}.customer-bulk-submit{grid-column:1/-1}.customer-bulk-submit button{width:100%}}
+@media(max-width:900px){.customer-bulk-bar{top:64px}.customer-select-control{top:16px;left:12px}.customer-mobile-summary{padding-left:42px}.customer-card-details>.customer-card-main>.row.between:first-child{padding-left:0}.customer-bulk-controls{grid-template-columns:1fr}.customer-bulk-submit{grid-column:auto}.customer-bulk-selection{flex-wrap:wrap}.customer-bulk-selection strong{width:100%;margin-right:0}.customer-bulk-selection button{flex:1}}

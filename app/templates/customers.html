@@ -62,6 +62,48 @@
     <button type="button" class="secondary customer-filter" data-status="exempt">Exempt <span class="filter-count" data-count="exempt">0</span></button>
   </div>
 </div>
+{% if not archived_mode %}
+<form id="bulk-customer-form" method="post" action="/customers/bulk" class="customer-bulk-bar" hidden>
+  <div class="customer-bulk-selection">
+    <strong><span id="bulk-selected-count">0</span> selected</strong>
+    <button type="button" class="ghost small-action" id="bulk-select-visible">Select visible</button>
+    <button type="button" class="ghost small-action" id="bulk-clear">Clear</button>
+  </div>
+  <div class="customer-bulk-controls">
+    <label>Bulk action
+      <select name="action" id="bulk-action" required>
+        <option value="">Choose action…</option>
+        <option value="status">Set status</option>
+        <option value="package">Change package</option>
+        <option value="reconcile">Reconcile Plex</option>
+        <option value="archive">Archive / remove</option>
+      </select>
+    </label>
+    <label id="bulk-status-field" hidden>Status
+      <select name="status">
+        <option value="active">Active</option>
+        <option value="grace">Grace</option>
+        <option value="suspended">Suspended</option>
+        <option value="cancelled">Cancelled</option>
+        <option value="exempt">Exempt</option>
+      </select>
+    </label>
+    <label id="bulk-package-field" hidden>Package / billing tier
+      <select name="billing_tier_id">
+        <option value="">Choose tier…</option>
+        {% for tier in tiers %}<option value="{{ tier.id }}">{{ tier.package.name }} — {{ tier.name }} (£{{ '%.2f'|format(tier.price) }})</option>{% endfor %}
+      </select>
+    </label>
+    <label id="bulk-start-field" hidden>Start date
+      <input type="date" name="start_date" value="{{ today }}">
+    </label>
+    <div class="customer-bulk-submit">
+      <button type="submit" id="bulk-apply" disabled>Apply to selected</button>
+    </div>
+  </div>
+  <div id="bulk-help" class="muted customer-bulk-help">Select an action to apply it to all checked customers.</div>
+</form>
+{% endif %}
 <div id="customer-filter-empty" class="subtle customer-filter-empty" hidden>No customers match this filter.</div>
 <div class="cards customer-list">
 {% for c in customers %}
@@ -69,6 +111,7 @@
 {% set effective_expiry = sub.manual_access_end if sub and sub.manual_access_end and sub.manual_access_end > today_dt else (sub.grace_until if sub and sub.grace_until else (sub.current_period_end if sub else none)) %}
 {% set ta = c.tautulli_activity %}
 <article class="card customer-card" data-customer-id="{{ c.id }}" data-status="{{ 'exempt' if c.exempt else c.status }}" data-search="{{ (c.name ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.plex_username or '') ~ ' ' ~ (c.notes or ''))|lower|e }}" data-name="{{ c.name|lower|e }}" data-expiry="{{ effective_expiry.isoformat() if effective_expiry else '' }}" data-package="{{ sub.billing_tier.package.name|lower|e if sub else '' }}" data-package-label="{{ sub.billing_tier.package.name|e if sub else '' }}" data-last-streamed="{{ ta.last_streamed_at.isoformat() if ta and ta.last_streamed_at else '' }}" data-watch-time-30d="{{ ta.watch_time_30d if ta else 0 }}" data-tautulli="{{ '1' if ta else '0' }}" data-watching="0">
+  {% if not archived_mode %}<label class="customer-select-control" title="Select {{ c.name|e }}"><input class="customer-select-checkbox" type="checkbox" name="customer_ids" value="{{ c.id }}" form="bulk-customer-form" aria-label="Select {{ c.name|e }}"></label>{% endif %}
   <button type="button" class="customer-mobile-summary" aria-expanded="false">
     <span class="customer-mobile-identity">
       <strong>{{ c.name }}</strong>
@@ -270,6 +313,66 @@
   packageFilter?.addEventListener('change', () => { currentPackage = packageFilter.value; applyFilters(); });
   activityFilter?.addEventListener('change', () => { currentActivity = activityFilter.value; applyFilters(); });
   applyFilters();
+
+  const bulkForm = document.getElementById('bulk-customer-form');
+  const bulkAction = document.getElementById('bulk-action');
+  const bulkStatusField = document.getElementById('bulk-status-field');
+  const bulkPackageField = document.getElementById('bulk-package-field');
+  const bulkStartField = document.getElementById('bulk-start-field');
+  const bulkApply = document.getElementById('bulk-apply');
+  const bulkCount = document.getElementById('bulk-selected-count');
+  const bulkHelp = document.getElementById('bulk-help');
+  const selectionBoxes = [...document.querySelectorAll('.customer-select-checkbox')];
+
+  function selectedBoxes() { return selectionBoxes.filter(box => box.checked); }
+  function updateBulkSelection() {
+    if (!bulkForm) return;
+    const count = selectedBoxes().length;
+    bulkForm.hidden = count === 0;
+    if (bulkCount) bulkCount.textContent = count;
+    if (bulkApply) bulkApply.disabled = count === 0 || !bulkAction?.value;
+    cards.forEach(card => card.classList.toggle('customer-selected', !!card.querySelector('.customer-select-checkbox:checked')));
+  }
+
+  function updateBulkAction() {
+    if (!bulkAction) return;
+    const action = bulkAction.value;
+    if (bulkStatusField) bulkStatusField.hidden = action !== 'status';
+    if (bulkPackageField) bulkPackageField.hidden = action !== 'package';
+    if (bulkStartField) bulkStartField.hidden = action !== 'package';
+    if (bulkHelp) {
+      bulkHelp.textContent = action === 'package'
+        ? 'Changing package creates a new billing period for every selected customer using the chosen start date.'
+        : action === 'archive'
+          ? 'Only Cancelled, non-exempt customers can be archived. Any others in the selection will be skipped.'
+          : action === 'reconcile'
+            ? 'Runs the normal idempotent Plex reconciliation for every selected customer with a Plex identity.'
+            : action === 'status'
+              ? 'Updates the selected customers using the same status and Plex reconciliation rules as individual changes.'
+              : 'Select an action to apply it to all checked customers.';
+    }
+    updateBulkSelection();
+  }
+
+  selectionBoxes.forEach(box => box.addEventListener('change', updateBulkSelection));
+  document.getElementById('bulk-select-visible')?.addEventListener('click', () => {
+    cards.filter(card => !card.hidden).forEach(card => { const box = card.querySelector('.customer-select-checkbox'); if (box) box.checked = true; });
+    updateBulkSelection();
+  });
+  document.getElementById('bulk-clear')?.addEventListener('click', () => {
+    selectionBoxes.forEach(box => box.checked = false);
+    updateBulkSelection();
+  });
+  bulkAction?.addEventListener('change', updateBulkAction);
+  bulkForm?.addEventListener('submit', event => {
+    const count = selectedBoxes().length;
+    const action = bulkAction?.value || '';
+    let message = `Apply this bulk action to ${count} customer${count === 1 ? '' : 's'}?`;
+    if (action === 'package') message = `Change package and start a new billing period for ${count} selected customer${count === 1 ? '' : 's'}?`;
+    if (action === 'archive') message = `Archive all eligible customers in this selection? Historical data will be preserved.`;
+    if (!confirm(message)) event.preventDefault();
+  });
+  updateBulkAction();
 
   async function liveLoop() {
     let delay = 10000;
