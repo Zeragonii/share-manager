@@ -39,6 +39,7 @@ from .models import (
     NotificationDelivery,
     TautulliActivity,
     TautulliSettings,
+    StreamLimitEvent,
 )
 from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
@@ -48,7 +49,7 @@ from .services.reconcile import enqueue_reconciliation, reconcile_customer, retr
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy, validate_application_schema, BackupStorageError
-from .services.tautulli import get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage
+from .services.tautulli import get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage, enforce_stream_limits
 from .version import APP_VERSION
 
 
@@ -221,6 +222,21 @@ def run_tautulli_cycle() -> bool:
         db.close()
 
 
+@serialized_db_worker
+def run_stream_limit_cycle() -> bool:
+    if RESTORE_IN_PROGRESS.is_set():
+        return False
+    db = SessionLocal()
+    try:
+        result = enforce_stream_limits(db)
+        return bool(result.get("enforced") or result.get("failed"))
+    except Exception:
+        logger.exception("Stream-limit enforcement cycle failed")
+        return False
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     async def billing_loop():
@@ -271,10 +287,26 @@ async def lifespan(_app: FastAPI):
                 logger.exception("Tautulli worker cycle failed")
             await asyncio.sleep(60)
 
+    async def stream_limit_loop():
+        await asyncio.sleep(8)
+        while True:
+            interval = 10
+            try:
+                await asyncio.to_thread(run_stream_limit_cycle)
+                db = SessionLocal()
+                try:
+                    interval = get_tautulli_settings(db).live_refresh_seconds
+                finally:
+                    db.close()
+            except Exception:
+                logger.exception("Stream-limit enforcement worker cycle failed")
+            await asyncio.sleep(max(10, int(interval or 10)))
+
     billing_task = asyncio.create_task(billing_loop())
     backup_task = asyncio.create_task(backup_loop())
     reconcile_task = asyncio.create_task(reconcile_queue_loop())
     tautulli_task = asyncio.create_task(tautulli_loop())
+    stream_limit_task = asyncio.create_task(stream_limit_loop())
     try:
         yield
     finally:
@@ -282,6 +314,7 @@ async def lifespan(_app: FastAPI):
         backup_task.cancel()
         reconcile_task.cancel()
         tautulli_task.cancel()
+        stream_limit_task.cancel()
         with suppress(asyncio.CancelledError):
             await billing_task
         with suppress(asyncio.CancelledError):
@@ -290,6 +323,8 @@ async def lifespan(_app: FastAPI):
             await reconcile_task
         with suppress(asyncio.CancelledError):
             await tautulli_task
+        with suppress(asyncio.CancelledError):
+            await stream_limit_task
 
 
 app = FastAPI(title="Share Manager", version=APP_VERSION, lifespan=lifespan)
@@ -1245,14 +1280,15 @@ def add_tier(
     interval_unit: str = Form(...),
     interval_count: int = Form(1),
     grace_period_days: int = Form(3),
+    stream_limit: int = Form(1),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
     if gate:
         return gate
-    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or price < 0:
+    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or price < 0:
         return RedirectResponse("/packages?error=Invalid+billing+tier+values", status_code=303)
-    t = BillingTier(package_id=package_id, name=name.strip(), price=price, interval_unit=interval_unit, interval_count=interval_count, grace_period_days=grace_period_days)
+    t = BillingTier(package_id=package_id, name=name.strip(), price=price, interval_unit=interval_unit, interval_count=interval_count, grace_period_days=grace_period_days, stream_limit=stream_limit)
     db.add(t)
     db.commit()
     return RedirectResponse("/packages", status_code=303)
@@ -1268,6 +1304,7 @@ def edit_tier(
     interval_unit: str = Form(...),
     interval_count: int = Form(1),
     grace_period_days: int = Form(3),
+    stream_limit: int = Form(1),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -1276,14 +1313,15 @@ def edit_tier(
     t = db.query(BillingTier).filter(BillingTier.id == tier_id, BillingTier.package_id == package_id).first()
     if not t:
         return RedirectResponse("/packages?error=Billing+tier+not+found", status_code=303)
-    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or price < 0:
+    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or price < 0:
         return RedirectResponse("/packages?error=Invalid+billing+tier+values", status_code=303)
     t.name = name.strip()
     t.price = price
     t.interval_unit = interval_unit
     t.interval_count = interval_count
     t.grace_period_days = grace_period_days
-    db.add(AuditLog(actor=settings.admin_username, action="billing_tier.update", target_type="billing_tier", target_id=str(t.id), detail=f"{t.name}: £{price} / {interval_count} {interval_unit}; {grace_period_days}d grace"))
+    t.stream_limit = stream_limit
+    db.add(AuditLog(actor=settings.admin_username, action="billing_tier.update", target_type="billing_tier", target_id=str(t.id), detail=f"{t.name}: £{price} / {interval_count} {interval_unit}; {grace_period_days}d grace; stream limit {stream_limit}"))
     db.commit()
     return RedirectResponse("/packages?notice=Billing+tier+updated", status_code=303)
 
@@ -1844,6 +1882,43 @@ def delete_payment(request: Request, payment_id: int, db: Session = Depends(get_
     return RedirectResponse("/payments?notice=Payment+deleted", status_code=303)
 
 
+
+@app.get("/stream-limits", response_class=HTMLResponse)
+def stream_limits_page(request: Request, customer_id: int | None = None, result: str = "all", date_from: str = "", date_to: str = "", db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    query = db.query(StreamLimitEvent).options(joinedload(StreamLimitEvent.customer), joinedload(StreamLimitEvent.billing_tier))
+    if customer_id:
+        query = query.filter(StreamLimitEvent.customer_id == customer_id)
+    if result == "success":
+        query = query.filter(StreamLimitEvent.success.is_(True))
+    elif result == "failed":
+        query = query.filter(StreamLimitEvent.success.is_(False))
+    try:
+        if date_from:
+            query = query.filter(StreamLimitEvent.created_at >= datetime.strptime(date_from, "%Y-%m-%d"))
+        if date_to:
+            query = query.filter(StreamLimitEvent.created_at < datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1))
+    except ValueError:
+        return RedirectResponse("/stream-limits", status_code=303)
+    rows = query.order_by(StreamLimitEvent.created_at.desc()).limit(500).all()
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_rows = db.query(StreamLimitEvent).filter(StreamLimitEvent.created_at >= month_start).all()
+    counts: dict[int, int] = {}
+    for row in month_rows:
+        counts[row.customer_id] = counts.get(row.customer_id, 0) + 1
+    top_customer = db.get(Customer, max(counts, key=counts.get)) if counts else None
+    stats = {
+        "month": len(month_rows),
+        "unique": len(counts),
+        "failed": sum(1 for row in month_rows if not row.success),
+        "top_customer": top_customer,
+        "top_count": counts.get(top_customer.id, 0) if top_customer else 0,
+    }
+    customers = db.query(Customer).filter(Customer.archived.is_(False)).order_by(Customer.name).all()
+    return render(request, "stream_limits.html", rows=rows, stats=stats, customers=customers, selected_customer_id=customer_id, selected_result=result, date_from=date_from, date_to=date_to)
+
 @app.get("/customers/{customer_id}/history", response_class=HTMLResponse)
 def customer_history(request: Request, customer_id: int, db: Session = Depends(get_db)):
     gate = auth(request)
@@ -1877,7 +1952,8 @@ def customer_history(request: Request, customer_id: int, db: Session = Depends(g
         events.append({"when": log.created_at, "kind": log.action, "detail": log.detail or "", "voided": False})
     events.sort(key=lambda item: item["when"], reverse=True)
     tautulli_activity = db.query(TautulliActivity).filter(TautulliActivity.customer_id == customer.id).first()
-    return render(request, "customer_history.html", customer=customer, events=events, tautulli_activity=tautulli_activity)
+    stream_limit_events = (db.query(StreamLimitEvent).options(joinedload(StreamLimitEvent.billing_tier)).filter(StreamLimitEvent.customer_id == customer.id).order_by(StreamLimitEvent.created_at.desc()).limit(100).all())
+    return render(request, "customer_history.html", customer=customer, events=events, tautulli_activity=tautulli_activity, stream_limit_events=stream_limit_events)
 
 
 @app.get("/backups", response_class=HTMLResponse)

@@ -60,6 +60,8 @@ EVENT_DEFINITIONS = {
     "tautulli.customer_inactive": {"label": "Customer inactive 90+ days", "severity": "warning"},
     "tautulli.never_streamed": {"label": "Customer never streamed", "severity": "warning"},
     "tautulli.suspended_streaming": {"label": "Suspended customer streaming", "severity": "critical"},
+    "stream.limit_enforced": {"label": "Stream limit enforced", "severity": "warning"},
+    "stream.limit_enforcement_failed": {"label": "Stream limit enforcement failed", "severity": "critical"},
 }
 
 

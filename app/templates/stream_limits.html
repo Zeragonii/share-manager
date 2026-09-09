@@ -1,0 +1,30 @@
+{% extends 'base.html' %}{% block content %}
+<header><h1>Stream Limits</h1><p>Concurrent-stream enforcement history from Tautulli. Billing exemption does not bypass fair-use limits; 0 on a tier means unlimited.</p></header>
+<section class="stream-limit-stats">
+  <div class="stat"><strong>{{ stats.month }}</strong><span>Limit hits this month</span></div>
+  <div class="stat"><strong>{{ stats.unique }}</strong><span>Unique customers</span></div>
+  <div class="stat"><strong>{{ stats.top_customer.name if stats.top_customer else '—' }}</strong><span>Most frequent{% if stats.top_customer %} · {{ stats.top_count }}{% endif %}</span></div>
+  <div class="stat"><strong>{{ stats.failed }}</strong><span>Failed terminations</span></div>
+</section>
+<section>
+  <div class="row between stream-limit-heading"><div><h2>Enforcement history</h2><p>Newest attempts first. Every row represents a confirmed two-heartbeat over-limit condition.</p></div></div>
+  <form method="get" class="stream-limit-filters">
+    <label>Customer<select name="customer_id"><option value="">All customers</option>{% for c in customers %}<option value="{{ c.id }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label>
+    <label>Result<select name="result"><option value="all" {% if selected_result == 'all' %}selected{% endif %}>All</option><option value="success" {% if selected_result == 'success' %}selected{% endif %}>Terminated</option><option value="failed" {% if selected_result == 'failed' %}selected{% endif %}>Failed</option></select></label>
+    <label>From<input type="date" name="date_from" value="{{ date_from }}"></label>
+    <label>To<input type="date" name="date_to" value="{{ date_to }}"></label>
+    <button>Apply filters</button>
+  </form>
+  <div class="table-wrap"><table class="stream-limit-table">
+    <thead><tr><th>Time</th><th>Customer</th><th>Tier</th><th>Allowed</th><th>Detected</th><th>Session</th><th>Result</th></tr></thead>
+    <tbody>{% for e in rows %}<tr>
+      <td>{{ e.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      <td><a href="/customers/{{ e.customer_id }}/history">{{ e.customer.name }}</a></td>
+      <td>{{ e.billing_tier.name if e.billing_tier else '—' }}</td>
+      <td>{{ e.allowed_streams }}</td><td>{{ e.detected_streams }}</td>
+      <td><strong>{{ e.title or 'Unknown title' }}</strong><div class="muted">{{ e.player or 'Unknown player' }}{% if e.ip_address %} · {{ e.ip_address }}{% endif %}</div></td>
+      <td><span class="badge {{ 'ok' if e.success else 'error-badge' }}">{{ 'terminated' if e.success else 'failed' }}</span>{% if e.detail %}<div class="muted">{{ e.detail }}</div>{% endif %}</td>
+    </tr>{% else %}<tr><td colspan="7" class="muted">No stream-limit enforcement events yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

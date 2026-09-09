@@ -194,3 +194,13 @@ Bulk customer changes are handled by `/customers/bulk`. Selected customer IDs ar
 - Archived-customer onboarding recovery: Invite new Plex customer now detects archived identity/email matches and offers to restore the existing historical record instead of returning a generic duplicate error.
 - Added Restore & reassign package, preserving the customer ID/history while creating a fresh subscription using the originally selected tier/start date and reconciling Plex access.
 - The stored archived Plex identity is deliberately preserved; identity changes remain an explicit Edit customer operation.
+
+
+## v0.6.0 — Concurrent Stream Enforcement
+- Billing tiers now define a concurrent stream limit; `0` means unlimited and existing tiers migrate to `1`.
+- Tautulli live activity drives server-side enforcement even when no browser is open.
+- An over-limit customer must be observed in two distinct live samples before enforcement, preventing transient session flapping from killing playback.
+- Newest excess sessions are terminated first; billing-exempt customers remain subject to fair-use stream limits.
+- Unmatched/admin Tautulli sessions are never automatically terminated.
+- Optional `stream.limit_enforced` and `stream.limit_enforcement_failed` notification events are available through the existing notification adapters.
+- Dedicated Stream Limits history and per-customer enforcement history preserve successful and failed termination attempts.

@@ -49,6 +49,7 @@ class BillingTier(Base):
     interval_unit: Mapped[str] = mapped_column(String(16), default="month")
     interval_count: Mapped[int] = mapped_column(Integer, default=1)
     grace_period_days: Mapped[int] = mapped_column(Integer, default=3)
+    stream_limit: Mapped[int] = mapped_column(Integer, default=1)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     package: Mapped[Package] = relationship(back_populates="billing_tiers")
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="billing_tier")
@@ -200,6 +201,7 @@ class TautulliSettings(Base):
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_matched_count: Mapped[int] = mapped_column(Integer, default=0)
     last_unmatched_count: Mapped[int] = mapped_column(Integer, default=0)
+    admin_user_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     integration: Mapped[Integration | None] = relationship()
 
@@ -218,6 +220,24 @@ class TautulliActivity(Base):
     plays_lifetime: Mapped[int] = mapped_column(Integer, default=0)
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     customer: Mapped[Customer] = relationship()
+
+
+class StreamLimitEvent(Base):
+    __tablename__ = "stream_limit_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    billing_tier_id: Mapped[int | None] = mapped_column(ForeignKey("billing_tiers.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    allowed_streams: Mapped[int] = mapped_column(Integer)
+    detected_streams: Mapped[int] = mapped_column(Integer)
+    session_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    player: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer: Mapped[Customer] = relationship()
+    billing_tier: Mapped[BillingTier | None] = relationship()
 
 
 class NotificationEndpoint(Base):

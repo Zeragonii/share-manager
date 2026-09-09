@@ -18,6 +18,21 @@
   </div>
 </section>
 {% endif %}
+
+{% if stream_limit_events %}
+<section class="stream-limit-customer-history">
+  <div class="row between"><div><h2>Stream limit enforcement</h2><p class="muted">Concurrent-stream enforcement attempts for this customer.</p></div><a class="button-link secondary small-action" href="/stream-limits?customer_id={{ customer.id }}">View all</a></div>
+  <div class="stream-limit-mini-list">
+    {% for e in stream_limit_events[:10] %}
+    <div class="stream-limit-mini-row">
+      <time>{{ e.created_at.strftime('%Y-%m-%d %H:%M') }}</time>
+      <div><strong>{{ e.detected_streams }} detected · limit {{ e.allowed_streams }}</strong><span>{{ e.title or 'Unknown title' }}{% if e.player %} · {{ e.player }}{% endif %}</span></div>
+      <span class="badge {{ 'ok' if e.success else 'error-badge' }}">{{ 'terminated' if e.success else 'failed' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 <section><h2>Timeline</h2>
   <div class="timeline">
   {% for event in events %}

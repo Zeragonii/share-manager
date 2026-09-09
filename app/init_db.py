@@ -20,6 +20,8 @@ def add_column_if_missing(table: str, column: str, ddl: str):
 add_column_if_missing("customers", "archived", "BOOLEAN NOT NULL DEFAULT FALSE")
 add_column_if_missing("customers", "archived_at", "TIMESTAMP NULL")
 add_column_if_missing("billing_tiers", "grace_period_days", "INTEGER NOT NULL DEFAULT 3")
+add_column_if_missing("billing_tiers", "stream_limit", "INTEGER NOT NULL DEFAULT 1")
+add_column_if_missing("tautulli_settings", "admin_user_ids", "TEXT NULL")
 add_column_if_missing("subscriptions", "current_period_start", "TIMESTAMP NULL")
 add_column_if_missing("subscriptions", "manual_access_end", "TIMESTAMP NULL")
 add_column_if_missing("subscriptions", "grace_until", "TIMESTAMP NULL")

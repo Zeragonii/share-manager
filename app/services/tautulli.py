@@ -9,7 +9,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..integrations.tautulli import TautulliIntegration, TautulliUser
-from ..models import AuditLog, Customer, Integration, TautulliActivity, TautulliSettings
+from ..models import ASSIGNED_SUBSCRIPTION_STATES, AuditLog, BillingTier, Customer, Integration, StreamLimitEvent, Subscription, TautulliActivity, TautulliSettings
 from .notifications import notify_event
 
 
@@ -22,6 +22,8 @@ class TautulliSyncResult:
 
 _live_lock = Lock()
 _live_cache: dict[str, Any] = {"sampled_at": None, "sessions": [], "error": None}
+_stream_observations: dict[int, dict[str, Any]] = {}
+_recent_terminations: dict[str, datetime] = {}
 
 
 def get_tautulli_settings(db: Session) -> TautulliSettings:
@@ -69,7 +71,9 @@ def sync_tautulli(db: Session, *, now: datetime | None = None) -> TautulliSyncRe
     synced = 0
     unmatched_names: list[str] = []
     try:
-        users = client.users()
+        all_users = client.users(include_admin=True)
+        settings_row.admin_user_ids = ",".join(sorted(user.user_id for user in all_users if user.is_admin)) or None
+        users = [user for user in all_users if not user.is_admin]
         for user in users:
             customer = match_customer(db, user)
             if not customer:
@@ -210,3 +214,130 @@ def dashboard_usage(db: Session, *, now: datetime | None = None) -> dict[str, in
     total_30d = sum(int(a.watch_time_30d or 0) for a in rows)
     average_30d = int(total_30d / active_30d) if active_30d else 0
     return {"active_7d": active_7d, "active_30d": active_30d, "inactive_90d": inactive_90d, "never": never, "watch_time_30d": total_30d, "average_30d": average_30d}
+
+
+def enforce_stream_limits(db: Session, *, now: datetime | None = None) -> dict[str, int]:
+    """Enforce per-tier concurrent stream limits from the shared Tautulli live sample.
+
+    A customer must be over limit in two distinct Tautulli samples before an excess
+    session is terminated. 0 means unlimited. Exempt customers are intentionally
+    included because billing exemption is separate from fair-use policy.
+    """
+    now = now or datetime.utcnow()
+    settings_row = get_tautulli_settings(db)
+    if not settings_row.integration or not settings_row.integration.enabled:
+        _stream_observations.clear()
+        return {"checked": 0, "enforced": 0, "failed": 0}
+
+    live = get_live_activity(db, max_age_seconds=settings_row.live_refresh_seconds, now=now)
+    if live.get("error"):
+        return {"checked": 0, "enforced": 0, "failed": 0}
+    sampled_at = live.get("sampled_at")
+    if not sampled_at:
+        return {"checked": 0, "enforced": 0, "failed": 0}
+
+    admin_user_ids = {item for item in (settings_row.admin_user_ids or "").split(",") if item}
+    by_customer: dict[int, list[dict[str, Any]]] = {}
+    for session in live.get("sessions", []):
+        if str(session.get("user_id") or "") in admin_user_ids:
+            continue
+        customer_id = session.get("customer_id")
+        if customer_id:
+            by_customer.setdefault(int(customer_id), []).append(session)
+
+    checked = enforced = failed = 0
+    active_customer_ids = set(by_customer)
+    for customer_id in list(_stream_observations):
+        if customer_id not in active_customer_ids:
+            _stream_observations.pop(customer_id, None)
+
+    # Expire termination cooldowns after two minutes.
+    for key, when in list(_recent_terminations.items()):
+        if when < now - timedelta(minutes=2):
+            _recent_terminations.pop(key, None)
+
+    client = _client(settings_row)
+    for customer_id, sessions in by_customer.items():
+        customer = db.get(Customer, customer_id)
+        if not customer or customer.archived:
+            continue
+        sub = (
+            db.query(Subscription)
+            .filter(Subscription.customer_id == customer_id, Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES))
+            .order_by(Subscription.started_at.desc(), Subscription.id.desc())
+            .first()
+        )
+        if not sub:
+            _stream_observations.pop(customer_id, None)
+            continue
+        tier = db.get(BillingTier, sub.billing_tier_id)
+        limit = max(0, int(tier.stream_limit or 0)) if tier else 0
+        if limit == 0:
+            _stream_observations.pop(customer_id, None)
+            continue
+        checked += 1
+        if len(sessions) <= limit:
+            _stream_observations.pop(customer_id, None)
+            continue
+
+        def started_value(item: dict[str, Any]):
+            value = item.get("started_at")
+            return value if isinstance(value, datetime) else datetime.min
+
+        ordered = sorted(sessions, key=started_value)
+        excess = ordered[limit:]  # newest sessions beyond the allowance
+        signature = tuple(sorted(str(x.get("session_key") or "") for x in excess))
+        obs = _stream_observations.get(customer_id)
+        if obs and obs.get("sampled_at") == sampled_at:
+            continue  # same cached sample cannot count as a second strike
+        if obs and obs.get("signature") == signature:
+            strikes = int(obs.get("strikes", 1)) + 1
+        else:
+            strikes = 1
+        _stream_observations[customer_id] = {"signature": signature, "strikes": strikes, "sampled_at": sampled_at}
+        if strikes < 2:
+            continue
+
+        # Terminate newest excess first. When multiple sessions exceed the limit,
+        # enforce each excess session in the same confirmed observation.
+        for session in reversed(excess):
+            session_key = str(session.get("session_key") or "").strip()
+            if not session_key or session_key in _recent_terminations:
+                continue
+            title = str(session.get("title") or "Unknown title")
+            player = str(session.get("player") or "") or None
+            ip_address = str(session.get("ip_address") or "") or None
+            success = False
+            detail = None
+            try:
+                client.terminate_session(session_key, f"Concurrent stream limit reached. Your account allows {limit} concurrent stream{'s' if limit != 1 else ''}.")
+                success = True
+                enforced += 1
+                _recent_terminations[session_key] = now
+                detail = "Newest excess session terminated"
+            except Exception as exc:
+                failed += 1
+                detail = f"{type(exc).__name__}: {exc}"[:1000]
+
+            event = StreamLimitEvent(
+                customer_id=customer.id, billing_tier_id=tier.id if tier else None,
+                created_at=now, allowed_streams=limit, detected_streams=len(sessions),
+                session_key=session_key, title=title, player=player, ip_address=ip_address,
+                success=success, detail=detail,
+            )
+            db.add(event)
+            db.add(AuditLog(actor="system", action="stream.limit_enforced" if success else "stream.limit_enforcement_failed", target_type="customer", target_id=str(customer.id), detail=f"{len(sessions)} detected / {limit} allowed · {title} · {detail}"))
+            db.commit()
+            notify_event(
+                db,
+                event="stream.limit_enforced" if success else "stream.limit_enforcement_failed",
+                title="Concurrent stream limit enforced" if success else "Concurrent stream limit enforcement failed",
+                message=(f"{customer.name} had {len(sessions)} concurrent streams with a limit of {limit}. " + (f"Terminated {title}." if success else f"Could not terminate {title}.")),
+                severity="warning" if success else "critical",
+                target_type="customer", target_id=str(customer.id),
+                event_key=f"stream-limit:{'ok' if success else 'failed'}:{customer.id}:{session_key}:{int(now.timestamp())}",
+                data={"customer": customer.name, "allowed": limit, "detected": len(sessions), "title": title, "player": player, "success": success},
+            )
+        _stream_observations.pop(customer_id, None)
+
+    return {"checked": checked, "enforced": enforced, "failed": failed}

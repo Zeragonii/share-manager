@@ -18,6 +18,7 @@ class TautulliUser:
     friendly_name: str | None
     email: str | None
     last_seen: datetime | None = None
+    is_admin: bool = False
 
 
 class TautulliIntegration:
@@ -68,15 +69,16 @@ class TautulliIntegration:
             return None
         return datetime.utcfromtimestamp(value) if value > 0 else None
 
-    def users(self) -> list[TautulliUser]:
+    def users(self, *, include_admin: bool = False) -> list[TautulliUser]:
         raw = self._call("get_users") or []
         result: list[TautulliUser] = []
         for row in raw if isinstance(raw, list) else []:
             try:
-                if int(row.get("is_admin") or 0) == 1:
-                    continue
+                is_admin = int(row.get("is_admin") or 0) == 1
             except (TypeError, ValueError):
-                pass
+                is_admin = False
+            if is_admin and not include_admin:
+                continue
             user_id = str(row.get("user_id") or "").strip()
             if not user_id:
                 continue
@@ -87,6 +89,7 @@ class TautulliIntegration:
                 friendly_name=(row.get("friendly_name") or row.get("username") or None),
                 email=(row.get("email") or None),
                 last_seen=self._dt(row.get("last_seen")),
+                is_admin=is_admin,
             ))
         return result
 
@@ -146,5 +149,25 @@ class TautulliIntegration:
                 "state": row.get("state") or "playing",
                 "media_type": row.get("media_type"),
                 "player": row.get("player"),
+                "ip_address": row.get("ip_address") or row.get("ip"),
+                "started_at": self._dt(row.get("started")),
             })
         return result
+
+    def terminate_session(self, session_key: str, message: str) -> Any:
+        if not (session_key or "").strip():
+            raise TautulliError("Cannot terminate a session without a session key")
+        query = {"apikey": self.api_key, "cmd": "terminate_session", "session_key": session_key, "message": message}
+        try:
+            response = httpx.post(f"{self.base_url}/api/v2", params=query, timeout=self.timeout)
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.HTTPError as exc:
+            raise TautulliError(f"Tautulli termination request failed: {type(exc).__name__}") from exc
+        except ValueError as exc:
+            raise TautulliError("Tautulli returned an invalid termination response") from exc
+        envelope = payload.get("response") if isinstance(payload, dict) else None
+        if not isinstance(envelope, dict) or envelope.get("result") != "success":
+            message_text = envelope.get("message") if isinstance(envelope, dict) else None
+            raise TautulliError(message_text or "Tautulli could not terminate the session")
+        return envelope.get("data")
