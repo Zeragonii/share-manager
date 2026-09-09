@@ -226,16 +226,18 @@ def desired_billing_status(sub: Subscription, now: datetime) -> str | None:
     return "suspended"
 
 
-def process_billing(db: Session, now: datetime | None = None) -> list[Customer]:
-    """Apply expiry/grace state transitions and return customers whose access state changed."""
+def process_billing(db: Session, now: datetime | None = None, *, customer_id: int | None = None) -> list[Customer]:
+    """Apply transitions globally, or for one customer's immediate coverage edit."""
     now = now or datetime.utcnow()
     changed_customers: dict[int, Customer] = {}
-    subs = (
+    query = (
         db.query(Subscription)
         .options(joinedload(Subscription.customer), joinedload(Subscription.billing_tier))
         .filter(Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES))
-        .all()
     )
+    if customer_id is not None:
+        query = query.filter(Subscription.customer_id == customer_id)
+    subs = query.all()
     for sub in subs:
         desired = desired_billing_status(sub, now)
         if desired is None:

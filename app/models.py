@@ -85,6 +85,16 @@ class PackageEntitlement(Base):
     __table_args__ = (UniqueConstraint("package_id", "integration_id", "resource_type", "resource_id"),)
 
 
+class PlexReconcileJob(Base):
+    """Durable outstanding work, not a snapshot of the customer's access rules."""
+    __tablename__ = "plex_reconcile_jobs"
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), primary_key=True)
+    integration_id: Mapped[int] = mapped_column(ForeignKey("integrations.id", ondelete="CASCADE"), primary_key=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    last_error: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+
 class Subscription(Base):
     __tablename__ = "subscriptions"
     id: Mapped[int] = mapped_column(primary_key=True)

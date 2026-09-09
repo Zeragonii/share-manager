@@ -42,7 +42,7 @@ from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
 from .security import logged_in, make_session, valid_credentials
 from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
-from .services.reconcile import reconcile_customer
+from .services.reconcile import reconcile_customer, retry_pending_reconciliations
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy
@@ -160,6 +160,7 @@ def run_billing_cycle() -> int:
                 reconcile_customer(db, customer)
             except Exception as exc:
                 _notify_reconcile_failure(db, customer, exc)
+        retry_pending_reconciliations(db, now=now, on_error=_notify_reconcile_failure)
         _notify_due_soon(db, now)
         return len(changed)
     finally:
@@ -1422,9 +1423,10 @@ def edit_payment(
     except (ValueError, TypeError) as exc:
         db.rollback()
         return RedirectResponse(f"/payments?error={quote_plus(str(exc))}", status_code=303)
+    if coverage_change:
+        process_billing(db, customer_id=payment.customer_id)
     if coverage_change and payment.customer.plex_username and not payment.customer.exempt:
         try:
-            process_billing(db)
             reconcile_customer(db, payment.customer)
         except Exception as exc:
             _notify_reconcile_failure(db, payment.customer, exc)
@@ -1447,9 +1449,10 @@ def delete_payment(request: Request, payment_id: int, db: Session = Depends(get_
     payment.voided_by = settings.admin_username
     db.add(AuditLog(actor=settings.admin_username, action="payment.delete", target_type="payment", target_id=str(payment.id), detail=f"Voided £{payment.amount} via {payment.source} received {payment.paid_at:%Y-%m-%d}"))
     db.commit()
+    if payment.subscription_id:
+        process_billing(db, customer_id=payment.customer_id)
     if payment.subscription_id and payment.customer.plex_username and not payment.customer.exempt:
         try:
-            process_billing(db)
             reconcile_customer(db, payment.customer)
         except Exception as exc:
             _notify_reconcile_failure(db, payment.customer, exc)

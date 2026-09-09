@@ -2,6 +2,10 @@
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
+## v0.5.2
+
+Failed Plex updates now survive restarts and retry automatically using the customer's current access rules. Payment coverage edits and voids refresh only the affected customer's billing, preserving other customers' scheduled access updates. See [release notes](RELEASE_NOTES.md) for upgrade details, retry timing, and regression tests.
+
 ## v0.3.0 highlights
 
 - Package and billing-tier management, including per-tier grace periods.

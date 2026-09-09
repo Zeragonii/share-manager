@@ -1,4 +1,14 @@
-# Share Manager Architecture — v0.3.0
+# Share Manager Architecture — v0.5.2
+
+## v0.5.2 reliable Plex reconciliation
+
+`plex_reconcile_jobs` records outstanding work with a composite customer/integration primary key, an attempt count, next-attempt timestamp, and sanitized error type. The existing startup `create_all` creates the table on upgrade without changing historical billing records.
+
+`reconcile_customer` persists jobs for all selected enabled Plex servers before network calls. Each successful server clears its own job; failures retain work with exponential backoff capped at 60 minutes and do not stop attempts on other servers. The billing cycle retries due jobs even when there are no new status transitions. Explicit actions bypass backoff. The existing single-worker deployment serializes reconciliation calls with an in-process lock.
+
+Retries reload committed customer/subscription/package data instead of storing desired libraries in a job. Disabled integrations wait; exempt or unlinked customers have their work cleared without contacting Plex. A returned invitation/pending result retains its existing successful reconciliation meaning. Outstanding work is durable across restarts, but no historical audit failures are automatically backfilled.
+
+`process_billing` accepts an optional `customer_id` scope. Payment edit/void routes use it for their immediate coverage refresh. The scheduled cycle keeps its global behavior, including notifications and reconciliation for every changed customer.
 
 ## Core model
 
