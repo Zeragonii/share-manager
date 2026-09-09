@@ -435,7 +435,7 @@ def billing_run(request: Request):
 
 
 @app.get("/customers", response_class=HTMLResponse)
-def customers(request: Request, error: str | None = None, notice: str | None = None, archived: int = 0, db: Session = Depends(get_db)):
+def customers(request: Request, error: str | None = None, notice: str | None = None, archived: int = 0, archived_match_id: int | None = None, archived_tier_id: int | None = None, archived_start_date: str | None = None, db: Session = Depends(get_db)):
     gate = auth(request)
     if gate:
         return gate
@@ -470,7 +470,31 @@ def customers(request: Request, error: str | None = None, notice: str | None = N
             for entitlement in tier.package.entitlements
         ):
             plex_ready_tier_ids.add(tier.id)
-    return render(request, "customers.html", customers=rows, tiers=tiers, plex_ready_tier_ids=plex_ready_tier_ids, archived_mode=archived_mode, error=error, notice=notice, today=datetime.utcnow().strftime("%Y-%m-%d"), today_dt=datetime.utcnow())
+    archived_match = None
+    archived_match_tier = None
+    archived_match_start_date = archived_start_date or datetime.utcnow().strftime("%Y-%m-%d")
+    if not archived_mode and archived_match_id:
+        candidate = db.get(Customer, archived_match_id)
+        if candidate and candidate.archived:
+            archived_match = candidate
+            if archived_tier_id:
+                archived_match_tier = next((tier for tier in tiers if tier.id == archived_tier_id), None)
+
+    return render(
+        request,
+        "customers.html",
+        customers=rows,
+        tiers=tiers,
+        plex_ready_tier_ids=plex_ready_tier_ids,
+        archived_mode=archived_mode,
+        archived_match=archived_match,
+        archived_match_tier=archived_match_tier,
+        archived_match_start_date=archived_match_start_date,
+        error=error,
+        notice=notice,
+        today=datetime.utcnow().strftime("%Y-%m-%d"),
+        today_dt=datetime.utcnow(),
+    )
 
 
 @app.post("/customers/onboard")
@@ -501,6 +525,13 @@ def onboard_customer(
         )
     ).first()
     if duplicate:
+        if duplicate.archived:
+            start = start_date.strip() or datetime.utcnow().strftime("%Y-%m-%d")
+            return RedirectResponse(
+                "/customers?"
+                f"archived_match_id={duplicate.id}&archived_tier_id={billing_tier_id}&archived_start_date={quote_plus(start)}",
+                status_code=303,
+            )
         return RedirectResponse(f"/customers?error={quote_plus('A customer with that Plex identity or email already exists')}", status_code=303)
 
     tier = (
@@ -668,6 +699,84 @@ def restore_customer(request: Request, customer_id: int, db: Session = Depends(g
     db.add(AuditLog(actor=settings.admin_username, action="customer.restore", target_type="customer", target_id=str(customer.id), detail=customer.name))
     db.commit()
     return RedirectResponse("/customers?notice=Customer+restored", status_code=303)
+
+
+@app.post("/customers/{customer_id}/restore-onboard")
+def restore_onboard_customer(
+    request: Request,
+    customer_id: int,
+    billing_tier_id: int = Form(...),
+    start_date: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+
+    customer = db.get(Customer, customer_id)
+    if not customer or not customer.archived:
+        return RedirectResponse("/customers?error=Archived+customer+not+found", status_code=303)
+
+    tier = (
+        db.query(BillingTier)
+        .options(joinedload(BillingTier.package).joinedload(Package.entitlements).joinedload(PackageEntitlement.integration))
+        .filter(BillingTier.id == billing_tier_id)
+        .first()
+    )
+    if not tier or not tier.active or not tier.package.active:
+        return RedirectResponse("/customers?error=Invalid+billing+tier", status_code=303)
+
+    plex_entitlements = [
+        entitlement for entitlement in tier.package.entitlements
+        if entitlement.resource_type == "library"
+        and entitlement.integration.kind == "plex"
+        and entitlement.integration.enabled
+    ]
+    if not plex_entitlements:
+        return RedirectResponse("/customers?error=That+package+has+no+enabled+Plex+library+entitlements", status_code=303)
+
+    existing = db.query(Subscription).filter(
+        Subscription.customer_id == customer.id,
+        Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES),
+    ).all()
+    for old in existing:
+        old.status = "cancelled"
+        old.cancelled_at = datetime.utcnow()
+
+    start = _parse_date(start_date, datetime.utcnow())
+    subscription = Subscription(customer_id=customer.id, billing_tier_id=tier.id, status="active")
+    subscription.billing_tier = tier
+    initialize_subscription_period(subscription, start)
+
+    customer.archived = False
+    customer.archived_at = None
+    customer.status = "active"
+    customer.exempt = False
+    db.add(subscription)
+    db.add(AuditLog(
+        actor=settings.admin_username,
+        action="customer.restore_onboard",
+        target_type="customer",
+        target_id=str(customer.id),
+        detail=f"Restored and assigned {tier.package.name} / {tier.name}; starts {start:%Y-%m-%d}",
+    ))
+    db.commit()
+
+    if settings.reconcile_on_assign and customer.plex_username:
+        try:
+            messages = reconcile_customer(db, customer)
+        except Exception as exc:
+            _notify_reconcile_failure(db, customer, exc)
+            return RedirectResponse(
+                f"/customers?error={quote_plus('Customer restored and package assigned, but Plex reconciliation failed: ' + str(exc))}",
+                status_code=303,
+            )
+        invited = any("invitation" in message.lower() for message in messages)
+        notice = "Archived customer restored, package assigned and Plex invitation sent" if invited else "Archived customer restored, package assigned and Plex access reconciled"
+    else:
+        notice = "Archived customer restored and package assigned"
+
+    return RedirectResponse(f"/customers?notice={quote_plus(notice)}", status_code=303)
 
 
 @app.post("/customers/bulk")

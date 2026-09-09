@@ -29,7 +29,44 @@
     <div class="modal-help muted">The selected package must already have Plex libraries mapped. The first billing period starts on this date; the Plex invite is sent with those libraries attached.</div>
     <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Create &amp; invite</button></div>
   </form>
-</dialog>{% endif %}
+</dialog>
+
+{% if archived_match %}
+<dialog id="archived-customer-match-modal" class="customer-modal archived-match-modal">
+  <div class="modal-heading">
+    <div>
+      <h3>Archived customer found</h3>
+      <span class="muted">This Plex identity or contact email already belongs to an archived customer.</span>
+    </div>
+    <button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()" aria-label="Close">×</button>
+  </div>
+  <div class="archived-match-body">
+    <div class="archived-match-customer">
+      <strong>{{ archived_match.name }}</strong>
+      <span class="muted">{{ archived_match.plex_username or archived_match.email or 'No Plex identity stored' }}</span>
+      <span class="muted">Archived {{ archived_match.archived_at.strftime('%Y-%m-%d') if archived_match.archived_at else 'previously' }}</span>
+    </div>
+    <p>Rather than creating a duplicate, you can restore the original customer record and preserve all of their payment, subscription, audit and Tautulli history.</p>
+    {% if archived_match_tier %}
+    <div class="subtle archived-match-package"><strong>Requested package:</strong> {{ archived_match_tier.package.name }} · {{ archived_match_tier.name }} (£{{ '%.2f'|format(archived_match_tier.price) }})<br><span class="muted">Start date: {{ archived_match_start_date }}</span></div>
+    {% endif %}
+    <div class="modal-help muted">The archived customer’s stored Plex identity will be reused. If their Plex account has changed, restore them first and use Edit customer before reconciling access.</div>
+    <div class="modal-actions archived-match-actions">
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button>
+      <form method="post" action="/customers/{{ archived_match.id }}/restore"><button type="submit" class="secondary">Restore customer</button></form>
+      {% if archived_match_tier %}
+      <form method="post" action="/customers/{{ archived_match.id }}/restore-onboard">
+        <input type="hidden" name="billing_tier_id" value="{{ archived_match_tier.id }}">
+        <input type="hidden" name="start_date" value="{{ archived_match_start_date }}">
+        <button type="submit">Restore &amp; reassign package</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</dialog>
+{% endif %}
+{% endif %}
+{% if archived_match %}<script>document.addEventListener('DOMContentLoaded',()=>document.getElementById('archived-customer-match-modal')?.showModal());</script>{% endif %}
 <section><h2>{{ 'Archived customers' if archived_mode else 'Managed customers' }}</h2>{% if archived_mode %}<p class="muted archived-customer-help">Archived customers remain in payment, subscription, audit and Tautulli history. Restore one to return it to the normal customer list.</p>{% endif %}
 <div class="customer-toolbar">
   <label class="customer-search">Search customers<input id="customer-search" type="search" placeholder="Name, email or Plex username…" autocomplete="off"></label>

@@ -287,3 +287,9 @@ The Customers page supports multi-select with Select visible / Clear selection c
 - Queued work stores identities only and recalculates the latest desired entitlement at execution time.
 - Fresh operator changes reset any existing retry backoff so they are picked up promptly, while failures continue to use the existing exponential retry policy.
 - Bulk archive remains synchronous because it is database-only.
+
+
+## v0.5.9
+- Archived-customer onboarding recovery: Invite new Plex customer now detects archived identity/email matches and offers to restore the existing historical record instead of returning a generic duplicate error.
+- Added Restore & reassign package, preserving the customer ID/history while creating a fresh subscription using the originally selected tier/start date and reconciling Plex access.
+- The stored archived Plex identity is deliberately preserved; identity changes remain an explicit Edit customer operation.

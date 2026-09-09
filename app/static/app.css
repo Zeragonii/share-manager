@@ -267,3 +267,7 @@ a.button-link, .button-link{white-space:nowrap}
 .customer-bulk-help{font-size:10px;margin-top:8px;line-height:1.4}
 @media(max-width:1100px){.customer-bulk-controls{grid-template-columns:1fr 1fr}.customer-bulk-submit{grid-column:1/-1}.customer-bulk-submit button{width:100%}}
 @media(max-width:900px){.customer-bulk-bar{top:64px}.customer-select-control{top:16px;left:12px}.customer-mobile-summary{padding-left:42px}.customer-card-details>.customer-card-main>.row.between:first-child{padding-left:0}.customer-bulk-controls{grid-template-columns:1fr}.customer-bulk-submit{grid-column:auto}.customer-bulk-selection{flex-wrap:wrap}.customer-bulk-selection strong{width:100%;margin-right:0}.customer-bulk-selection button{flex:1}}
+
+
+/* v0.5.9 archived-customer onboarding recovery */
+.archived-match-body{padding:16px;display:grid;gap:14px}.archived-match-customer{display:grid;gap:4px;padding:13px;border:1px solid var(--line);border-radius:9px;background:#0e141d}.archived-match-customer strong{font-size:16px}.archived-match-body p{margin:0}.archived-match-package{margin:0}.archived-match-actions{flex-wrap:wrap}.archived-match-actions form{margin:0}@media(max-width:700px){.archived-match-actions,.archived-match-actions form,.archived-match-actions button{width:100%}}
