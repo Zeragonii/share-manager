@@ -204,3 +204,6 @@ Bulk customer changes are handled by `/customers/bulk`. Selected customer IDs ar
 - Unmatched/admin Tautulli sessions are never automatically terminated.
 - Optional `stream.limit_enforced` and `stream.limit_enforcement_failed` notification events are available through the existing notification adapters.
 - Dedicated Stream Limits history and per-customer enforcement history preserve successful and failed termination attempts.
+
+## v0.7.0 — PWA shell
+The web UI exposes `/manifest.webmanifest` and a root-scoped `/service-worker.js`. The service worker intentionally does not cache authenticated HTML/API responses; only static assets are cached. Navigation is network-first with `/static/offline.html` as the offline fallback. PWA cache names are release-versioned so new releases discard older static caches. Standard and maskable Android icons plus Apple touch/favicons live under `app/static/icons/`.

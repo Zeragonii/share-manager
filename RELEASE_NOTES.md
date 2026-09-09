@@ -90,3 +90,10 @@ The repository contains 58 tests after this release (53 from v0.5.2 plus five ad
 - Unmatched/admin Tautulli sessions are never automatically terminated.
 - Optional `stream.limit_enforced` and `stream.limit_enforcement_failed` notification events are available through the existing notification adapters.
 - Dedicated Stream Limits history and per-customer enforcement history preserve successful and failed termination attempts.
+
+## 0.7.0
+- Added installable PWA manifest and standalone display metadata.
+- Added standard, maskable, Apple touch and favicon icon assets.
+- Added root-scoped service worker with versioned static-only caching.
+- Added a deliberate offline/unreachable page instead of caching live admin data.
+- Added standalone safe-area handling for mobile status/gesture areas.

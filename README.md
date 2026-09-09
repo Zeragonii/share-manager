@@ -303,3 +303,6 @@ The Customers page supports multi-select with Select visible / Clear selection c
 - Unmatched/admin Tautulli sessions are never automatically terminated.
 - Optional `stream.limit_enforced` and `stream.limit_enforcement_failed` notification events are available through the existing notification adapters.
 - Dedicated Stream Limits history and per-customer enforcement history preserve successful and failed termination attempts.
+
+## v0.7.0 — PWA foundation
+Share Manager now ships as an installable Progressive Web App when served over HTTPS. The manifest provides standard and Android maskable icons, standalone display mode, launcher shortcuts, theme metadata, Apple touch icon support and favicons. A root-scoped service worker caches static assets only; authenticated application pages remain network-first and fall back to a dedicated unreachable page instead of presenting stale customer/billing data. Reverse-proxy HTTPS is required for normal production PWA installation.

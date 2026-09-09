@@ -279,3 +279,11 @@ a.button-link, .button-link{white-space:nowrap}
 .stream-limit-table a{color:#e8ecf3}.stream-limit-table .muted{margin-top:3px;font-size:10px}.stream-limit-mini-list{display:grid;gap:8px;margin-top:14px}.stream-limit-mini-row{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#0e141d}.stream-limit-mini-row time{color:var(--muted);font-size:11px}.stream-limit-mini-row div{display:grid;gap:3px}.stream-limit-mini-row div span{color:var(--muted);font-size:11px}.tier-inline-form,.tier-create-form{grid-template-columns:1.2fr .8fr 1fr .55fr .65fr .85fr auto}
 @media(max-width:1050px){.stream-limit-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stream-limit-filters{grid-template-columns:1fr 1fr}.stream-limit-filters button{width:100%}.tier-inline-form,.tier-create-form{grid-template-columns:1fr 1fr}}
 @media(max-width:650px){.stream-limit-stats,.stream-limit-filters{grid-template-columns:1fr}.stream-limit-mini-row{grid-template-columns:1fr;gap:5px}.tier-inline-form,.tier-create-form{grid-template-columns:1fr}}
+
+/* v0.7.0 PWA/standalone safe-area support. */
+@media(display-mode:standalone){
+  body{min-height:100dvh}
+  .mobile-topbar{padding-top:max(8px,env(safe-area-inset-top));height:calc(58px + env(safe-area-inset-top))}
+  @media(max-width:900px){main{padding-top:calc(74px + env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom))}}
+  @media(max-width:520px){.mobile-topbar{padding-top:max(7px,env(safe-area-inset-top));height:calc(56px + env(safe-area-inset-top));}main{padding-top:calc(70px + env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}}
+}
