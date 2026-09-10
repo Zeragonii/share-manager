@@ -404,6 +404,10 @@ Integrations → Tautulli now includes **Force full re-sync**. Use it when cache
 
 Tautulli full-history totals are discovered per customer/library checkpoint. While any checkpoint total is still unknown, the UI reports cached rows and the number of library histories measured, and does not present the partial sum as a final denominator. Once all checkpoint totals are known, the UI switches to processed/total progress and an overall percentage.
 
+## v0.9.0a — Mobile Watch History Filters
+
+On customer portal screens up to 700px wide, Watch History filters now live behind a compact collapsible **Filters** control. All filter fields and actions stack vertically at full width, preventing overlap on narrow PWA/browser layouts. Active filters reopen the panel automatically after applying them. Desktop filtering is unchanged.
+
 ## v0.9.0 — Notification Platform
 
 Share Manager now has a first-class notification event layer and native PWA Web Push support.

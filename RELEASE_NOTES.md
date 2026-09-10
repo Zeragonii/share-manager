@@ -210,6 +210,14 @@ Detailed Tautulli watch history now resolves library names by syncing history pe
 - The existing asynchronous backfill worker automatically reseeds library checkpoints on its next cycle and rebuilds the full history from Tautulli.
 - Adds a destructive-action confirmation and records the operation in the audit log.
 
+## 0.9.0a — Mobile watch-history filter UX hotfix
+
+- Replaces the cramped mobile Watch History filter grid with a collapsible Filters panel.
+- Stacks Search, Device, Library, Type, From, To, Reset and Apply vertically at full width on narrow screens.
+- Automatically leaves the panel expanded after a filtered page load so active criteria stay visible.
+- Desktop Watch History filtering is unchanged.
+- Bumps both PWA cache names so installed admin/customer PWAs pick up the updated stylesheet.
+
 ## 0.9.0 — Notification Platform
 
 - Added canonical notification event records as the common source for all notification delivery channels.

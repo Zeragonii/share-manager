@@ -296,3 +296,8 @@ Notification-producing features emit a canonical event before any delivery chann
 Web Push subscriptions are device-specific and belong either to the admin or a customer. Customer delivery is target-scoped and only customer-safe event types can reach customer devices. Customer preferences are stored separately from browser subscriptions so a user can control event categories across all their devices. VAPID credentials are generated once and persisted in PostgreSQL. Expired browser subscriptions reported with 404/410 are disabled rather than retried indefinitely.
 
 The admin and customer PWAs use separate service-worker scopes but the same notification platform. Notification payload URLs are relative, validated server-side, and notification clicks deep-link back into the appropriate surface. This notification layer is intended to be reused by future Support Tickets without coupling ticket code to a particular delivery provider.
+
+
+## v0.9.0a portal responsive filter shell
+
+The customer Activity page keeps the desktop Watch History filter grid, but at viewport widths of 700px or below the same server-side filter form is exposed through a CSS-only collapsible control and rendered as a single vertical stack. No alternate mobile filtering endpoint or duplicated filter state is introduced.

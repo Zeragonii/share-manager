@@ -710,3 +710,19 @@ a.button-link, .button-link{white-space:nowrap}
 .tautulli-resync-help{margin:8px 0 0;font-size:10px;max-width:760px;line-height:1.45}.secondary-actions form{margin:0}
 /* v0.9 notification platform */
 .notification-platform-card{margin:1rem 0 1.25rem}.notification-platform-stats{display:flex;gap:1.5rem;flex-wrap:wrap;margin:.75rem 0}.notification-platform-stats span{display:flex;gap:.35rem;align-items:baseline}.push-device-actions{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap;margin:.75rem 0 1rem}.portal-notification-preferences{display:grid;gap:1rem}.portal-notification-event-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}.portal-notification-event-grid .notification-event-choice{margin:0}@media(max-width:700px){.portal-notification-event-grid{grid-template-columns:1fr}.push-device-actions button{flex:1 1 auto}}
+
+
+/* v0.9.0a mobile watch-history filters */
+.portal-watch-filter-toggle,.portal-watch-filter-summary{display:none}
+@media(max-width:700px){
+  .portal-watch-filter-toggle{position:absolute;opacity:0;pointer-events:none}
+  .portal-watch-filter-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 0;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:#0e141d;color:#dbe3ee;font-size:12px;font-weight:750;cursor:pointer;user-select:none}
+  .portal-watch-filter-chevron{font-size:18px;line-height:1;transition:transform .18s ease}
+  .portal-watch-filter-toggle:checked + .portal-watch-filter-summary .portal-watch-filter-chevron{transform:rotate(180deg)}
+  .portal-watch-filters{display:none;grid-template-columns:1fr;gap:10px;margin:10px 0 16px;padding:12px;border:1px solid var(--line);border-radius:9px;background:#0b1119}
+  .portal-watch-filter-toggle:checked + .portal-watch-filter-summary + .portal-watch-filters{display:grid}
+  .portal-watch-filters>label,.portal-watch-filters>label:first-child{grid-column:auto!important;grid-row:auto!important;width:100%}
+  .portal-watch-filters input,.portal-watch-filters select{width:100%;min-width:0}
+  .portal-watch-filter-actions{grid-column:auto!important;grid-row:auto!important;display:grid;grid-template-columns:1fr;gap:8px;width:100%}
+  .portal-watch-filter-actions>*{width:100%;min-width:0}
+}

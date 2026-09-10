@@ -37,6 +37,8 @@
 
   <section class="portal-info-section portal-watch-history-section">
     <div class="portal-section-heading"><div><h2>Watch history</h2><span class="muted">Cached from Tautulli · {{ watch_total_cached }} entr{{ 'y' if watch_total_cached == 1 else 'ies' }}</span></div></div>
+    <input class="portal-watch-filter-toggle" type="checkbox" id="portal-watch-filter-toggle" {% if watch_filters.q or watch_filters.device or watch_filters.library or watch_filters.media_type or watch_filters.from_date or watch_filters.to_date %}checked{% endif %}>
+    <label class="portal-watch-filter-summary" for="portal-watch-filter-toggle"><span>Filters</span><span class="portal-watch-filter-chevron" aria-hidden="true">⌄</span></label>
     <form method="get" action="/portal/activity" class="portal-watch-filters">
       <input type="hidden" name="rows" value="{{ watch_per_page }}">
       <label>Search title<input type="search" name="q" value="{{ watch_filters.q }}" placeholder="Movie, episode, show…"></label>
