@@ -270,3 +270,7 @@ The customer portal is responsive with separate navigation presentations: a stic
 - History is imported oldest-first to keep pagination stable while new plays continue to arrive; normal syncs continue refreshing the newest 100 rows.
 - Backfill checkpoints and totals are persisted per customer, allowing imports to resume after container restarts or temporary Tautulli failures.
 - Integrations now shows live backfill progress, cached row counts, customer completion counts, and the latest backfill error.
+
+
+## v0.8.5a
+- Fixed the desktop customer-portal watch-history filter layout so the controls stay within the Activity card. Search/device/library/type remain on the first row, while date range and Reset/Apply actions align cleanly on the second row. No sync or filtering logic changed.
