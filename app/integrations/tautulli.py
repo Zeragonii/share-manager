@@ -117,21 +117,35 @@ class TautulliIntegration:
             "plays_lifetime": parsed[0]["plays"],
         }
 
+    def libraries(self) -> list[dict[str, str]]:
+        """Return Plex library section ids and names from Tautulli."""
+        raw = self._call("get_library_names") or []
+        result: list[dict[str, str]] = []
+        for row in raw if isinstance(raw, list) else []:
+            section_id = str(row.get("section_id") or "").strip()
+            section_name = str(row.get("section_name") or "").strip()
+            if section_id and section_name:
+                result.append({"section_id": section_id, "section_name": section_name})
+        return result
+
     def history_page(
-        self, user_id: str, *, length: int = 250, start: int = 0, order_dir: str = "desc"
+        self, user_id: str, *, length: int = 250, start: int = 0, order_dir: str = "desc",
+        section_id: str | None = None, library_name: str | None = None,
     ) -> dict[str, Any]:
         """Return one normalized page of viewing history plus pagination metadata."""
         if order_dir not in {"asc", "desc"}:
             raise ValueError("order_dir must be 'asc' or 'desc'")
-        data = self._call(
-            "get_history",
-            user_id=user_id,
-            grouping=0,
-            order_column="date",
-            order_dir=order_dir,
-            start=max(0, int(start)),
-            length=max(1, min(1000, int(length))),
-        ) or {}
+        params = {
+            "user_id": user_id,
+            "grouping": 0,
+            "order_column": "date",
+            "order_dir": order_dir,
+            "start": max(0, int(start)),
+            "length": max(1, min(1000, int(length))),
+        }
+        if section_id:
+            params["section_id"] = section_id
+        data = self._call("get_history", **params) or {}
         raw_rows = data.get("data", []) if isinstance(data, dict) else []
         rows: list[dict[str, Any]] = []
         for row in raw_rows if isinstance(raw_rows, list) else []:
@@ -157,8 +171,8 @@ class TautulliIntegration:
                 "source_row_id": source_row_id[:64],
                 "watched_at": watched_at,
                 "title": row.get("full_title") or row.get("title") or "Unknown title",
-                "library_name": row.get("section_name") or row.get("library_name") or None,
-                "section_id": str(row.get("section_id") or "") or None,
+                "library_name": row.get("section_name") or row.get("library_name") or library_name or None,
+                "section_id": str(row.get("section_id") or section_id or "") or None,
                 "media_type": row.get("media_type") or None,
                 "platform": row.get("platform") or None,
                 "player": row.get("player") or None,
@@ -181,9 +195,15 @@ class TautulliIntegration:
             "start": max(0, int(start)),
         }
 
-    def history(self, user_id: str, *, length: int = 250, start: int = 0) -> list[dict[str, Any]]:
+    def history(
+        self, user_id: str, *, length: int = 250, start: int = 0,
+        section_id: str | None = None, library_name: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Return normalized viewing-history rows for one Plex/Tautulli user."""
-        return self.history_page(user_id, length=length, start=start, order_dir="desc")["rows"]
+        return self.history_page(
+            user_id, length=length, start=start, order_dir="desc",
+            section_id=section_id, library_name=library_name,
+        )["rows"]
 
     def latest_history(self, user_id: str) -> dict[str, Any] | None:
         data = self._call(

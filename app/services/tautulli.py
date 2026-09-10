@@ -9,7 +9,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..integrations.tautulli import TautulliIntegration, TautulliUser
-from ..models import ASSIGNED_SUBSCRIPTION_STATES, AuditLog, BillingTier, Customer, Integration, StreamLimitEvent, Subscription, TautulliActivity, TautulliSettings, TautulliWatchHistory
+from ..models import ASSIGNED_SUBSCRIPTION_STATES, AuditLog, BillingTier, Customer, Integration, StreamLimitEvent, Subscription, TautulliActivity, TautulliHistoryLibrarySync, TautulliSettings, TautulliWatchHistory
 from .notifications import notify_event
 
 
@@ -96,95 +96,160 @@ def _upsert_watch_history_rows(
     return changed
 
 
-def _sync_watch_history(db: Session, client: TautulliIntegration, customer: Customer, user_id: str, *, now: datetime) -> int:
-    """Refresh the newest rows; full historical import is handled asynchronously."""
-    rows = client.history(user_id, length=100)
-    return _upsert_watch_history_rows(db, customer, user_id, rows, now=now)
+def _ensure_library_sync_rows(
+    db: Session, customer: Customer, user_id: str, libraries: list[dict[str, str]], *, now: datetime
+) -> None:
+    existing = {
+        row.section_id: row
+        for row in db.query(TautulliHistoryLibrarySync).filter(TautulliHistoryLibrarySync.customer_id == customer.id).all()
+    }
+    current_ids = {item["section_id"] for item in libraries}
+    for library in libraries:
+        section_id = library["section_id"]
+        row = existing.get(section_id)
+        if row is None:
+            db.add(TautulliHistoryLibrarySync(
+                customer_id=customer.id, tautulli_user_id=user_id, section_id=section_id,
+                library_name=library["section_name"], offset=0, complete=False, updated_at=now,
+            ))
+        else:
+            if row.tautulli_user_id != user_id:
+                row.tautulli_user_id = user_id
+                row.offset = 0
+                row.total = None
+                row.complete = False
+                row.last_error = None
+            row.library_name = library["section_name"]
+            row.updated_at = now
+    # Sections removed from Plex should not keep the backfill worker permanently busy.
+    for section_id, row in existing.items():
+        if section_id not in current_ids:
+            row.complete = True
+            row.updated_at = now
+
+
+def _sync_watch_history(
+    db: Session, client: TautulliIntegration, customer: Customer, user_id: str, *, now: datetime,
+    libraries: list[dict[str, str]] | None = None,
+) -> int:
+    """Refresh recent history per library so section names are always known."""
+    libraries = libraries if libraries is not None else client.libraries()
+    changed = 0
+    for library in libraries:
+        rows = client.history(
+            user_id, length=100, section_id=library["section_id"], library_name=library["section_name"]
+        )
+        changed += _upsert_watch_history_rows(db, customer, user_id, rows, now=now)
+    _ensure_library_sync_rows(db, customer, user_id, libraries, now=now)
+    return changed
 
 
 def backfill_watch_history_page(db: Session, *, page_size: int = 500, now: datetime | None = None) -> dict[str, Any] | None:
-    """Import one oldest-first page for one customer, then persist a resumable checkpoint."""
+    """Import one oldest-first page for one customer/library with a resumable checkpoint."""
     now = now or datetime.utcnow()
     settings_row = get_tautulli_settings(db)
     client = _client(settings_row)
-    activity = (
-        db.query(TautulliActivity)
-        .join(Customer, Customer.id == TautulliActivity.customer_id)
-        .filter(Customer.archived.is_(False), TautulliActivity.history_backfill_complete.is_(False))
-        .order_by(TautulliActivity.history_backfill_updated_at.asc().nullsfirst(), TautulliActivity.id.asc())
-        .first()
-    )
-    if activity is None:
-        return None
-    customer = db.get(Customer, activity.customer_id)
-    if customer is None:
-        activity.history_backfill_complete = True
-        activity.history_backfill_updated_at = now
-        db.commit()
-        return None
-    if activity.history_backfill_started_at is None:
-        activity.history_backfill_started_at = now
-    try:
-        page = client.history_page(
-            activity.tautulli_user_id,
-            length=max(50, min(1000, int(page_size))),
-            start=max(0, int(activity.history_backfill_offset or 0)),
-            order_dir="asc",
-        )
-        _upsert_watch_history_rows(db, customer, activity.tautulli_user_id, page["rows"], now=now)
-        raw_count = int(page.get("raw_count") or 0)
-        total = max(0, int(page.get("total") or 0))
-        activity.history_backfill_total = max(total, int(activity.history_backfill_total or 0))
-        activity.history_backfill_offset = max(0, int(activity.history_backfill_offset or 0)) + raw_count
-        activity.history_backfill_updated_at = now
-        activity.history_backfill_error = None
-        if raw_count == 0 or activity.history_backfill_offset >= activity.history_backfill_total:
-            activity.history_backfill_complete = True
-            activity.history_backfill_offset = max(activity.history_backfill_offset, activity.history_backfill_total)
-        db.commit()
-        return {
-            "customer_id": customer.id,
-            "customer_name": customer.name,
-            "fetched": raw_count,
-            "offset": activity.history_backfill_offset,
-            "total": activity.history_backfill_total or 0,
-            "complete": bool(activity.history_backfill_complete),
-        }
-    except Exception as exc:
-        activity.history_backfill_updated_at = now
-        activity.history_backfill_error = f"{type(exc).__name__}: {exc}"[:1000]
-        db.commit()
-        raise
 
-
-def watch_history_backfill_status(db: Session) -> dict[str, Any]:
-    rows = (
+    # If this is an upgrade from the first detailed-history implementation, seed
+    # per-library checkpoints for all currently matched users. This also repairs
+    # old rows whose library_name was NULL because get_history did not supply it.
+    libraries = client.libraries()
+    activities = (
         db.query(TautulliActivity)
         .join(Customer, Customer.id == TautulliActivity.customer_id)
         .filter(Customer.archived.is_(False))
         .all()
     )
+    for activity in activities:
+        customer = db.get(Customer, activity.customer_id)
+        if customer is not None:
+            _ensure_library_sync_rows(db, customer, activity.tautulli_user_id, libraries, now=now)
+    db.commit()
+
+    state = (
+        db.query(TautulliHistoryLibrarySync)
+        .join(Customer, Customer.id == TautulliHistoryLibrarySync.customer_id)
+        .filter(Customer.archived.is_(False), TautulliHistoryLibrarySync.complete.is_(False))
+        .order_by(TautulliHistoryLibrarySync.updated_at.asc().nullsfirst(), TautulliHistoryLibrarySync.id.asc())
+        .first()
+    )
+    if state is None:
+        return None
+    customer = db.get(Customer, state.customer_id)
+    if customer is None:
+        state.complete = True
+        state.updated_at = now
+        db.commit()
+        return None
+
+    try:
+        page = client.history_page(
+            state.tautulli_user_id,
+            length=max(50, min(1000, int(page_size))),
+            start=max(0, int(state.offset or 0)),
+            order_dir="asc",
+            section_id=state.section_id,
+            library_name=state.library_name,
+        )
+        _upsert_watch_history_rows(db, customer, state.tautulli_user_id, page["rows"], now=now)
+        raw_count = int(page.get("raw_count") or 0)
+        total = max(0, int(page.get("total") or 0))
+        state.total = max(total, int(state.total or 0))
+        state.offset = max(0, int(state.offset or 0)) + raw_count
+        state.updated_at = now
+        state.last_error = None
+        if raw_count == 0 or state.offset >= int(state.total or 0):
+            state.complete = True
+            state.offset = max(state.offset, int(state.total or 0))
+        db.commit()
+        return {
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "library_name": state.library_name,
+            "fetched": raw_count,
+            "offset": state.offset,
+            "total": state.total or 0,
+            "complete": bool(state.complete),
+        }
+    except Exception as exc:
+        state.updated_at = now
+        state.last_error = f"{type(exc).__name__}: {exc}"[:1000]
+        db.commit()
+        raise
+
+
+def watch_history_backfill_status(db: Session) -> dict[str, Any]:
+    states = (
+        db.query(TautulliHistoryLibrarySync)
+        .join(Customer, Customer.id == TautulliHistoryLibrarySync.customer_id)
+        .filter(Customer.archived.is_(False))
+        .all()
+    )
+    customer_ids = {row.customer_id for row in states}
     cached_rows = (
         db.query(func.count(TautulliWatchHistory.id))
         .join(Customer, Customer.id == TautulliWatchHistory.customer_id)
         .filter(Customer.archived.is_(False))
         .scalar() or 0
     )
-    known_total = sum(max(0, int(row.history_backfill_total or 0)) for row in rows)
-    progress_rows = sum(min(max(0, int(row.history_backfill_offset or 0)), max(0, int(row.history_backfill_total or 0))) for row in rows if row.history_backfill_total is not None)
-    complete = sum(1 for row in rows if row.history_backfill_complete)
-    errors = [row.history_backfill_error for row in rows if row.history_backfill_error]
-    active = next((row for row in rows if not row.history_backfill_complete), None)
+    known_total = sum(max(0, int(row.total or 0)) for row in states)
+    progress_rows = sum(min(max(0, int(row.offset or 0)), max(0, int(row.total or 0))) for row in states if row.total is not None)
+    complete_customer_ids = {
+        customer_id for customer_id in customer_ids
+        if all(row.complete for row in states if row.customer_id == customer_id)
+    }
+    errors = [row.last_error for row in states if row.last_error]
+    active = next((row for row in states if not row.complete), None)
     return {
-        "customers_total": len(rows),
-        "customers_complete": complete,
+        "customers_total": len(customer_ids),
+        "customers_complete": len(complete_customer_ids),
         "cached_rows": int(cached_rows),
         "known_total": known_total,
         "progress_rows": progress_rows,
-        "complete": complete == len(rows),
+        "complete": bool(states) and all(row.complete for row in states),
         "active_customer_id": active.customer_id if active else None,
-        "active_offset": int(active.history_backfill_offset or 0) if active else 0,
-        "active_total": int(active.history_backfill_total or 0) if active else 0,
+        "active_offset": int(active.offset or 0) if active else 0,
+        "active_total": int(active.total or 0) if active else 0,
         "last_error": errors[0] if errors else None,
     }
 
@@ -199,6 +264,7 @@ def sync_tautulli(db: Session, *, now: datetime | None = None) -> TautulliSyncRe
     unmatched_names: list[str] = []
     try:
         all_users = client.users(include_admin=True)
+        libraries = client.libraries()
         settings_row.admin_user_ids = ",".join(sorted(user.user_id for user in all_users if user.is_admin)) or None
         users = [user for user in all_users if not user.is_admin]
         for user in users:
@@ -246,7 +312,7 @@ def sync_tautulli(db: Session, *, now: datetime | None = None) -> TautulliSyncRe
             activity.plays_lifetime = stats["plays_lifetime"]
             activity.synced_at = now
             synced += 1
-            _sync_watch_history(db, client, customer, user.user_id, now=now)
+            _sync_watch_history(db, client, customer, user.user_id, now=now, libraries=libraries)
 
             if not customer.exempt and customer.status in {"active", "grace"}:
                 if last_streamed and last_streamed <= now - timedelta(days=90):

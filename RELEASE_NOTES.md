@@ -182,5 +182,9 @@ Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incomp
 ## v0.8.5a
 - Fixed the desktop customer-portal watch-history filter layout so the controls stay within the Activity card. Search/device/library/type remain on the first row, while date range and Reset/Apply actions align cleanly on the second row. No sync or filtering logic changed.
 
-## v0.8.5b
+## v0.8.5c
 Watch-history usability hotfix: server-side 10/25/50 row pagination and stable metadata alignment, including browser platform normalization to Web.
+
+
+### v0.8.5c library history hotfix
+Detailed Tautulli watch history now resolves library names by syncing history per Plex library section. Existing cached history with missing library names is repaired asynchronously by the resumable full-history worker.

@@ -65,11 +65,15 @@ def test_backfill_is_resumable_and_completes(monkeypatch):
             {"source_row_id":"2", "watched_at":datetime(2020,1,2), "title":"B", "library_name":"Movies", "section_id":"1", "media_type":"movie", "platform":"Roku", "player":"TV", "duration_seconds":200, "watched_status":1},
         ], "total":3, "raw_count":2, "start":0},
         2: {"rows": [
-            {"source_row_id":"3", "watched_at":datetime(2020,1,3), "title":"C", "library_name":"TV", "section_id":"2", "media_type":"episode", "platform":"Android", "player":"Phone", "duration_seconds":300, "watched_status":1},
+            {"source_row_id":"3", "watched_at":datetime(2020,1,3), "title":"C", "library_name":"Movies", "section_id":"1", "media_type":"movie", "platform":"Android", "player":"Phone", "duration_seconds":300, "watched_status":1},
         ], "total":3, "raw_count":1, "start":2},
     }
 
-    monkeypatch.setattr(TautulliIntegration, "history_page", lambda self, user_id, length, start, order_dir: pages[start])
+    monkeypatch.setattr(TautulliIntegration, "libraries", lambda self: [{"section_id":"1", "section_name":"Movies"}])
+    monkeypatch.setattr(
+        TautulliIntegration, "history_page",
+        lambda self, user_id, length, start, order_dir, section_id=None, library_name=None: pages[start],
+    )
     first = backfill_watch_history_page(db, page_size=2, now=datetime(2026,9,10,10,0))
     assert first["offset"] == 2
     assert first["complete"] is False
@@ -79,6 +83,7 @@ def test_backfill_is_resumable_and_completes(monkeypatch):
     assert second["offset"] == 3
     assert second["complete"] is True
     assert db.query(TautulliWatchHistory).count() == 3
+    assert {row.library_name for row in db.query(TautulliWatchHistory).all()} == {"Movies"}
 
     status = watch_history_backfill_status(db)
     assert status["customers_complete"] == 1
@@ -86,3 +91,19 @@ def test_backfill_is_resumable_and_completes(monkeypatch):
     assert status["known_total"] == 3
     assert status["progress_rows"] == 3
     assert status["complete"] is True
+
+
+def test_history_page_uses_library_context_when_tautulli_row_omits_it(monkeypatch):
+    def fake_get(url, params=None, timeout=None):
+        assert params["section_id"] == "7"
+        return FakeResponse({
+            "recordsTotal": 1,
+            "recordsFiltered": 1,
+            "data": [{"row_id": 9, "date": 300, "full_title": "Example", "player": "Chrome"}],
+        })
+
+    monkeypatch.setattr("app.integrations.tautulli.httpx.get", fake_get)
+    client = TautulliIntegration("http://tautulli", "key")
+    page = client.history_page("42", section_id="7", library_name="TV Shows")
+    assert page["rows"][0]["library_name"] == "TV Shows"
+    assert page["rows"][0]["section_id"] == "7"

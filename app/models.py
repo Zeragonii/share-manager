@@ -255,6 +255,22 @@ class TautulliWatchHistory(Base):
     __table_args__ = (UniqueConstraint("customer_id", "source_row_id", name="uq_tautulli_watch_customer_row"),)
 
 
+class TautulliHistoryLibrarySync(Base):
+    __tablename__ = "tautulli_history_library_sync"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    tautulli_user_id: Mapped[str] = mapped_column(String(64), index=True)
+    section_id: Mapped[str] = mapped_column(String(64), index=True)
+    library_name: Mapped[str] = mapped_column(String(255))
+    offset: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    complete: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer: Mapped[Customer] = relationship()
+    __table_args__ = (UniqueConstraint("customer_id", "section_id", name="uq_tautulli_history_library_sync"),)
+
+
 class StreamLimitEvent(Base):
     __tablename__ = "stream_limit_events"
     id: Mapped[int] = mapped_column(primary_key=True)

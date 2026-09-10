@@ -699,7 +699,7 @@ a.button-link, .button-link{white-space:nowrap}
 /* v0.8.5a desktop watch-history filter alignment */
 @media(min-width:901px){.portal-watch-filters input,.portal-watch-filters select{min-width:0}.portal-watch-filter-actions>*{min-width:120px}.portal-watch-history-section{overflow:hidden}}
 
-/* v0.8.5b watch-history pagination and metadata alignment */
+/* v0.8.5c watch-history pagination and metadata alignment */
 .portal-watch-pagination{display:flex;align-items:end;justify-content:space-between;gap:14px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 .portal-watch-page-size{margin:0}.portal-watch-page-size label{min-width:110px}.portal-watch-page-size select{min-width:90px}
 .portal-watch-page-controls{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.portal-watch-page-controls .button-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;padding:9px 12px;border-radius:7px}.portal-watch-page-controls .disabled{opacity:.45;pointer-events:none}.portal-watch-page-label{font-size:11px;color:var(--muted);white-space:nowrap}
