@@ -43,6 +43,7 @@ from .models import (
     NotificationEvent,
     PushSubscription,
     CustomerNotificationPreference,
+    AdminNotificationPreference,
     TautulliActivity,
     TautulliSettings,
     TautulliWatchHistory,
@@ -60,7 +61,7 @@ from .services.payment_maintenance import payment_is_latest_coverage_event, reca
 from .services.notifications import (
     EVENT_DEFINITIONS, CUSTOMER_PUSH_EVENTS, format_due_reminder_days, notify_due_reminders, notify_event, send_test,
     ensure_platform_settings, save_push_subscription, disable_push_subscription, customer_push_status,
-    update_customer_preferences, send_portal_test, send_admin_push_test,
+    update_customer_preferences, admin_push_status, update_admin_preferences, send_portal_test, send_admin_push_test,
     critical_broadcast_audience, send_critical_customer_broadcast,
 )
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy, validate_application_schema, BackupStorageError
@@ -750,6 +751,16 @@ def admin_push_test(request: Request, db: Session = Depends(get_db)):
     deliveries = send_admin_push_test(db)
     success = sum(1 for d in deliveries if d.channel == "web_push" and d.recipient_type == "admin" and d.success)
     return {"ok": success > 0, "delivered": success}
+
+@app.post("/notifications/admin/preferences")
+def admin_notification_preferences(request: Request, push_enabled: str | None = Form(None), events: list[str] = Form(default=[]), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    update_admin_preferences(db, enabled=bool(push_enabled), events=events)
+    db.add(AuditLog(actor=settings.admin_username, action="notification.admin_preferences.updated", target_type="admin", detail=f"push={'enabled' if push_enabled else 'disabled'}; events={','.join(events)}"))
+    db.commit()
+    return RedirectResponse("/integrations?notice=Admin+push+preferences+updated#notifications", status_code=303)
 
 @app.get("/portal/activity", response_class=HTMLResponse)
 def portal_activity(
@@ -2003,6 +2014,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         notification_events=EVENT_DEFINITIONS,
         notification_default_due_days=max(0, int(settings.notification_due_soon_days)),
         admin_push_devices=admin_push_devices, notification_event_count=notification_event_count,
+        admin_push_status=admin_push_status(db),
         critical_broadcast_audience=critical_broadcast_audience(db),
         tautulli_settings=get_tautulli_settings(db),
         tautulli_backfill=watch_history_backfill_status(db),

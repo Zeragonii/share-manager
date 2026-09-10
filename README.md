@@ -434,3 +434,8 @@ Tiny customer-portal UX hotfix adding consistent spacing beneath the collapsed W
 Administrators can send critical service announcements from **Integrations → Notifications** to all eligible customer Web Push subscriptions. The broadcast composer shows the current customer/device audience, accepts a title/message and customer-portal destination, and requires confirmation before sending.
 
 Critical broadcasts are deliberately different from ordinary customer events: they ignore per-category event preferences but still respect the customer's master **Allow push notifications** setting. Archived, Cancelled or portal-disabled customers are never included. Broadcast events and every device delivery remain visible in the normal notification event/delivery audit trail.
+
+
+## v0.9.2 — Admin Push Preferences & Mobile Tautulli Polish
+
+Admin Web Push can now be filtered by event category from Integrations → Notifications. Upgrades preserve the previous all-events behavior until preferences are changed. On mobile, the Tautulli integration body is collapsible to reduce vertical space while the desktop layout remains expanded.

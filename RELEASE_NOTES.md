@@ -1,3 +1,11 @@
+# v0.9.2 — Admin Push Preferences & Mobile Tautulli Polish
+
+- Added admin Web Push event preferences with a master enable/disable switch.
+- Existing installs default to all admin push event categories enabled, preserving 0.9.x behavior until the admin saves narrower preferences.
+- Admin push test remains available regardless of the master preference switch.
+- Mobile Integrations UI now collapses the Tautulli section beneath its heading; desktop remains expanded.
+- PWA cache versions bumped to 0.9.2.
+
 # v0.9.1a — Mobile Watch-History Spacing
 
 - Added a small bottom gap beneath the collapsed mobile Watch History Filters control so its spacing matches the history-card list.

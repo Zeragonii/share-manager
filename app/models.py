@@ -370,6 +370,14 @@ class CustomerNotificationPreference(Base):
     customer: Mapped[Customer] = relationship()
 
 
+class AdminNotificationPreference(Base):
+    __tablename__ = "admin_notification_preferences"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    push_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    events: Mapped[str] = mapped_column(Text, default="*")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class NotificationPlatformSettings(Base):
     __tablename__ = "notification_platform_settings"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)

@@ -40,8 +40,9 @@
 <section class="tautulli-integration">
   <div class="row between tautulli-heading">
     <div><h2>Tautulli</h2><p class="muted">Usage analytics and live Plex activity for managed customers.</p></div>
-    {% if tautulli_settings.integration and tautulli_settings.integration.enabled %}<span class="badge active">connected</span>{% endif %}
+    <div class="tautulli-heading-actions">{% if tautulli_settings.integration and tautulli_settings.integration.enabled %}<span class="badge active">connected</span>{% endif %}<button type="button" class="secondary tautulli-mobile-toggle" id="tautulli-mobile-toggle" aria-expanded="false" aria-controls="tautulli-mobile-body">Show</button></div>
   </div>
+  <div id="tautulli-mobile-body" class="tautulli-mobile-body">
   <form method="post" action="/integrations/tautulli" class="tautulli-settings-form">
     <label class="toggle-choice"><input type="checkbox" name="enabled" {% if not tautulli_settings.integration or tautulli_settings.integration.enabled %}checked{% endif %}><span><strong>Enable Tautulli integration</strong><small class="muted">Historical usage sync and live activity heartbeat.</small></span></label>
     <div class="tautulli-settings-grid">
@@ -80,9 +81,10 @@
   </div>
   <p class="muted tautulli-resync-help">Force full re-sync clears only the cached watch-history rows and backfill checkpoints, then the asynchronous worker rebuilds the complete history from Tautulli.</p>
   {% endif %}
+  </div>
 </section>
 
-<section class="integration-section notification-section">
+<section class="integration-section notification-section" id="notifications">
   <div class="row between notification-heading">
     <div><h2>Notifications</h2><p class="muted">Route Share Manager events to Web Push, Home Assistant, Discord or a generic webhook.</p></div>
   </div>
@@ -93,6 +95,21 @@
     <div class="notification-platform-stats"><span><strong>{{ admin_push_devices }}</strong> admin device{{ '' if admin_push_devices == 1 else 's' }}</span><span><strong>{{ notification_event_count }}</strong> recorded events</span></div>
     <div class="row notification-actions"><button type="button" id="admin-push-enable">Enable on this device</button><button type="button" class="secondary" id="admin-push-disable">Disable</button><button type="button" class="ghost" id="admin-push-test">Send test</button></div>
     <p class="muted" id="admin-push-status">Checking this browser…</p>
+    <details class="admin-push-preferences" open>
+      <summary>Admin push preferences</summary>
+      <form method="post" action="/notifications/admin/preferences" class="admin-push-preferences-form">
+        <label class="toggle-choice"><input type="checkbox" name="push_enabled" {% if admin_push_status.enabled %}checked{% endif %}><span><strong>Allow admin push notifications</strong><small class="muted">Master switch for operational Web Push. Send test remains available.</small></span></label>
+        <div class="admin-push-event-grid">
+          {% for key,meta in admin_push_status.available_events.items() %}
+          <label class="notification-event-choice">
+            <input type="checkbox" name="events" value="{{ key }}" {% if key in admin_push_status.events %}checked{% endif %}>
+            <span><strong>{{ meta.label }}</strong><small>{{ meta.severity }}</small></span>
+          </label>
+          {% endfor %}
+        </div>
+        <button>Save admin push preferences</button>
+      </form>
+    </details>
   </article>
 
   <article class="card critical-broadcast-card" id="critical-customer-broadcast">
@@ -215,6 +232,24 @@
   </div>
 </section>
 
+
+<script>
+(() => {
+  const toggle = document.getElementById('tautulli-mobile-toggle');
+  const body = document.getElementById('tautulli-mobile-body');
+  if (!toggle || !body) return;
+  const mq = window.matchMedia('(max-width: 700px)');
+  const apply = () => {
+    if (!mq.matches) { body.classList.remove('is-collapsed'); toggle.setAttribute('aria-expanded','true'); return; }
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    body.classList.toggle('is-collapsed', !expanded);
+    toggle.textContent = expanded ? 'Hide' : 'Show';
+  };
+  toggle.addEventListener('click', () => { toggle.setAttribute('aria-expanded', toggle.getAttribute('aria-expanded') === 'true' ? 'false' : 'true'); apply(); });
+  if (mq.addEventListener) mq.addEventListener('change', apply);
+  apply();
+})();
+</script>
 
 <script>
 (() => {

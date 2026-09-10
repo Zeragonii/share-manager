@@ -308,3 +308,10 @@ The customer Activity page keeps the desktop Watch History filter grid, but at v
 `system.critical_broadcast` is an administrator-originated Web Push event intended for service-impacting announcements. It creates one canonical `NotificationEvent` and one `NotificationDelivery` per targeted browser subscription. The broadcast path is intentionally separate from normal customer-event dispatch because category-level opt-outs do not apply; the customer's master `push_enabled` preference remains authoritative. Normal portal eligibility rules also apply, excluding archived, Cancelled and portal-disabled customers.
 
 Broadcast destinations are constrained to `/portal` paths. Delivery continues to use the common Web Push adapter, including VAPID authentication, per-device success/failure accounting and automatic disabling of 404/410 subscriptions. This keeps future Support Ticket notifications on the normal preference-aware event path while preserving an explicit emergency/maintenance channel for administrators.
+
+
+## Admin push preferences (v0.9.2)
+
+Admin Web Push subscriptions share a singleton preference policy (`admin_notification_preferences`). The master switch controls normal operational push delivery; event selections filter canonical notification events before per-device delivery. Test pushes bypass this preference policy so subscription health can always be verified. Missing preference state is treated as all supported admin events enabled for backward compatibility.
+
+The mobile Integrations view collapses the Tautulli configuration/status body client-side only; no Tautulli synchronization behavior changes.

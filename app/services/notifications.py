@@ -14,6 +14,7 @@ from ..models import (
     BillingTier,
     Customer,
     CustomerNotificationPreference,
+    AdminNotificationPreference,
     NotificationDelivery,
     NotificationEndpoint,
     NotificationEvent,
@@ -100,6 +101,7 @@ EVENT_DEFINITIONS = {
 }
 
 CUSTOMER_PUSH_EVENTS = {key for key, meta in EVENT_DEFINITIONS.items() if meta.get("customer")}
+ADMIN_PUSH_EVENTS = {key for key in EVENT_DEFINITIONS if key not in {"portal.notification.test", "system.critical_broadcast"}}
 
 
 def _selected_events(endpoint: NotificationEndpoint) -> set[str]:
@@ -176,6 +178,48 @@ def _preference_allows(db: Session, customer_id: int, event: str) -> bool:
         return False
     selected = {x.strip() for x in (pref.events or "").split(",") if x.strip()}
     return "*" in selected or event in selected
+
+
+def _admin_preference_allows(db: Session, event: str) -> bool:
+    # A test push must remain available even when normal admin push delivery is disabled.
+    if event == "notification.test":
+        return True
+    pref = db.get(AdminNotificationPreference, 1)
+    if pref is None:
+        return event in ADMIN_PUSH_EVENTS
+    if not pref.push_enabled:
+        return False
+    selected = {x.strip() for x in (pref.events or "").split(",") if x.strip()}
+    return "*" in selected or event in selected
+
+
+def admin_push_status(db: Session) -> dict:
+    pref = db.get(AdminNotificationPreference, 1)
+    selected = set((pref.events if pref else "*").split(","))
+    if "*" in selected:
+        selected = set(ADMIN_PUSH_EVENTS)
+    devices = db.query(PushSubscription).filter(
+        PushSubscription.owner_type == "admin", PushSubscription.enabled.is_(True)
+    ).count()
+    return {
+        "enabled": pref.push_enabled if pref else True,
+        "devices": devices,
+        "events": selected,
+        "available_events": {k: v for k, v in EVENT_DEFINITIONS.items() if k in ADMIN_PUSH_EVENTS},
+    }
+
+
+def update_admin_preferences(db: Session, *, enabled: bool, events: list[str]) -> AdminNotificationPreference:
+    valid = sorted({e for e in events if e in ADMIN_PUSH_EVENTS})
+    row = db.get(AdminNotificationPreference, 1)
+    if row is None:
+        row = AdminNotificationPreference(id=1)
+        db.add(row)
+    row.push_enabled = enabled
+    row.events = ",".join(valid)
+    row.updated_at = datetime.utcnow()
+    db.commit(); db.refresh(row)
+    return row
 
 
 def _push_url(event: NotificationEvent, owner_type: str) -> str:
@@ -289,8 +333,11 @@ def dispatch_event(db: Session, event_row: NotificationEvent, *, only_endpoint_i
     if include_push and only_endpoint_id is None:
         push_q = db.query(PushSubscription).filter(PushSubscription.enabled.is_(True))
         for sub in push_q.all():
-            if sub.owner_type == "admin" and event_row.event == "portal.notification.test":
-                continue
+            if sub.owner_type == "admin":
+                if event_row.event == "portal.notification.test":
+                    continue
+                if not _admin_preference_allows(db, event_row.event):
+                    continue
             if sub.owner_type == "customer":
                 if not event_row.customer_id or sub.customer_id != event_row.customer_id:
                     continue

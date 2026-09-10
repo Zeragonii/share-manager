@@ -179,3 +179,56 @@ def test_critical_broadcast_rejects_non_portal_destination():
         assert False, "admin destinations must not be accepted for customer broadcasts"
     except ValueError as exc:
         assert "customer portal path" in str(exc)
+
+
+def test_admin_push_preferences_default_to_all_and_can_filter_events():
+    from app.models import AdminNotificationPreference, NotificationDelivery, PushSubscription
+    from app.services.notifications import admin_push_status, notify_event, update_admin_preferences
+
+    db = db_session()
+    sub = PushSubscription(owner_type="admin", customer_id=None, endpoint="https://push/admin", p256dh="a", auth="b", enabled=True)
+    db.add(sub); db.commit()
+
+    status = admin_push_status(db)
+    assert status["enabled"] is True
+    assert "backup.failed" in status["events"]
+    assert "tautulli.sync_failed" in status["events"]
+
+    update_admin_preferences(db, enabled=True, events=["backup.failed"])
+    status = admin_push_status(db)
+    assert status["events"] == {"backup.failed"}
+
+    def fake_delivery(_db, push_sub, event):
+        return NotificationDelivery(
+            notification_event_id=event.id, channel="web_push", push_subscription_id=push_sub.id,
+            event=event.event, severity=event.severity, title=event.title, message=event.message,
+            success=True, recipient_type="admin", recipient_id="admin",
+        )
+
+    with patch("app.services.notifications._deliver_push", side_effect=fake_delivery) as deliver:
+        notify_event(db, event="backup.failed", title="Backup failed", message="x", include_endpoints=False)
+        notify_event(db, event="tautulli.sync_failed", title="Tautulli failed", message="y", include_endpoints=False)
+    assert deliver.call_count == 1
+
+
+def test_admin_push_master_disable_blocks_normal_events_but_not_test():
+    from app.models import NotificationDelivery, PushSubscription
+    from app.services.notifications import notify_event, send_admin_push_test, update_admin_preferences
+
+    db = db_session()
+    sub = PushSubscription(owner_type="admin", customer_id=None, endpoint="https://push/admin2", p256dh="a", auth="b", enabled=True)
+    db.add(sub); db.commit()
+    update_admin_preferences(db, enabled=False, events=["backup.failed"])
+
+    def fake_delivery(_db, push_sub, event):
+        return NotificationDelivery(
+            notification_event_id=event.id, channel="web_push", push_subscription_id=push_sub.id,
+            event=event.event, severity=event.severity, title=event.title, message=event.message,
+            success=True, recipient_type="admin", recipient_id="admin",
+        )
+
+    with patch("app.services.notifications._deliver_push", side_effect=fake_delivery) as deliver:
+        notify_event(db, event="backup.failed", title="Backup failed", message="x", include_endpoints=False)
+        assert deliver.call_count == 0
+        send_admin_push_test(db)
+        assert deliver.call_count == 1
