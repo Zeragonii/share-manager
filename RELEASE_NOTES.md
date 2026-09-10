@@ -1,3 +1,19 @@
+# v0.10.0 — Support Tickets
+
+- Added customer support-ticket creation with category, subject and description.
+- Added human-friendly ticket references (`TKT-000001`).
+- Added threaded customer/admin replies, per-ticket push subscriptions and deep links.
+- Added Open, Reviewed, In Progress, Resolved and Closed workflow states.
+- Customer replies automatically reopen Resolved tickets.
+- Added admin active queue and separate Closed archive view with status/category/priority/search filters.
+- Added Low/Normal/High/Critical priorities, unread markers and last-activity sorting.
+- Added private internal admin notes and audit-log entries for ticket actions.
+- Added notification events for new tickets/customer replies and direct customer pushes for admin replies/status changes.
+- Added customer-level default for subscribing newly-created tickets.
+- Added database-backed rate limits for customer ticket creation and replies.
+- Added Support navigation to admin and customer PWAs.
+- Bumped admin/customer PWA caches to 0.10.0.
+
 # v0.9.3 — Notification Operations Hardening
 
 - Added scheduled critical customer broadcasts. Admins choose a browser-local date/time; the UI converts it to UTC for storage and delivery.

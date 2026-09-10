@@ -27,6 +27,7 @@ class Customer(Base):
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     payments: Mapped[list["Payment"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     credits: Mapped[list["SubscriptionCredit"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    support_tickets: Mapped[list["SupportTicket"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
 
 
 class Package(Base):
@@ -370,6 +371,7 @@ class CustomerNotificationPreference(Base):
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), primary_key=True)
     push_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     events: Mapped[str] = mapped_column(Text, default="*")
+    ticket_notifications_default: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     customer: Mapped[Customer] = relationship()
 
@@ -400,10 +402,43 @@ class ScheduledCustomerBroadcast(Base):
     event: Mapped[NotificationEvent | None] = relationship()
 
 
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reference: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True, index=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(40), index=True)
+    subject: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    priority: Mapped[str] = mapped_column(String(24), default="normal", index=True)
+    notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    admin_unread: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    customer_unread: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    customer: Mapped[Customer] = relationship(back_populates="support_tickets")
+    messages: Mapped[list["SupportTicketMessage"]] = relationship(back_populates="ticket", cascade="all, delete-orphan", order_by="SupportTicketMessage.created_at")
+
+
+class SupportTicketMessage(Base):
+    __tablename__ = "support_ticket_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("support_tickets.id", ondelete="CASCADE"), index=True)
+    author_type: Mapped[str] = mapped_column(String(20), index=True)  # customer | admin | internal
+    author_label: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(Text)
+    visible_to_customer: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    ticket: Mapped[SupportTicket] = relationship(back_populates="messages")
+
+
 class NotificationPlatformSettings(Base):
     __tablename__ = "notification_platform_settings"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     vapid_private_key: Mapped[str] = mapped_column(Text)
     vapid_public_key: Mapped[str] = mapped_column(Text)
     vapid_subject: Mapped[str] = mapped_column(String(255), default="mailto:admin@share-manager.local")
+    ticket_events_seeded: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -1,6 +1,6 @@
 # Share Manager
 
-**Current version: 0.9.3**
+**Current version: 0.10.0**
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
@@ -445,3 +445,10 @@ Admin Web Push can now be filtered by event category from Integrations → Notif
 ## Notification operations (v0.9.3)
 
 The notification platform supports immediate and scheduled critical customer broadcasts, automatic retry/backoff for transient Web Push and integration delivery failures, and a dedicated admin Notification History view. Scheduled times are entered in the browser's local time and stored as UTC. Retry state is persisted in PostgreSQL so container restarts do not discard pending retries.
+
+
+## Support Tickets (v0.10.0)
+
+Customers can raise support tickets from the portal with a category, subject and description, follow a threaded conversation, subscribe per-ticket to push notifications, and see Open / Reviewed / In Progress / Resolved / Closed states. Resolved tickets reopen automatically when the customer replies; Closed is the terminal/archive state.
+
+Admins have an active ticket queue plus a dedicated Closed view, filters for status/category/priority/customer search, threaded customer replies, internal notes, status and priority controls, unread markers and customer context. New tickets and customer replies use the Notification Platform; subscribed customers receive deep-linked push notifications for admin replies and status changes. Ticket creation/replies are rate-limited. Attachments and multi-agent assignment are intentionally deferred.

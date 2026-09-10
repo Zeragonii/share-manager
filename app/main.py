@@ -49,6 +49,8 @@ from .models import (
     TautulliSettings,
     TautulliWatchHistory,
     StreamLimitEvent,
+    SupportTicket,
+    SupportTicketMessage,
 )
 from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
@@ -71,6 +73,10 @@ from .services.tautulli import (
     get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage,
     enforce_stream_limits, customer_live_sessions, terminate_customer_session,
     backfill_watch_history_page, watch_history_backfill_status, force_full_watch_history_resync,
+)
+from .services.tickets import (
+    TICKET_CATEGORIES, TICKET_STATUSES, TICKET_PRIORITIES,
+    create_ticket, add_customer_reply, add_admin_reply, add_internal_note, change_status, change_priority,
 )
 from .version import APP_VERSION
 
@@ -720,11 +726,11 @@ async def portal_push_unsubscribe(request: Request, db: Session = Depends(get_db
     return {"ok": True, "devices": customer_push_status(db, customer.id)["devices"]}
 
 @app.post("/portal/notifications/preferences")
-def portal_notification_preferences(request: Request, push_enabled: str | None = Form(None), events: list[str] = Form(default=[]), db: Session = Depends(get_db)):
+def portal_notification_preferences(request: Request, push_enabled: str | None = Form(None), ticket_notifications_default: str | None = Form(None), events: list[str] = Form(default=[]), db: Session = Depends(get_db)):
     customer = _portal_customer(request, db)
     if not customer:
         return RedirectResponse("/portal/login", status_code=303)
-    update_customer_preferences(db, customer.id, enabled=bool(push_enabled), events=events)
+    update_customer_preferences(db, customer.id, enabled=bool(push_enabled), events=events, ticket_notifications_default=bool(ticket_notifications_default))
     db.add(AuditLog(actor=f"portal:{customer.portal_username}", action="notification.preferences.updated", target_type="customer", target_id=str(customer.id), detail=f"push={'enabled' if push_enabled else 'disabled'}; events={','.join(events)}")); db.commit()
     return RedirectResponse("/portal?notice=Notification+preferences+saved", status_code=303)
 
@@ -788,6 +794,81 @@ def admin_notification_preferences(request: Request, push_enabled: str | None = 
     db.add(AuditLog(actor=settings.admin_username, action="notification.admin_preferences.updated", target_type="admin", detail=f"push={'enabled' if push_enabled else 'disabled'}; events={','.join(events)}"))
     db.commit()
     return RedirectResponse("/integrations?notice=Admin+push+preferences+updated#notifications", status_code=303)
+
+@app.get("/portal/tickets", response_class=HTMLResponse)
+def portal_tickets(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    tickets = db.query(SupportTicket).filter(SupportTicket.customer_id == customer.id).order_by(SupportTicket.updated_at.desc()).all()
+    active = [t for t in tickets if t.status != "closed"]
+    closed = [t for t in tickets if t.status == "closed"]
+    pref = db.get(CustomerNotificationPreference, customer.id)
+    return render(request, "portal_tickets.html", customer=customer, active_tickets=active, closed_tickets=closed,
+                  categories=TICKET_CATEGORIES, statuses=TICKET_STATUSES, priorities=TICKET_PRIORITIES,
+                  ticket_notify_default=(pref.ticket_notifications_default if pref else True),
+                  notice=request.query_params.get("notice"), error=request.query_params.get("error"))
+
+
+@app.post("/portal/tickets/new")
+def portal_ticket_create(request: Request, category: str = Form(...), subject: str = Form(...), description: str = Form(...), notifications_enabled: str | None = Form(None), db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    try:
+        ticket = create_ticket(db, customer, category=category, subject=subject, description=description, notifications_enabled=bool(notifications_enabled))
+        return RedirectResponse(f"/portal/tickets/{ticket.reference}?notice=" + quote_plus("Support ticket created"), status_code=303)
+    except ValueError as exc:
+        return RedirectResponse("/portal/tickets?error=" + quote_plus(str(exc)), status_code=303)
+
+
+def _customer_ticket_or_none(db: Session, customer: Customer, reference: str) -> SupportTicket | None:
+    return db.query(SupportTicket).options(joinedload(SupportTicket.messages)).filter(SupportTicket.reference == reference, SupportTicket.customer_id == customer.id).first()
+
+
+@app.get("/portal/tickets/{reference}", response_class=HTMLResponse)
+def portal_ticket_detail(reference: str, request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    ticket = _customer_ticket_or_none(db, customer, reference)
+    if not ticket:
+        return RedirectResponse("/portal/tickets?error=Ticket+not+found", status_code=303)
+    if ticket.customer_unread:
+        ticket.customer_unread = False; db.commit()
+    messages = [m for m in ticket.messages if m.visible_to_customer]
+    return render(request, "portal_ticket_detail.html", customer=customer, ticket=ticket, messages=messages,
+                  categories=TICKET_CATEGORIES, statuses=TICKET_STATUSES, priorities=TICKET_PRIORITIES,
+                  notice=request.query_params.get("notice"), error=request.query_params.get("error"))
+
+
+@app.post("/portal/tickets/{reference}/reply")
+def portal_ticket_reply(reference: str, request: Request, body: str = Form(...), db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    ticket = _customer_ticket_or_none(db, customer, reference)
+    if not ticket:
+        return RedirectResponse("/portal/tickets?error=Ticket+not+found", status_code=303)
+    try:
+        add_customer_reply(db, ticket, customer, body)
+        return RedirectResponse(f"/portal/tickets/{reference}?notice=" + quote_plus("Reply sent"), status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f"/portal/tickets/{reference}?error=" + quote_plus(str(exc)), status_code=303)
+
+
+@app.post("/portal/tickets/{reference}/notifications")
+def portal_ticket_notifications(reference: str, request: Request, enabled: str | None = Form(None), db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    ticket = _customer_ticket_or_none(db, customer, reference)
+    if not ticket:
+        return RedirectResponse("/portal/tickets?error=Ticket+not+found", status_code=303)
+    ticket.notifications_enabled = bool(enabled); ticket.updated_at = datetime.utcnow()
+    db.add(AuditLog(actor=f"portal:{customer.portal_username}", action="ticket.notifications", target_type="support_ticket", target_id=ticket.reference, detail="enabled" if enabled else "disabled")); db.commit()
+    return RedirectResponse(f"/portal/tickets/{reference}?notice=" + quote_plus("Ticket notification preference updated"), status_code=303)
+
 
 @app.get("/portal/activity", response_class=HTMLResponse)
 def portal_activity(
@@ -944,6 +1025,84 @@ def portal_stop_stream(request: Request, session_key: str = Form(...), db: Sessi
     except Exception:
         logger.exception("Customer portal stream termination failed for customer %s", customer.id)
         return RedirectResponse("/portal/activity?error=" + quote_plus("Could not stop that stream. Please try again."), status_code=303)
+
+
+@app.get("/tickets", response_class=HTMLResponse)
+def admin_tickets(request: Request, status: str | None = None, category: str | None = None, priority: str | None = None, q: str | None = None, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate: return gate
+    query = db.query(SupportTicket).options(joinedload(SupportTicket.customer)).filter(SupportTicket.status != "closed")
+    clean_status=(status or "").strip(); clean_category=(category or "").strip(); clean_priority=(priority or "").strip(); clean_q=(q or "").strip()
+    if clean_status in TICKET_STATUSES and clean_status != "closed": query=query.filter(SupportTicket.status==clean_status)
+    if clean_category in TICKET_CATEGORIES: query=query.filter(SupportTicket.category==clean_category)
+    if clean_priority in TICKET_PRIORITIES: query=query.filter(SupportTicket.priority==clean_priority)
+    if clean_q:
+        like=f"%{clean_q.lower()}%"; query=query.join(SupportTicket.customer).filter(or_(func.lower(SupportTicket.subject).like(like), func.lower(SupportTicket.reference).like(like), func.lower(Customer.name).like(like)))
+    tickets=query.order_by(SupportTicket.admin_unread.desc(), SupportTicket.updated_at.desc()).all()
+    unread=db.query(SupportTicket).filter(SupportTicket.status!="closed", SupportTicket.admin_unread.is_(True)).count()
+    return render(request,"tickets.html",tickets=tickets,closed=False,unread_count=unread,categories=TICKET_CATEGORIES,statuses=TICKET_STATUSES,priorities=TICKET_PRIORITIES,filters={"status":clean_status,"category":clean_category,"priority":clean_priority,"q":clean_q},notice=request.query_params.get("notice"),error=request.query_params.get("error"))
+
+
+@app.get("/tickets/closed", response_class=HTMLResponse)
+def admin_closed_tickets(request: Request, q: str | None = None, db: Session = Depends(get_db)):
+    gate=auth(request)
+    if gate: return gate
+    query=db.query(SupportTicket).options(joinedload(SupportTicket.customer)).filter(SupportTicket.status=="closed")
+    clean_q=(q or "").strip()
+    if clean_q:
+        like=f"%{clean_q.lower()}%"; query=query.join(SupportTicket.customer).filter(or_(func.lower(SupportTicket.subject).like(like),func.lower(SupportTicket.reference).like(like),func.lower(Customer.name).like(like)))
+    tickets=query.order_by(SupportTicket.closed_at.desc(),SupportTicket.updated_at.desc()).all()
+    return render(request,"tickets.html",tickets=tickets,closed=True,unread_count=0,categories=TICKET_CATEGORIES,statuses=TICKET_STATUSES,priorities=TICKET_PRIORITIES,filters={"q":clean_q,"status":"","category":"","priority":""},notice=request.query_params.get("notice"),error=request.query_params.get("error"))
+
+
+@app.get("/tickets/{reference}", response_class=HTMLResponse)
+def admin_ticket_detail(reference: str, request: Request, db: Session = Depends(get_db)):
+    gate=auth(request)
+    if gate: return gate
+    ticket=db.query(SupportTicket).options(joinedload(SupportTicket.customer),joinedload(SupportTicket.messages)).filter(SupportTicket.reference==reference).first()
+    if not ticket: return RedirectResponse("/tickets?error=Ticket+not+found",status_code=303)
+    if ticket.admin_unread: ticket.admin_unread=False; db.commit()
+    return render(request,"ticket_detail.html",ticket=ticket,categories=TICKET_CATEGORIES,statuses=TICKET_STATUSES,priorities=TICKET_PRIORITIES,notice=request.query_params.get("notice"),error=request.query_params.get("error"))
+
+
+@app.post("/tickets/{reference}/reply")
+def admin_ticket_reply(reference: str, request: Request, body: str = Form(...), db: Session = Depends(get_db)):
+    gate=auth(request)
+    if gate: return gate
+    ticket=db.query(SupportTicket).filter(SupportTicket.reference==reference).first()
+    if not ticket: return RedirectResponse("/tickets?error=Ticket+not+found",status_code=303)
+    try: add_admin_reply(db,ticket,body,settings.admin_username); return RedirectResponse(f"/tickets/{reference}?notice="+quote_plus("Reply sent"),status_code=303)
+    except ValueError as exc: return RedirectResponse(f"/tickets/{reference}?error="+quote_plus(str(exc)),status_code=303)
+
+
+@app.post("/tickets/{reference}/note")
+def admin_ticket_note(reference: str, request: Request, body: str = Form(...), db: Session = Depends(get_db)):
+    gate=auth(request)
+    if gate: return gate
+    ticket=db.query(SupportTicket).filter(SupportTicket.reference==reference).first()
+    if not ticket: return RedirectResponse("/tickets?error=Ticket+not+found",status_code=303)
+    try: add_internal_note(db,ticket,body,settings.admin_username); return RedirectResponse(f"/tickets/{reference}?notice="+quote_plus("Internal note added"),status_code=303)
+    except ValueError as exc: return RedirectResponse(f"/tickets/{reference}?error="+quote_plus(str(exc)),status_code=303)
+
+
+@app.post("/tickets/{reference}/status")
+def admin_ticket_status(reference: str, request: Request, status: str = Form(...), db: Session = Depends(get_db)):
+    gate=auth(request)
+    if gate: return gate
+    ticket=db.query(SupportTicket).filter(SupportTicket.reference==reference).first()
+    if not ticket: return RedirectResponse("/tickets?error=Ticket+not+found",status_code=303)
+    try: change_status(db,ticket,status,settings.admin_username); dest="/tickets/closed" if status=="closed" else f"/tickets/{reference}"; return RedirectResponse(dest+"?notice="+quote_plus("Ticket status updated"),status_code=303)
+    except ValueError as exc: return RedirectResponse(f"/tickets/{reference}?error="+quote_plus(str(exc)),status_code=303)
+
+
+@app.post("/tickets/{reference}/priority")
+def admin_ticket_priority(reference: str, request: Request, priority: str = Form(...), db: Session = Depends(get_db)):
+    gate=auth(request)
+    if gate: return gate
+    ticket=db.query(SupportTicket).filter(SupportTicket.reference==reference).first()
+    if not ticket: return RedirectResponse("/tickets?error=Ticket+not+found",status_code=303)
+    try: change_priority(db,ticket,priority,settings.admin_username); return RedirectResponse(f"/tickets/{reference}?notice="+quote_plus("Priority updated"),status_code=303)
+    except ValueError as exc: return RedirectResponse(f"/tickets/{reference}?error="+quote_plus(str(exc)),status_code=303)
 
 
 @app.get("/", response_class=HTMLResponse)

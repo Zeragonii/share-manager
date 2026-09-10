@@ -99,12 +99,16 @@ EVENT_DEFINITIONS = {
     "tautulli.suspended_streaming": {"label": "Suspended customer streaming", "severity": "critical", "customer": False},
     "stream.limit_enforced": {"label": "Stream limit enforced", "severity": "warning", "customer": True},
     "stream.limit_enforcement_failed": {"label": "Stream limit enforcement failed", "severity": "critical", "customer": False},
+    "ticket.created": {"label": "New support ticket", "severity": "warning", "customer": False},
+    "ticket.customer_reply": {"label": "Customer replied to ticket", "severity": "warning", "customer": False},
+    "ticket.admin_reply": {"label": "Support ticket reply", "severity": "info", "customer": False},
+    "ticket.status_changed": {"label": "Support ticket status changed", "severity": "info", "customer": False},
     "portal.notification.test": {"label": "Portal push test", "severity": "info", "customer": True},
     "system.critical_broadcast": {"label": "Critical system broadcast", "severity": "critical", "customer": False},
 }
 
 CUSTOMER_PUSH_EVENTS = {key for key, meta in EVENT_DEFINITIONS.items() if meta.get("customer")}
-ADMIN_PUSH_EVENTS = {key for key in EVENT_DEFINITIONS if key not in {"portal.notification.test", "system.critical_broadcast"}}
+ADMIN_PUSH_EVENTS = {key for key in EVENT_DEFINITIONS if key not in {"portal.notification.test", "system.critical_broadcast", "ticket.admin_reply", "ticket.status_changed"}}
 
 
 def _selected_events(endpoint: NotificationEndpoint) -> set[str]:
@@ -522,10 +526,10 @@ def customer_push_status(db: Session, customer_id: int) -> dict:
     pref = db.get(CustomerNotificationPreference, customer_id)
     subscriptions = db.query(PushSubscription).filter(PushSubscription.owner_type == "customer", PushSubscription.customer_id == customer_id, PushSubscription.enabled.is_(True)).all()
     selected = set((pref.events if pref else ",".join(sorted(CUSTOMER_PUSH_EVENTS))).split(","))
-    return {"enabled": bool(subscriptions) and (pref.push_enabled if pref else True), "devices": len(subscriptions), "events": selected, "available_events": {k: v for k, v in EVENT_DEFINITIONS.items() if k in CUSTOMER_PUSH_EVENTS and k != "portal.notification.test"}}
+    return {"enabled": bool(subscriptions) and (pref.push_enabled if pref else True), "devices": len(subscriptions), "events": selected, "ticket_notifications_default": pref.ticket_notifications_default if pref else True, "available_events": {k: v for k, v in EVENT_DEFINITIONS.items() if k in CUSTOMER_PUSH_EVENTS and k != "portal.notification.test"}}
 
 
-def update_customer_preferences(db: Session, customer_id: int, *, enabled: bool, events: list[str]) -> CustomerNotificationPreference:
+def update_customer_preferences(db: Session, customer_id: int, *, enabled: bool, events: list[str], ticket_notifications_default: bool = True) -> CustomerNotificationPreference:
     valid = [e for e in events if e in CUSTOMER_PUSH_EVENTS]
     row = db.get(CustomerNotificationPreference, customer_id)
     if row is None:
@@ -533,10 +537,44 @@ def update_customer_preferences(db: Session, customer_id: int, *, enabled: bool,
         db.add(row)
     row.push_enabled = enabled
     row.events = ",".join(sorted(set(valid)))
+    row.ticket_notifications_default = ticket_notifications_default
     row.updated_at = datetime.utcnow()
     db.commit(); db.refresh(row)
     return row
 
+
+
+def send_customer_direct_push(db: Session, *, customer_id: int, event: str, title: str, message: str, url: str, event_key: str | None = None) -> tuple[NotificationEvent, list[NotificationDelivery]]:
+    """Create an auditable event and push it only to one customer's enabled devices.
+
+    Used for per-ticket subscriptions: category preferences are intentionally bypassed,
+    while the customer's master push switch and normal portal eligibility are respected.
+    """
+    customer = db.get(Customer, customer_id)
+    event_row = NotificationEvent(
+        event=event, event_key=event_key, severity=EVENT_DEFINITIONS.get(event, {}).get("severity", "info"),
+        title=title, message=message, target_type="customer", target_id=str(customer_id), customer_id=customer_id,
+        data_json=json.dumps({"url": url}),
+    )
+    db.add(event_row); db.commit(); db.refresh(event_row)
+    deliveries: list[NotificationDelivery] = []
+    if not customer or not customer.portal_enabled or customer.archived or customer.status == "cancelled":
+        return event_row, deliveries
+    pref = db.get(CustomerNotificationPreference, customer_id)
+    if pref is not None and not pref.push_enabled:
+        return event_row, deliveries
+    subs = db.query(PushSubscription).filter(
+        PushSubscription.owner_type == "customer", PushSubscription.customer_id == customer_id, PushSubscription.enabled.is_(True)
+    ).all()
+    for sub in subs:
+        if event_key:
+            prior = db.query(NotificationDelivery).filter(
+                NotificationDelivery.push_subscription_id == sub.id, NotificationDelivery.event_key == event_key, NotificationDelivery.success.is_(True)
+            ).first()
+            if prior:
+                continue
+        deliveries.append(_deliver_push(db, sub, event_row))
+    return event_row, deliveries
 
 
 def critical_broadcast_audience(db: Session) -> dict:

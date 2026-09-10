@@ -322,3 +322,10 @@ The mobile Integrations view collapses the Tautulli configuration/status body cl
 `ScheduledCustomerBroadcast` stores future critical broadcasts independently of delivery events. The notification worker checks for due schedules every 30 seconds; the audience is resolved at execution time. Scheduled broadcasts use a stable event key (`critical-broadcast-schedule:<id>`) so successful per-device deliveries are deduplicated if processing resumes after an interruption.
 
 `NotificationDelivery` persists `attempt_count`, `last_attempt_at`, `next_attempt_at`, and `final_failure`. Transient failures are retried after 1, 5, and 15 minutes. HTTP 429/5xx and network/transport failures are transient; permanent HTTP failures and expired Web Push subscriptions are terminal. Notification tests are excluded from automatic retry. The `/notifications/history` view reads this delivery ledger rather than external provider logs.
+
+
+## v0.10 Support Tickets
+
+`support_tickets` is the workflow record and `support_ticket_messages` is the immutable conversation stream. Messages distinguish customer, admin and internal-note authors; internal notes are never exposed by portal queries. Closed tickets are retained rather than deleted. Customer reply to a Resolved ticket returns it to Open.
+
+Ticket notifications reuse the canonical Notification Platform. `ticket.created` and `ticket.customer_reply` are admin-facing events. `ticket.admin_reply` and `ticket.status_changed` are delivered directly to the ticket customer only when that ticket is subscribed and the customer's master push switch remains enabled. Direct ticket pushes bypass ordinary category selections so the per-ticket subscription is authoritative.

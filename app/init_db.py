@@ -67,6 +67,8 @@ add_column_if_missing("notification_deliveries", "attempt_count", "INTEGER NOT N
 add_column_if_missing("notification_deliveries", "last_attempt_at", "TIMESTAMP NULL")
 add_column_if_missing("notification_deliveries", "next_attempt_at", "TIMESTAMP NULL")
 add_column_if_missing("notification_deliveries", "final_failure", "BOOLEAN NOT NULL DEFAULT FALSE")
+add_column_if_missing("customer_notification_preferences", "ticket_notifications_default", "BOOLEAN NOT NULL DEFAULT TRUE")
+add_column_if_missing("notification_platform_settings", "ticket_events_seeded", "BOOLEAN NOT NULL DEFAULT FALSE")
 if _notification_due_days_was_missing:
     with engine.begin() as conn:
         conn.execute(
@@ -77,6 +79,19 @@ if _notification_due_days_was_missing:
 # Backfill created_at for old payment rows after adding the nullable column.
 with engine.begin() as conn:
     conn.execute(text("UPDATE payments SET created_at = COALESCE(created_at, paid_at) WHERE created_at IS NULL"))
+
+
+# v0.10: existing admin push installs should receive new-ticket/customer-reply events by default once.
+with engine.begin() as conn:
+    row = conn.execute(text("SELECT ticket_events_seeded FROM notification_platform_settings WHERE id = 1")).fetchone()
+    if row is not None and not row[0]:
+        pref = conn.execute(text("SELECT events FROM admin_notification_preferences WHERE id = 1")).fetchone()
+        if pref is not None:
+            events = {x.strip() for x in (pref[0] or "").split(",") if x.strip()}
+            if "*" not in events:
+                events.update({"ticket.created", "ticket.customer_reply"})
+                conn.execute(text("UPDATE admin_notification_preferences SET events = :events WHERE id = 1"), {"events": ",".join(sorted(events))})
+        conn.execute(text("UPDATE notification_platform_settings SET ticket_events_seeded = TRUE WHERE id = 1"))
 
 print("Database schema ready")
 
