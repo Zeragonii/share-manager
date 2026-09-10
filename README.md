@@ -1,6 +1,6 @@
 # Share Manager
 
-> **Current version: 0.10.0a** — active ticket sidebar count and mobile navigation shadow polish.
+> **Current version: 0.10.0b** — admin ticket-detail mobile overflow/blank-space fix.
 
 **Current version: 0.10.0**
 

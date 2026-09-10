@@ -331,6 +331,10 @@ The mobile Integrations view collapses the Tautulli configuration/status body cl
 Ticket notifications reuse the canonical Notification Platform. `ticket.created` and `ticket.customer_reply` are admin-facing events. `ticket.admin_reply` and `ticket.status_changed` are delivered directly to the ticket customer only when that ticket is subscribed and the customer's master push switch remains enabled. Direct ticket pushes bypass ordinary category selections so the per-ticket subscription is authoritative.
 
 
-## v0.10.0a navigation polish
+## v0.10.0b navigation polish
 
 The shared admin render context exposes the current count of non-Closed support tickets so the sidebar can display a live active-queue badge on every authenticated admin page. On mobile, the off-canvas sidebar carries no shadow while translated off-screen; its drawer shadow is applied only while `body.nav-open` is active.
+
+## v0.10.0b mobile ticket-detail layout hardening
+
+Navigation sidebar positioning is scoped to `#site-sidebar`. Semantic `<aside>` elements used by feature pages, including the ticket Workflow/Customer panel, remain normal document-flow content and do not inherit off-canvas or viewport-height navigation behavior.
