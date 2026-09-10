@@ -775,3 +775,145 @@ a.button-link, .button-link{white-space:nowrap}
 .requests-platform-form{display:grid;gap:12px}.requests-platform-grid{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(180px,.7fr) minmax(280px,1.5fr);gap:10px}.requests-platform-grid label{min-width:0}.requests-platform-help{margin:0;font-size:11px}.requests-platform-form>button{justify-self:start}.portal-request-mobile-card{display:none}.portal-request-card-content{display:flex;align-items:center;justify-content:space-between;gap:14px}.portal-request-card-content h2{margin:2px 0 3px}.portal-request-card-content p{margin:0;font-size:11px}.portal-request-card-content .button-link{flex:0 0 auto}.portal-request-nav::after{content:"↗";margin-left:auto;font-size:11px;color:var(--muted)}
 @media(max-width:900px){.requests-platform-grid{grid-template-columns:1fr 1fr}.requests-platform-url{grid-column:1/-1}}
 @media(max-width:700px){.requests-platform-integration{padding:14px}.requests-platform-grid{grid-template-columns:1fr}.requests-platform-url{grid-column:auto}.requests-platform-form input,.requests-platform-form button{min-height:44px;font-size:16px}.requests-platform-form>button{width:100%;justify-self:stretch}.portal-request-mobile-card{display:block}.portal-request-card-content{display:grid;gap:12px}.portal-request-card-content .button-link{display:flex;align-items:center;justify-content:center;width:100%;min-height:44px}}
+
+/* v0.10.3 — mobile UI consistency pass
+   Mobile-only design tokens and component normalization. Desktop remains unchanged. */
+@media(max-width:700px){
+  :root{
+    --mobile-control-height:44px;
+    --mobile-control-radius:8px;
+    --mobile-card-radius:11px;
+    --mobile-card-padding:14px;
+    --mobile-gap:10px;
+  }
+
+  /* Consistent page rhythm without moving established layouts. */
+  main{padding-left:14px;padding-right:14px}
+  main>header{margin-bottom:16px}
+  main>header h1{font-size:27px;line-height:1.12}
+  main>header p{margin:5px 0 0;font-size:11px;line-height:1.45}
+  main>section{margin-bottom:14px}
+  .portal-main{padding-left:14px;padding-right:14px}
+  .portal-main>section{margin-bottom:14px}
+  .portal-main h1{line-height:1.12}
+  .portal-main h2,main h2{font-size:18px;line-height:1.2}
+  .portal-main h3,main h3{line-height:1.25}
+  .portal-section-heading,.section-heading{gap:10px}
+  .portal-section-heading h2,.section-heading h2{margin-bottom:0}
+  .portal-section-heading .muted,.section-heading .muted{line-height:1.4}
+
+  /* One normal touch target for actions and form controls. */
+  main button,
+  main .button-link,
+  .portal-main button,
+  .portal-main .button-link{
+    min-height:var(--mobile-control-height);
+    padding:10px 14px;
+    border-radius:var(--mobile-control-radius);
+    font-size:13px;
+    line-height:1.2;
+  }
+  main input:not([type="checkbox"]):not([type="radio"]),
+  main select,
+  .portal-main input:not([type="checkbox"]):not([type="radio"]),
+  .portal-main select{
+    min-height:var(--mobile-control-height);
+    padding:10px 11px;
+    border-radius:var(--mobile-control-radius);
+    font-size:16px;
+  }
+  main textarea,.portal-main textarea{
+    padding:11px;
+    border-radius:var(--mobile-control-radius);
+    font-size:16px;
+    line-height:1.45;
+  }
+  main label,.portal-main label{gap:6px}
+
+  /* Preserve deliberately compact utility controls. */
+  main .small-button,main .small-action,
+  .portal-main .small-button,.portal-main .small-action,
+  main .tautulli-mobile-toggle{
+    min-height:36px;
+    padding:7px 10px;
+    font-size:12px;
+  }
+
+  /* Consistent cards and inset panels. */
+  .portal-info-section,
+  .portal-live-section,
+  .portal-account-hero,
+  .portal-request-mobile-card,
+  .ticket-thread-section,
+  .ticket-admin-sidebar>section{
+    border-radius:var(--mobile-card-radius);
+    padding:var(--mobile-card-padding);
+  }
+  .card,.stat{border-radius:var(--mobile-card-radius)}
+  .cards,.ticket-list,.ticket-admin-list,.portal-watch-list,.notification-history-list,.notification-schedule-history{gap:10px}
+  .empty-state,.portal-empty,.portal-empty-live{
+    border-radius:9px;
+    padding:14px;
+    line-height:1.45;
+  }
+
+  /* Keep status language visually identical across customer/admin surfaces. */
+  .badge,.ticket-status,.ticket-priority,.package-count-badge,.usage-pill,.integration-type{
+    min-height:24px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:4px 8px;
+    line-height:1;
+  }
+
+  /* Normalize stacked action groups. */
+  .ticket-admin-filter-actions,
+  .ticket-admin-composer form,
+  .ticket-reply-form,
+  .portal-watch-filter-actions,
+  .notification-actions,
+  .push-device-actions,
+  .backup-mobile-actions,
+  .tautulli-actions,
+  .portal-admin-actions{
+    gap:8px;
+  }
+  .ticket-reply-form button,.ticket-admin-composer form>button{min-width:120px}
+
+  /* Shared collapsible treatment for mobile panels. */
+  .portal-watch-filter-summary,
+  .dashboard-mobile-details>summary,
+  .integration-add>summary,
+  .notification-editor>summary,
+  .critical-broadcast-schedule>summary,
+  .admin-push-preferences>summary,
+  .ticket-create-section details>summary{
+    min-height:42px;
+    display:flex;
+    align-items:center;
+    border-radius:8px;
+    line-height:1.25;
+  }
+  .portal-watch-filter-summary{padding:10px 12px}
+
+  /* Equal hit areas and baseline alignment for the customer/admin bottom navs. */
+  .portal-bottom-nav a,.mobile-bottom-nav a{
+    min-width:0;
+    min-height:58px;
+    padding-top:7px;
+    padding-bottom:max(7px,env(safe-area-inset-bottom));
+    align-content:center;
+  }
+  .portal-bottom-nav a span,.mobile-bottom-nav a span{line-height:1.1}
+  .portal-bottom-nav svg,.mobile-bottom-nav svg{flex:0 0 auto}
+
+  /* Consistent metadata-card spacing. */
+  .portal-watch-meta span,
+  .backup-mobile-meta>span,
+  .notification-history-meta span,
+  .portal-history-summary>div,
+  .portal-account-grid>div{
+    border-radius:8px;
+  }
+}

@@ -350,3 +350,8 @@ The shared admin shell independently polls a compact ticket-summary endpoint eve
 ## Requests Platform integration (v0.10.2)
 
 `requests_platform_settings` stores one external customer request destination. The feature intentionally remains link-based and provider-agnostic: Share Manager does not proxy Seerr credentials or API calls. When enabled with a valid HTTP/HTTPS URL, desktop portal navigation exposes a Request link and the mobile Account page exposes the configured request action. The mobile bottom navigation remains fixed at Account, Activity, Support and History.
+
+
+## v0.10.3 mobile UI consistency
+
+The mobile presentation layer now centralises common touch-target and spacing values in a max-width 700px CSS scope. Shared controls, cards, status markers, collapsible headers and bottom-navigation hit areas use those mobile-only tokens, while compact utility actions retain a smaller explicit variant. No application routes, data models or desktop layouts change in this release.

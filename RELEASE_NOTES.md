@@ -1,3 +1,13 @@
+## v0.10.3 — Mobile UI consistency pass
+
+- Added a mobile-only set of shared control/layout tokens for consistent sizing and spacing.
+- Standardised primary/secondary action height, padding, radius and typography while preserving compact utility controls.
+- Standardised input/select/textarea sizing and 16px mobile form text to avoid inconsistent controls and browser zoom behaviour.
+- Harmonised mobile card padding/radius, headings, status badges, empty states, action gaps and collapsible section headers.
+- Normalised customer and admin bottom-navigation touch areas and label alignment.
+- Desktop presentation and application behaviour are unchanged.
+- Bumped admin and customer PWA cache versions to 0.10.3.
+
 ## v0.10.2 — Requests Platform integration
 
 - Added database-backed Requests Platform settings with enable/disable, friendly name, external URL and button label.

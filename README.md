@@ -1,9 +1,19 @@
 # Share Manager
 
-> **Current version: 0.10.2** — configurable external Requests Platform integration for the customer portal.
+> **Current version: 0.10.3** — mobile UI consistency and touch-target polish across admin and customer PWAs.
 
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
+
+
+## v0.10.3 — Mobile UI consistency pass
+
+- Standardised mobile button heights, padding, typography and corner radii across admin and customer PWAs.
+- Normalised text inputs, selects and textareas to consistent 44px touch targets and mobile-safe font sizing.
+- Aligned card padding, vertical rhythm, headings, badges/status pills, action rows and empty states.
+- Unified the visual treatment of mobile collapsible controls without changing their behaviour.
+- Normalised customer/admin bottom-navigation hit areas and label alignment.
+- Kept intentionally compact utility controls compact and left desktop layouts unchanged.
 
 
 ## v0.10.2 — Requests Platform integration
