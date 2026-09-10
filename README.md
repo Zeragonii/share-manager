@@ -425,6 +425,10 @@ Share Manager now has a first-class notification event layer and native PWA Web 
 Web Push requires HTTPS (or localhost) and browser/OS notification permission. The existing Cloudflare/NPM HTTPS deployment is suitable; the customer portal service worker remains scoped to `/portal`.
 
 
+## v0.9.1a — Mobile Watch-History Spacing
+
+Tiny customer-portal UX hotfix adding consistent spacing beneath the collapsed Watch History Filters control on mobile. Desktop and expanded filter layouts are unchanged.
+
 ## v0.9.1 — Critical Customer Broadcasts
 
 Administrators can send critical service announcements from **Integrations → Notifications** to all eligible customer Web Push subscriptions. The broadcast composer shows the current customer/device audience, accepts a title/message and customer-portal destination, and requires confirmation before sending.

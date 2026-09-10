@@ -717,6 +717,7 @@ a.button-link, .button-link{white-space:nowrap}
 @media(max-width:700px){
   .portal-watch-filter-toggle{position:absolute;opacity:0;pointer-events:none}
   .portal-watch-filter-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 0;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:#0e141d;color:#dbe3ee;font-size:12px;font-weight:750;cursor:pointer;user-select:none}
+  .portal-watch-filter-toggle:not(:checked) + .portal-watch-filter-summary{margin-bottom:10px}
   .portal-watch-filter-chevron{font-size:18px;line-height:1;transition:transform .18s ease}
   .portal-watch-filter-toggle:checked + .portal-watch-filter-summary .portal-watch-filter-chevron{transform:rotate(180deg)}
   .portal-watch-filters{display:none;grid-template-columns:1fr;gap:10px;margin:10px 0 16px;padding:12px;border:1px solid var(--line);border-radius:9px;background:#0b1119}

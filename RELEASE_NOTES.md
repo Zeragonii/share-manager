@@ -1,3 +1,9 @@
+# v0.9.1a — Mobile Watch-History Spacing
+
+- Added a small bottom gap beneath the collapsed mobile Watch History Filters control so its spacing matches the history-card list.
+- Expanded filter-panel spacing and desktop layouts are unchanged.
+- Bumped PWA cache versions so installed clients pick up the CSS hotfix.
+
 # v0.9.1 — Critical Customer Broadcasts
 
 - Added an admin-only Critical customer broadcast composer under Integrations → Notifications.
