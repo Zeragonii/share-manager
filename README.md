@@ -385,3 +385,8 @@ The customer portal uses a left navigation rail on desktop and a bottom navigati
 
 ## v0.8.5a
 - Fixed the desktop customer-portal watch-history filter layout so the controls stay within the Activity card. Search/device/library/type remain on the first row, while date range and Reset/Apply actions align cleanly on the second row. No sync or filtering logic changed.
+
+## v0.8.5b
+- Detailed portal watch history now uses server-side pagination with 10 rows by default and selectable 10/25/50 row page sizes.
+- Existing device/library/type/title/date filters are preserved across pages.
+- Watch-history metadata cards now reserve consistent Library, Device, Platform and Playback positions; browser players such as Chrome are normalized to Platform: Web.

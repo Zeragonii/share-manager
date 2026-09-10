@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from threading import Event, Lock
-from urllib.parse import quote_plus, urlsplit
+from urllib.parse import quote_plus, urlsplit, urlencode
 
 from fastapi import Depends, FastAPI, Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
@@ -657,6 +657,8 @@ def portal_activity(
     q: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    page: str | None = None,
+    rows: str | None = None,
     db: Session = Depends(get_db),
 ):
     customer = _portal_customer(request, db)
@@ -702,7 +704,43 @@ def portal_activity(
     except ValueError:
         to_date = None
 
-    watch_history = watch_query.order_by(TautulliWatchHistory.watched_at.desc(), TautulliWatchHistory.id.desc()).limit(250).all()
+    try:
+        per_page = int((rows or "10").strip())
+    except (TypeError, ValueError):
+        per_page = 10
+    if per_page not in {10, 25, 50}:
+        per_page = 10
+    try:
+        current_page = max(1, int((page or "1").strip()))
+    except (TypeError, ValueError):
+        current_page = 1
+
+    watch_filtered_total = watch_query.count()
+    watch_total_pages = max(1, (watch_filtered_total + per_page - 1) // per_page)
+    current_page = min(current_page, watch_total_pages)
+    raw_watch_history = (
+        watch_query.order_by(TautulliWatchHistory.watched_at.desc(), TautulliWatchHistory.id.desc())
+        .offset((current_page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    browser_names = ("chrome", "firefox", "safari", "edge", "opera", "brave", "browser", "web")
+    watch_history = []
+    for item in raw_watch_history:
+        player = (item.player or "").strip()
+        platform = (item.platform or "").strip()
+        player_lower = player.lower()
+        platform_label = "Web" if any(name in player_lower for name in browser_names) else (platform or "—")
+        watch_history.append({
+            "title": item.title,
+            "watched_at": item.watched_at,
+            "media_type": item.media_type,
+            "library_name": item.library_name or "—",
+            "device_label": player or platform or "Unknown device",
+            "platform_label": platform_label,
+            "duration_seconds": item.duration_seconds,
+        })
+
     base_history = db.query(TautulliWatchHistory).filter(TautulliWatchHistory.customer_id == customer.id)
     device_rows = base_history.with_entities(TautulliWatchHistory.player, TautulliWatchHistory.platform).distinct().all()
     devices = sorted({str(player or platform).strip() for player, platform in device_rows if str(player or platform or "").strip()}, key=str.lower)
@@ -714,7 +752,10 @@ def portal_activity(
         request, "portal_activity.html", customer=customer, activity=activity, live=live,
         live_refresh_seconds=settings_row.live_refresh_seconds, subscription=sub, stream_events=events,
         watch_history=watch_history, watch_devices=devices, watch_libraries=libraries, watch_media_types=media_types,
-        watch_total_cached=total_cached, watch_filters={"device": clean_device, "library": clean_library, "media_type": clean_media_type, "q": clean_q, "from_date": from_date or "", "to_date": to_date or ""},
+        watch_total_cached=total_cached, watch_filtered_total=watch_filtered_total, watch_page=current_page,
+        watch_per_page=per_page, watch_total_pages=watch_total_pages,
+        watch_filters={"device": clean_device, "library": clean_library, "media_type": clean_media_type, "q": clean_q, "from_date": from_date or "", "to_date": to_date or ""},
+        watch_pagination_base=urlencode({k: v for k, v in {"q": clean_q, "device": clean_device, "library": clean_library, "media_type": clean_media_type, "from_date": from_date or "", "to_date": to_date or "", "rows": per_page}.items() if str(v) != ""}),
         notice=request.query_params.get("notice"), error=request.query_params.get("error"), now=datetime.utcnow(),
     )
 

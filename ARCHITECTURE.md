@@ -274,3 +274,6 @@ The customer portal is responsive with separate navigation presentations: a stic
 
 ## v0.8.5a
 - Fixed the desktop customer-portal watch-history filter layout so the controls stay within the Activity card. Search/device/library/type remain on the first row, while date range and Reset/Apply actions align cleanly on the second row. No sync or filtering logic changed.
+
+## v0.8.5b
+Portal detailed watch-history pagination is performed server-side against the cached PostgreSQL dataset after filters are applied. The portal never loads the full cached history into the browser merely to paginate it.

@@ -38,6 +38,7 @@
   <section class="portal-info-section portal-watch-history-section">
     <div class="portal-section-heading"><div><h2>Watch history</h2><span class="muted">Cached from Tautulli · {{ watch_total_cached }} entr{{ 'y' if watch_total_cached == 1 else 'ies' }}</span></div></div>
     <form method="get" action="/portal/activity" class="portal-watch-filters">
+      <input type="hidden" name="rows" value="{{ watch_per_page }}">
       <label>Search title<input type="search" name="q" value="{{ watch_filters.q }}" placeholder="Movie, episode, show…"></label>
       <label>Device<select name="device"><option value="">All devices</option>{% for item in watch_devices %}<option value="{{ item }}" {% if watch_filters.device == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
       <label>Library<select name="library"><option value="">All libraries</option>{% for item in watch_libraries %}<option value="{{ item }}" {% if watch_filters.library == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
@@ -51,15 +52,29 @@
       <article class="portal-watch-card">
         <div class="portal-watch-top"><div><strong>{{ item.title }}</strong><span>{{ item.watched_at.strftime('%d %b %Y · %H:%M') }}</span></div>{% if item.media_type %}<span class="badge">{{ item.media_type|replace('_',' ') }}</span>{% endif %}</div>
         <div class="portal-watch-meta">
-          {% if item.library_name %}<span><b>Library</b>{{ item.library_name }}</span>{% endif %}
-          <span><b>Device</b>{{ item.player or item.platform or 'Unknown device' }}</span>
-          {% if item.platform and item.player and item.platform != item.player %}<span><b>Platform</b>{{ item.platform }}</span>{% endif %}
+          <span><b>Library</b>{{ item.library_name }}</span>
+          <span><b>Device</b>{{ item.device_label }}</span>
+          <span><b>Platform</b>{{ item.platform_label }}</span>
           <span><b>Playback</b>{{ format_duration(item.duration_seconds) }}</span>
         </div>
       </article>
       {% else %}<div class="portal-empty-live">No watch-history entries match these filters.</div>{% endfor %}
     </div>
-    {% if watch_history|length >= 250 %}<p class="muted portal-watch-limit-note">Showing the newest 250 matching cached entries. Narrow the filters to look further back.</p>{% endif %}
+    <div class="portal-watch-pagination">
+      <form method="get" action="/portal/activity" class="portal-watch-page-size">
+        {% for key, value in watch_filters.items() %}{% if value %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+        <label>Rows per page
+          <select name="rows" onchange="this.form.submit()">
+            {% for count in [10, 25, 50] %}<option value="{{ count }}" {% if watch_per_page == count %}selected{% endif %}>{{ count }}</option>{% endfor %}
+          </select>
+        </label>
+      </form>
+      <div class="portal-watch-page-controls">
+        {% if watch_page > 1 %}<a class="button-link secondary" href="/portal/activity?{{ watch_pagination_base }}{% if watch_pagination_base %}&{% endif %}page={{ watch_page - 1 }}">‹ Previous</a>{% else %}<span class="button-link secondary disabled" aria-disabled="true">‹ Previous</span>{% endif %}
+        <span class="portal-watch-page-label">Page {{ watch_page }} of {{ watch_total_pages }} · {{ watch_filtered_total }} matching</span>
+        {% if watch_page < watch_total_pages %}<a class="button-link secondary" href="/portal/activity?{{ watch_pagination_base }}{% if watch_pagination_base %}&{% endif %}page={{ watch_page + 1 }}">Next ›</a>{% else %}<span class="button-link secondary disabled" aria-disabled="true">Next ›</span>{% endif %}
+      </div>
+    </div>
   </section>
 
   <section class="portal-info-section">
