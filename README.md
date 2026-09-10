@@ -1,9 +1,19 @@
 # Share Manager
 
-> **Current version: 0.10.1** — pseudo-realtime support ticket conversations and live admin queue counts.
+> **Current version: 0.10.2** — configurable external Requests Platform integration for the customer portal.
 
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
+
+
+## v0.10.2 — Requests Platform integration
+
+- Added a generic **Requests platform** integration for Seerr or any HTTP/HTTPS content-request service.
+- Admins can configure an enable switch, friendly name, external URL and customer-facing button label.
+- Desktop customer portal navigation shows **Request** in the left sidebar when enabled.
+- Mobile keeps the existing four-button bottom navigation and instead shows a prominent request card on the Account page.
+- Request links open the configured external service without changing Share Manager session state.
+- Disabled or unconfigured integrations are hidden from the customer portal.
 
 
 ## v0.10.1 — Live Ticket Updates

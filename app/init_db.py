@@ -99,7 +99,7 @@ print("Database schema ready")
 # Seed editable payment-source choices. Payments keep their source text so historical
 # ledger entries remain unchanged if a source is later renamed or archived.
 from .db import SessionLocal
-from .models import BackupSettings, Payment, PaymentSource
+from .models import BackupSettings, Payment, PaymentSource, RequestsPlatformSettings
 
 db = SessionLocal()
 try:
@@ -113,6 +113,15 @@ try:
 
     # v0.4.1: move backup automation policy into the database. Environment
     # variables remain first-run defaults so existing deployments migrate cleanly.
+    if db.get(RequestsPlatformSettings, 1) is None:
+        db.add(RequestsPlatformSettings(
+            id=1,
+            enabled=False,
+            name="Seerr",
+            base_url=None,
+            button_label="Request Content",
+        ))
+
     if db.get(BackupSettings, 1) is None:
         db.add(BackupSettings(
             id=1,

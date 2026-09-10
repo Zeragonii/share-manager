@@ -45,6 +45,7 @@ from .models import (
     CustomerNotificationPreference,
     AdminNotificationPreference,
     ScheduledCustomerBroadcast,
+    RequestsPlatformSettings,
     TautulliActivity,
     TautulliSettings,
     TautulliWatchHistory,
@@ -493,19 +494,21 @@ def render(request: Request, name: str, **ctx):
     # calculate the same count. If the database is temporarily unavailable, the
     # page can still render without the badge.
     admin_open_ticket_count = 0
-    if logged_in(request):
-        nav_db = SessionLocal()
-        try:
+    requests_platform = None
+    nav_db = SessionLocal()
+    try:
+        requests_platform = nav_db.get(RequestsPlatformSettings, 1)
+        if logged_in(request):
             admin_open_ticket_count = (
                 nav_db.query(func.count(SupportTicket.id))
                 .filter(SupportTicket.status != "closed")
                 .scalar()
                 or 0
             )
-        except Exception:
-            logger.debug("Could not calculate admin ticket navigation count", exc_info=True)
-        finally:
-            nav_db.close()
+    except Exception:
+        logger.debug("Could not calculate shared navigation context", exc_info=True)
+    finally:
+        nav_db.close()
     return templates.TemplateResponse(
         request=request,
         name=name,
@@ -513,6 +516,7 @@ def render(request: Request, name: str, **ctx):
             "request": request,
             "app_version": APP_VERSION,
             "admin_open_ticket_count": admin_open_ticket_count,
+            "requests_platform": requests_platform,
             **ctx,
         },
     )
@@ -2324,6 +2328,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         admin_push_status=admin_push_status(db),
         critical_broadcast_audience=critical_broadcast_audience(db),
         scheduled_broadcasts=scheduled_broadcasts,
+        requests_platform=db.get(RequestsPlatformSettings, 1),
         tautulli_settings=get_tautulli_settings(db),
         tautulli_backfill=watch_history_backfill_status(db),
         error=error,
@@ -2366,6 +2371,53 @@ def import_plex_users(request: Request, integration_id: int, db: Session = Depen
     db.add(AuditLog(actor=settings.admin_username, action="plex.import_users", target_type="integration", target_id=str(integration.id), detail=f"Imported {created} users"))
     db.commit()
     return RedirectResponse("/customers", status_code=303)
+
+
+@app.post("/integrations/requests-platform")
+def save_requests_platform(
+    request: Request,
+    enabled: str | None = Form(None),
+    name: str = Form("Seerr"),
+    base_url: str = Form(""),
+    button_label: str = Form("Request Content"),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+
+    clean_name = name.strip() or "Seerr"
+    clean_label = button_label.strip() or "Request Content"
+    clean_url = base_url.strip().rstrip("/")
+    is_enabled = enabled is not None
+
+    if len(clean_name) > 120 or len(clean_label) > 80:
+        return RedirectResponse("/integrations?error=Requests+platform+name+or+button+label+is+too+long", status_code=303)
+    if is_enabled and not clean_url:
+        return RedirectResponse("/integrations?error=Requests+platform+URL+is+required+when+enabled", status_code=303)
+    if clean_url:
+        parsed = urlsplit(clean_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return RedirectResponse("/integrations?error=Requests+platform+URL+must+be+a+valid+HTTP+or+HTTPS+URL", status_code=303)
+
+    row = db.get(RequestsPlatformSettings, 1)
+    if row is None:
+        row = RequestsPlatformSettings(id=1)
+        db.add(row)
+    row.enabled = is_enabled
+    row.name = clean_name
+    row.base_url = clean_url or None
+    row.button_label = clean_label
+    row.updated_at = datetime.utcnow()
+    db.add(AuditLog(
+        actor=settings.admin_username,
+        action="requests_platform.update",
+        target_type="requests_platform",
+        target_id="1",
+        detail=f"{clean_name}: {'enabled' if is_enabled else 'disabled'}",
+    ))
+    db.commit()
+    return RedirectResponse("/integrations?notice=Requests+platform+settings+saved", status_code=303)
 
 
 @app.post("/integrations/tautulli")

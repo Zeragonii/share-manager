@@ -198,6 +198,16 @@ class BackupSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class RequestsPlatformSettings(Base):
+    __tablename__ = "requests_platform_settings"
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    name: Mapped[str] = mapped_column(String(120), default="Seerr")
+    base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    button_label: Mapped[str] = mapped_column(String(80), default="Request Content")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class TautulliSettings(Base):
     __tablename__ = "tautulli_settings"
     id: Mapped[int] = mapped_column(primary_key=True, default=1)

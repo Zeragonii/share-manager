@@ -1,3 +1,12 @@
+## v0.10.2 — Requests Platform integration
+
+- Added database-backed Requests Platform settings with enable/disable, friendly name, external URL and button label.
+- Added admin configuration under Integrations.
+- Added a desktop customer-portal Request sidebar link.
+- Added a mobile Account-page Request Content card while preserving the existing four-item bottom navigation.
+- Validates configured URLs as HTTP/HTTPS and hides customer links when disabled or unconfigured.
+- Bumped admin and customer PWA cache versions to 0.10.2.
+
 # 0.10.1 — Live Ticket Updates
 
 - Added 5-second pseudo-realtime polling to open admin and customer ticket conversations.

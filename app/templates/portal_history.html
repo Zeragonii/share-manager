@@ -3,7 +3,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><meta name="application-name" content="Share Manager Portal"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Share Manager Portal"><title>History · Share Manager</title><link rel="manifest" href="/portal/manifest.webmanifest"><link rel="icon" href="/static/icons/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
 <body class="portal-body">
 <div class="portal-shell portal-app-shell">
-{{ portal_sidebar('history', customer) }}
+{{ portal_sidebar('history', customer, requests_platform) }}
 <div class="portal-content-shell">
 {{ portal_topbar(customer) }}
 <main class="portal-main portal-main-with-nav">

@@ -3,7 +3,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><meta name="application-name" content="Share Manager Portal"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Share Manager Portal"><title>My account · Share Manager</title><link rel="manifest" href="/portal/manifest.webmanifest"><link rel="icon" href="/static/icons/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
 <body class="portal-body">
 <div class="portal-shell portal-app-shell">
-{{ portal_sidebar('account', customer) }}
+{{ portal_sidebar('account', customer, requests_platform) }}
 <div class="portal-content-shell">
 {{ portal_topbar(customer) }}
 <main class="portal-main portal-main-with-nav">
@@ -23,6 +23,11 @@
       <div class="portal-empty"><strong>No subscription is currently recorded.</strong><span>Contact your administrator if you believe this is incorrect.</span></div>
     {% endif %}
   </section>
+  {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}
+  <section class="portal-info-section portal-request-mobile-card">
+    <div class="portal-request-card-content"><div><span class="muted">Content requests</span><h2>{{ requests_platform.name }}</h2><p class="muted">Search for and request something new to watch.</p></div><a class="button-link" href="{{ requests_platform.base_url }}" target="_blank" rel="noopener noreferrer">{{ requests_platform.button_label }}</a></div>
+  </section>
+  {% endif %}
   <section class="portal-info-section"><h2>Account</h2><div class="portal-account-grid compact"><div><span>Plex account</span><strong>{{ customer.plex_username or 'Not linked' }}</strong></div><div><span>Contact email</span><strong>{{ customer.email or 'Not set' }}</strong></div></div></section>
   <section class="portal-info-section portal-security-section">
     <div class="portal-section-heading"><div><h2>Security</h2><span class="muted">Change your customer portal password</span></div></div>

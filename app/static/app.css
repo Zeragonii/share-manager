@@ -770,3 +770,8 @@ a.button-link, .button-link{white-space:nowrap}
 .ticket-message{transition:border-color .35s ease,background-color .35s ease,opacity .35s ease}
 .ticket-message.ticket-message-new{border-color:var(--accent);opacity:.72}
 #site-sidebar .nav-ticket-count.has-unread{box-shadow:0 0 0 3px rgba(229,160,13,.16)}
+
+/* v0.10.2 — external requests platform portal integration */
+.requests-platform-form{display:grid;gap:12px}.requests-platform-grid{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(180px,.7fr) minmax(280px,1.5fr);gap:10px}.requests-platform-grid label{min-width:0}.requests-platform-help{margin:0;font-size:11px}.requests-platform-form>button{justify-self:start}.portal-request-mobile-card{display:none}.portal-request-card-content{display:flex;align-items:center;justify-content:space-between;gap:14px}.portal-request-card-content h2{margin:2px 0 3px}.portal-request-card-content p{margin:0;font-size:11px}.portal-request-card-content .button-link{flex:0 0 auto}.portal-request-nav::after{content:"↗";margin-left:auto;font-size:11px;color:var(--muted)}
+@media(max-width:900px){.requests-platform-grid{grid-template-columns:1fr 1fr}.requests-platform-url{grid-column:1/-1}}
+@media(max-width:700px){.requests-platform-integration{padding:14px}.requests-platform-grid{grid-template-columns:1fr}.requests-platform-url{grid-column:auto}.requests-platform-form input,.requests-platform-form button{min-height:44px;font-size:16px}.requests-platform-form>button{width:100%;justify-self:stretch}.portal-request-mobile-card{display:block}.portal-request-card-content{display:grid;gap:12px}.portal-request-card-content .button-link{display:flex;align-items:center;justify-content:center;width:100%;min-height:44px}}

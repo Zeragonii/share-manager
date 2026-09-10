@@ -2,7 +2,8 @@
 {% macro icon_activity() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h4l2-6 4 11 2-5h6v-2h-7.44L13 12.4 8.8 1 5.56 11H3v2Z"/></svg>{%- endmacro %}
 {% macro icon_tickets() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v13H7l-3 3V4Zm3 4v2h10V8H7Zm0 4v2h7v-2H7Z"/></svg>{%- endmacro %}
 {% macro icon_history() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 1-7.45 5H2l3.5-3.5L9 9H6.6A6 6 0 1 0 12 6V4Zm-1 3h2v5.4l3.6 2.1-1 1.73L11 13.5V7Z"/></svg>{%- endmacro %}
-{% macro portal_sidebar(active, customer) -%}
+{% macro icon_request() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-2.05-4.95L14 10h7V3l-2.63 2.63A8.96 8.96 0 0 0 12 3Zm-1 5h2v5h-2V8Zm0 7h2v2h-2v-2Z"/></svg>{%- endmacro %}
+{% macro portal_sidebar(active, customer, requests_platform=None) -%}
 <aside class="portal-sidebar" aria-label="Customer portal navigation">
   <div class="portal-sidebar-brand"><img src="/static/icons/icon-192.png" alt=""><div><strong>Share Manager</strong><span>Customer Portal</span></div></div>
   <nav class="portal-sidebar-nav">
@@ -10,6 +11,7 @@
     <a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>
     <a href="/portal/tickets" class="{{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span></a>
     <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>History</span></a>
+    {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<a href="{{ requests_platform.base_url }}" target="_blank" rel="noopener noreferrer" class="portal-request-nav">{{ icon_request() }}<span>Request</span></a>{% endif %}
   </nav>
   <div class="portal-sidebar-account"><span>Signed in as</span><strong>{{ customer.name }}</strong><small>{{ customer.portal_username }}</small></div>
   <form method="post" action="/portal/logout" class="portal-sidebar-signout"><button class="ghost">Sign out</button></form>

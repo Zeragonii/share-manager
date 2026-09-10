@@ -37,6 +37,23 @@
   </div>
 </section>
 
+<section class="integration-section requests-platform-integration">
+  <div class="row between">
+    <div><h2>Requests platform</h2><p class="muted">Link the customer portal to Seerr or another external content-request service.</p></div>
+    {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<span class="badge active">enabled</span>{% endif %}
+  </div>
+  <form method="post" action="/integrations/requests-platform" class="requests-platform-form">
+    <label class="toggle-choice"><input type="checkbox" name="enabled" {% if requests_platform and requests_platform.enabled %}checked{% endif %}><span><strong>Enable requests platform</strong><small class="muted">Shows Request in the desktop portal sidebar and a Request Content card on the mobile Account page.</small></span></label>
+    <div class="requests-platform-grid">
+      <label>Friendly name<input name="name" maxlength="120" value="{{ requests_platform.name if requests_platform else 'Seerr' }}" placeholder="Seerr" required></label>
+      <label>Button label<input name="button_label" maxlength="80" value="{{ requests_platform.button_label if requests_platform else 'Request Content' }}" placeholder="Request Content" required></label>
+      <label class="requests-platform-url">Requests URL<input name="base_url" value="{{ requests_platform.base_url if requests_platform and requests_platform.base_url else '' }}" placeholder="https://requests.example.com"></label>
+    </div>
+    <p class="muted requests-platform-help">Any HTTP/HTTPS request service can be used; no Seerr API key is required. The customer link opens the configured external service in a separate browser context.</p>
+    <button>Save requests platform</button>
+  </form>
+</section>
+
 <section class="tautulli-integration">
   <div class="row between tautulli-heading">
     <div><h2>Tautulli</h2><p class="muted">Usage analytics and live Plex activity for managed customers.</p></div>

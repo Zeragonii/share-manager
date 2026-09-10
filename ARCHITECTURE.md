@@ -345,3 +345,8 @@ Navigation sidebar positioning is scoped to `#site-sidebar`. Semantic `<aside>` 
 Support-ticket pseudo-realtime behavior uses short authenticated HTTP polls rather than persistent WebSockets. An open ticket view polls every five seconds only while `document.visibilityState` is `visible`. The client sends its latest rendered `SupportTicketMessage.id`, and the server returns only newer rows plus the current ticket status/priority/update metadata. Customer endpoints resolve the ticket through the signed portal customer and filter `visible_to_customer = true`; admin endpoints require the normal admin session and may include internal notes.
 
 The shared admin shell independently polls a compact ticket-summary endpoint every ten seconds. The navigation badge continues to represent all non-Closed tickets, while the unread count is used only for visual emphasis. This polling also pauses in hidden tabs and resumes on visibility return. No additional persistence or database schema is required for live updates.
+
+
+## Requests Platform integration (v0.10.2)
+
+`requests_platform_settings` stores one external customer request destination. The feature intentionally remains link-based and provider-agnostic: Share Manager does not proxy Seerr credentials or API calls. When enabled with a valid HTTP/HTTPS URL, desktop portal navigation exposes a Request link and the mobile Account page exposes the configured request action. The mobile bottom navigation remains fixed at Account, Activity, Support and History.
