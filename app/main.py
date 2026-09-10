@@ -1898,13 +1898,21 @@ def delete_payment(request: Request, payment_id: int, db: Session = Depends(get_
 
 
 @app.get("/stream-limits", response_class=HTMLResponse)
-def stream_limits_page(request: Request, customer_id: int | None = None, result: str = "all", date_from: str = "", date_to: str = "", db: Session = Depends(get_db)):
+def stream_limits_page(request: Request, customer_id: str = "", result: str = "all", date_from: str = "", date_to: str = "", db: Session = Depends(get_db)):
     gate = auth(request)
     if gate:
         return gate
-    query = db.query(StreamLimitEvent).options(joinedload(StreamLimitEvent.customer), joinedload(StreamLimitEvent.billing_tier))
+
+    selected_customer_id = None
     if customer_id:
-        query = query.filter(StreamLimitEvent.customer_id == customer_id)
+        try:
+            selected_customer_id = int(customer_id)
+        except (TypeError, ValueError):
+            return RedirectResponse("/stream-limits", status_code=303)
+
+    query = db.query(StreamLimitEvent).options(joinedload(StreamLimitEvent.customer), joinedload(StreamLimitEvent.billing_tier))
+    if selected_customer_id is not None:
+        query = query.filter(StreamLimitEvent.customer_id == selected_customer_id)
     if result == "success":
         query = query.filter(StreamLimitEvent.success.is_(True))
     elif result == "failed":
@@ -1931,7 +1939,7 @@ def stream_limits_page(request: Request, customer_id: int | None = None, result:
         "top_count": counts.get(top_customer.id, 0) if top_customer else 0,
     }
     customers = db.query(Customer).filter(Customer.archived.is_(False)).order_by(Customer.name).all()
-    return render(request, "stream_limits.html", rows=rows, stats=stats, customers=customers, selected_customer_id=customer_id, selected_result=result, date_from=date_from, date_to=date_to)
+    return render(request, "stream_limits.html", rows=rows, stats=stats, customers=customers, selected_customer_id=selected_customer_id, selected_result=result, date_from=date_from, date_to=date_to)
 
 @app.get("/customers/{customer_id}/history", response_class=HTMLResponse)
 def customer_history(request: Request, customer_id: int, db: Session = Depends(get_db)):

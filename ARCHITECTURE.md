@@ -222,3 +222,8 @@ Dashboard mobile rendering remains server-rendered Jinja with progressive disclo
 
 ## v0.7.5
 - Stream Limits mobile-first UI: compact stats, quick date filters, collapsible filter panel, mobile enforcement cards, clearer success/failure presentation, tappable customers, and no horizontal scrolling.
+
+
+## v0.7.5a
+- Fixed Stream Limits filtering when `All customers` submits an empty `customer_id`; blank values now mean no customer filter instead of triggering FastAPI integer validation.
+- Invalid non-numeric customer filter values now redirect safely back to the unfiltered Stream Limits page.
