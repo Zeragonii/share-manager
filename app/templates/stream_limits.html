@@ -8,14 +8,48 @@
 </section>
 <section>
   <div class="row between stream-limit-heading"><div><h2>Enforcement history</h2><p>Newest attempts first. Every row represents a confirmed two-heartbeat over-limit condition.</p></div></div>
-  <form method="get" class="stream-limit-filters">
+  <div class="stream-limit-mobile-tools">
+    <div class="stream-limit-quick-ranges" role="group" aria-label="Quick date filters">
+      <button type="button" class="secondary stream-range" data-days="0">Today</button>
+      <button type="button" class="secondary stream-range" data-days="7">7 days</button>
+      <button type="button" class="secondary stream-range" data-days="30">30 days</button>
+      <button type="button" class="secondary stream-range" data-days="all">All</button>
+    </div>
+    <button type="button" class="secondary stream-filter-toggle" aria-expanded="false" aria-controls="stream-limit-filter-sheet">Filters</button>
+  </div>
+  <form method="get" class="stream-limit-filters" id="stream-limit-filter-sheet">
     <label>Customer<select name="customer_id"><option value="">All customers</option>{% for c in customers %}<option value="{{ c.id }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label>
     <label>Result<select name="result"><option value="all" {% if selected_result == 'all' %}selected{% endif %}>All</option><option value="success" {% if selected_result == 'success' %}selected{% endif %}>Terminated</option><option value="failed" {% if selected_result == 'failed' %}selected{% endif %}>Failed</option></select></label>
     <label>From<input type="date" name="date_from" value="{{ date_from }}"></label>
     <label>To<input type="date" name="date_to" value="{{ date_to }}"></label>
     <button>Apply filters</button>
   </form>
-  <div class="table-wrap"><table class="stream-limit-table">
+  <div class="stream-limit-mobile-cards">
+    {% for e in rows %}
+    <article class="stream-limit-event-card {{ 'success' if e.success else 'failed' }}">
+      <div class="stream-limit-event-head">
+        <div>
+          <a class="stream-limit-customer" href="/customers/{{ e.customer_id }}/history">{{ e.customer.name }}</a>
+          <div class="muted">{{ e.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+        </div>
+        <span class="badge {{ 'ok' if e.success else 'error-badge' }}">{{ 'terminated' if e.success else 'failed' }}</span>
+      </div>
+      <div class="stream-limit-event-counts">
+        <span><strong>{{ e.detected_streams }}</strong><small>Detected</small></span>
+        <span><strong>{{ e.allowed_streams }}</strong><small>Allowed</small></span>
+        <span><strong>{{ e.billing_tier.name if e.billing_tier else '—' }}</strong><small>Tier</small></span>
+      </div>
+      <div class="stream-limit-event-session">
+        <strong>{{ e.title or 'Unknown title' }}</strong>
+        <span class="muted">{{ e.player or 'Unknown player' }}{% if e.ip_address %} · {{ e.ip_address }}{% endif %}</span>
+      </div>
+      {% if e.detail %}<div class="stream-limit-event-detail muted">{{ e.detail }}</div>{% endif %}
+    </article>
+    {% else %}
+    <div class="muted stream-limit-mobile-empty">No stream-limit enforcement events yet.</div>
+    {% endfor %}
+  </div>
+  <div class="table-wrap stream-limit-desktop-table"><table class="stream-limit-table">
     <thead><tr><th>Time</th><th>Customer</th><th>Tier</th><th>Allowed</th><th>Detected</th><th>Session</th><th>Result</th></tr></thead>
     <tbody>{% for e in rows %}<tr>
       <td>{{ e.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
@@ -27,4 +61,42 @@
     </tr>{% else %}<tr><td colspan="7" class="muted">No stream-limit enforcement events yet.</td></tr>{% endfor %}</tbody>
   </table></div>
 </section>
+<script>
+(() => {
+  const form = document.getElementById('stream-limit-filter-sheet');
+  const toggle = document.querySelector('.stream-filter-toggle');
+  if (toggle && form) {
+    toggle.addEventListener('click', () => {
+      const open = form.classList.toggle('mobile-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  document.querySelectorAll('.stream-range').forEach(button => {
+    button.addEventListener('click', () => {
+      if (!form) return;
+      const from = form.querySelector('input[name="date_from"]');
+      const to = form.querySelector('input[name="date_to"]');
+      const days = button.dataset.days;
+      if (days === 'all') {
+        from.value = '';
+        to.value = '';
+      } else {
+        const end = new Date();
+        const start = new Date(end);
+        if (days === '0') {
+          // today only
+        } else {
+          start.setDate(start.getDate() - (Number(days) - 1));
+        }
+        from.value = fmt(start);
+        to.value = fmt(end);
+      }
+      form.submit();
+    });
+  });
+})();
+</script>
 {% endblock %}

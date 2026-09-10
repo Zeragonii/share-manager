@@ -475,35 +475,43 @@ a.button-link, .button-link{white-space:nowrap}
 }
 
 
-/* v0.7.4 Payments phone-first polish. */
-.payment-entry-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.payment-entry-heading h2{margin-bottom:0}.payment-entry-heading>span{display:none}.payment-history-mobile{display:none}
-@media(max-width:700px){
-  .payment-entry-section{padding:13px;margin-bottom:12px}
-  .payment-entry-heading{margin-bottom:10px}.payment-entry-heading h2{font-size:18px}.payment-entry-heading>span{display:inline;font-size:9px;text-transform:uppercase;letter-spacing:.05em}
-  .payment-form{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important}
-  .payment-customer-label{grid-column:1/-1}.payment-customer-label input[type="search"]{min-height:46px}
-  .payment-amount-field,.payment-date-field,.payment-source-field,.payment-periods-field{min-width:0}
-  .payment-secondary-field{grid-column:1/-1}
-  .apply-payment{grid-column:1/-1;min-height:44px;margin:1px 0;padding:9px 10px}
-  .payment-record-button{grid-column:1/-1;min-height:46px;font-size:14px}
-  .payment-form input,.payment-form select{min-height:44px;font-size:16px}
-  .payment-period-preview{margin-top:9px;padding:10px;font-size:10px;line-height:1.4}
-  .payment-help{font-size:10px;line-height:1.4;margin-top:9px}
-  .customer-picker-menu{position:fixed;left:10px;right:10px;top:76px;max-height:52vh;z-index:95;border-radius:12px;padding:7px}
-  .customer-picker-option{padding:11px 12px;min-height:50px}.customer-picker-option strong{font-size:13px}.customer-picker-option span{font-size:10px}
-  .source-manager{margin-top:12px}.source-manager>summary{padding:11px 0;font-size:11px}
-  .payment-history-section{padding:13px}.payment-history-section h2{font-size:18px;margin-bottom:10px}
-  .payment-history-desktop{display:none}.payment-history-mobile{display:grid;gap:8px}
-  .payment-mobile-card{display:grid;gap:9px;padding:11px;border:1px solid var(--line);border-radius:10px;background:#0e141d}
-  .payment-mobile-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.payment-mobile-card-top>div:first-child{display:grid;gap:3px;min-width:0}.payment-mobile-card-top strong{font-size:13px}.payment-mobile-card-top .muted{font-size:9px}
-  .payment-mobile-amount{font-size:18px;font-weight:850;white-space:nowrap;color:#fff}
-  .payment-mobile-meta{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}.payment-mobile-meta>div{display:grid;gap:3px;padding:8px;border-radius:8px;background:#121a25}.payment-mobile-meta span{font-size:8px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}.payment-mobile-meta strong{font-size:10px;overflow-wrap:anywhere}.payment-mobile-reference{grid-column:1/-1}
-  .payment-mobile-actions{display:flex;align-items:center;justify-content:flex-end}.payment-mobile-actions button{min-height:40px}.payment-mobile-card-voided{opacity:.5}.payment-mobile-empty{padding:14px;text-align:center;font-size:11px}
-  .payment-delete-form{padding:0 14px 14px}
+/* v0.7.5 Stream Limits phone-first pass */
+.stream-limit-mobile-tools,.stream-limit-mobile-cards{display:none}
+@media(max-width:900px){
+  .stream-limit-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .stream-limit-stats .stat{padding:13px 12px;min-width:0}
+  .stream-limit-stats .stat strong{font-size:21px;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stream-limit-stats .stat span{font-size:10px;line-height:1.25}
+  .stream-limit-heading p{font-size:12px;margin-bottom:8px}
+  .stream-limit-mobile-tools{display:flex;align-items:center;gap:8px;margin:10px 0 12px}
+  .stream-limit-quick-ranges{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;flex:1;min-width:0}
+  .stream-limit-quick-ranges button,.stream-filter-toggle{min-height:42px;padding:8px 9px;font-size:11px}
+  .stream-filter-toggle{flex:0 0 auto}
+  .stream-limit-filters{display:none;grid-template-columns:1fr 1fr;margin:0 0 14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#0e141d}
+  .stream-limit-filters.mobile-open{display:grid}
+  .stream-limit-filters button{grid-column:1/-1}
+  .stream-limit-desktop-table{display:none}
+  .stream-limit-mobile-cards{display:grid;gap:10px}
+  .stream-limit-event-card{padding:13px;border:1px solid var(--line);border-radius:11px;background:#0e141d;display:grid;gap:11px}
+  .stream-limit-event-card.success{border-left:3px solid #2f855a}
+  .stream-limit-event-card.failed{border-left:3px solid #c53030}
+  .stream-limit-event-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .stream-limit-customer{font-weight:800;color:#eef2f7;text-decoration:none;font-size:15px}
+  .stream-limit-event-head .muted{font-size:10px;margin-top:3px}
+  .stream-limit-event-counts{display:grid;grid-template-columns:.75fr .75fr 1.5fr;gap:8px}
+  .stream-limit-event-counts span{display:grid;gap:2px;padding:8px 9px;border-radius:8px;background:#121a26;min-width:0}
+  .stream-limit-event-counts strong{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stream-limit-event-counts small{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .stream-limit-event-session{display:grid;gap:3px;min-width:0}
+  .stream-limit-event-session strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stream-limit-event-session .muted{font-size:10px;overflow-wrap:anywhere}
+  .stream-limit-event-detail{padding-top:8px;border-top:1px solid var(--line);font-size:10px;line-height:1.4}
+  .stream-limit-mobile-empty{padding:16px;border:1px dashed var(--line);border-radius:10px;text-align:center}
 }
-@media(max-width:430px){
-  .payment-form{grid-template-columns:1fr!important}
-  .payment-customer-label,.payment-secondary-field,.apply-payment,.payment-record-button{grid-column:1}
-  .payment-mobile-meta{grid-template-columns:1fr}
-  .payment-mobile-reference{grid-column:auto}
+@media(max-width:520px){
+  .stream-limit-quick-ranges{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stream-limit-mobile-tools{align-items:stretch}
+  .stream-filter-toggle{min-width:76px}
+  .stream-limit-event-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stream-limit-event-counts span:last-child{grid-column:1/-1}
 }

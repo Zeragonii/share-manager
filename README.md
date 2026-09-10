@@ -326,5 +326,5 @@ The installed PWA Dashboard uses a denser phone-first presentation: compact prim
 - Reworked the bulk-action tray into a phone-friendly fixed panel above the PWA bottom navigation.
 
 
-## v0.7.4
-- Payments phone-first pass: denser mobile payment entry, improved customer picker, portrait-friendly previews, and native-style mobile payment-history cards while preserving the desktop table.
+## v0.7.5
+- Stream Limits mobile-first UI: compact stats, quick date filters, collapsible filter panel, mobile enforcement cards, clearer success/failure presentation, tappable customers, and no horizontal scrolling.
