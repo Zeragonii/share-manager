@@ -70,34 +70,40 @@
 <section><h2>{{ 'Archived customers' if archived_mode else 'Managed customers' }}</h2>{% if archived_mode %}<p class="muted archived-customer-help">Archived customers remain in payment, subscription, audit and Tautulli history. Restore one to return it to the normal customer list.</p>{% endif %}
 <div class="customer-toolbar">
   <label class="customer-search">Search customers<input id="customer-search" type="search" placeholder="Name, email or Plex username…" autocomplete="off"></label>
-  <label class="customer-package-filter">Package<select id="customer-package-filter"><option value="all">All packages</option></select></label>
-  <label class="customer-activity-filter">Activity<select id="customer-activity-filter">
-    <option value="all">All activity</option>
-    <option value="watching">Watching now</option>
-    <option value="7d">Active in last 7 days</option>
-    <option value="30d">Active in last 30 days</option>
-    <option value="inactive30">Inactive 30+ days</option>
-    <option value="inactive90">Inactive 90+ days</option>
-    <option value="never">Never streamed</option>
-  </select></label>
-  <label class="customer-sort">Sort by<select id="customer-sort">
-    <option value="expiry-asc">Expiring soonest</option>
-    <option value="expiry-desc">Expiring latest</option>
-    <option value="last-streamed-desc">Last streamed</option>
-    <option value="activity-desc">Most active · 30d</option>
-    <option value="activity-asc">Least active · 30d</option>
-    <option value="name-asc">Name A–Z</option>
-    <option value="name-desc">Name Z–A</option>
-    <option value="status">Status</option>
-  </select></label>
-  <div class="customer-filters" role="group" aria-label="Filter customers by status">
-    <button type="button" class="secondary customer-filter active" data-status="all">All <span class="filter-count" data-count="all">0</span></button>
-    <button type="button" class="secondary customer-filter" data-status="active">Active <span class="filter-count" data-count="active">0</span></button>
-    <button type="button" class="secondary customer-filter" data-status="grace">Grace <span class="filter-count" data-count="grace">0</span></button>
-    <button type="button" class="secondary customer-filter" data-status="suspended">Suspended <span class="filter-count" data-count="suspended">0</span></button>
-    <button type="button" class="secondary customer-filter" data-status="cancelled">Cancelled <span class="filter-count" data-count="cancelled">0</span></button>
-    <button type="button" class="secondary customer-filter" data-status="exempt">Exempt <span class="filter-count" data-count="exempt">0</span></button>
+  <button type="button" class="secondary customer-filter-toggle" id="customer-filter-toggle" aria-expanded="false" aria-controls="customer-filter-panel">Filters <span id="customer-filter-active-count" class="filter-toggle-count" hidden>0</span></button>
+  <div class="customer-filter-panel" id="customer-filter-panel">
+    <div class="customer-filter-panel-heading"><strong>Filter &amp; sort</strong><button type="button" class="ghost customer-filter-close" id="customer-filter-close" aria-label="Close filters">×</button></div>
+    <label class="customer-package-filter">Package<select id="customer-package-filter"><option value="all">All packages</option></select></label>
+    <label class="customer-activity-filter">Activity<select id="customer-activity-filter">
+      <option value="all">All activity</option>
+      <option value="watching">Watching now</option>
+      <option value="7d">Active in last 7 days</option>
+      <option value="30d">Active in last 30 days</option>
+      <option value="inactive30">Inactive 30+ days</option>
+      <option value="inactive90">Inactive 90+ days</option>
+      <option value="never">Never streamed</option>
+    </select></label>
+    <label class="customer-sort">Sort by<select id="customer-sort">
+      <option value="expiry-asc">Expiring soonest</option>
+      <option value="expiry-desc">Expiring latest</option>
+      <option value="last-streamed-desc">Last streamed</option>
+      <option value="activity-desc">Most active · 30d</option>
+      <option value="activity-asc">Least active · 30d</option>
+      <option value="name-asc">Name A–Z</option>
+      <option value="name-desc">Name Z–A</option>
+      <option value="status">Status</option>
+    </select></label>
+    <div class="customer-filters" role="group" aria-label="Filter customers by status">
+      <button type="button" class="secondary customer-filter active" data-status="all">All <span class="filter-count" data-count="all">0</span></button>
+      <button type="button" class="secondary customer-filter" data-status="active">Active <span class="filter-count" data-count="active">0</span></button>
+      <button type="button" class="secondary customer-filter" data-status="grace">Grace <span class="filter-count" data-count="grace">0</span></button>
+      <button type="button" class="secondary customer-filter" data-status="suspended">Suspended <span class="filter-count" data-count="suspended">0</span></button>
+      <button type="button" class="secondary customer-filter" data-status="cancelled">Cancelled <span class="filter-count" data-count="cancelled">0</span></button>
+      <button type="button" class="secondary customer-filter" data-status="exempt">Exempt <span class="filter-count" data-count="exempt">0</span></button>
+    </div>
+    <div class="customer-filter-panel-actions"><button type="button" class="secondary" id="customer-filter-reset">Reset</button><button type="button" id="customer-filter-done">Done</button></div>
   </div>
+  <div class="customer-filter-sheet-backdrop" id="customer-filter-sheet-backdrop" hidden></div>
 </div>
 {% if not archived_mode %}
 <form id="bulk-customer-form" method="post" action="/customers/bulk" class="customer-bulk-bar" hidden>
@@ -248,6 +254,13 @@
   const sort = document.getElementById('customer-sort');
   const packageFilter = document.getElementById('customer-package-filter');
   const activityFilter = document.getElementById('customer-activity-filter');
+  const filterPanel = document.getElementById('customer-filter-panel');
+  const filterToggle = document.getElementById('customer-filter-toggle');
+  const filterClose = document.getElementById('customer-filter-close');
+  const filterDone = document.getElementById('customer-filter-done');
+  const filterReset = document.getElementById('customer-filter-reset');
+  const filterBackdrop = document.getElementById('customer-filter-sheet-backdrop');
+  const filterActiveCount = document.getElementById('customer-filter-active-count');
   const list = document.querySelector('.customer-list');
   const filterButtons = [...document.querySelectorAll('.customer-filter')];
   const empty = document.getElementById('customer-filter-empty');
@@ -268,6 +281,26 @@
       option.textContent = label;
       packageFilter.appendChild(option);
     });
+  }
+
+  function setFilterSheet(open) {
+    if (!filterPanel || !filterToggle) return;
+    filterPanel.classList.toggle('mobile-open', open);
+    filterToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (filterBackdrop) filterBackdrop.hidden = !open;
+    document.body.classList.toggle('customer-filter-sheet-open', open);
+  }
+
+  function updateActiveFilterCount() {
+    let active = 0;
+    if (currentStatus !== 'all') active += 1;
+    if (currentPackage !== 'all') active += 1;
+    if (currentActivity !== 'all') active += 1;
+    if ((sort?.value || 'expiry-asc') !== 'expiry-asc') active += 1;
+    if (filterActiveCount) {
+      filterActiveCount.textContent = active;
+      filterActiveCount.hidden = active === 0;
+    }
   }
 
   const counts = {all: cards.length, active: 0, grace: 0, suspended: 0, cancelled: 0, exempt: 0};
@@ -338,6 +371,7 @@
       if (show) visible += 1;
     });
     empty.hidden = visible !== 0;
+    updateActiveFilterCount();
   }
 
   filterButtons.forEach(button => button.addEventListener('click', () => {
@@ -349,6 +383,19 @@
   sort?.addEventListener('change', applyFilters);
   packageFilter?.addEventListener('change', () => { currentPackage = packageFilter.value; applyFilters(); });
   activityFilter?.addEventListener('change', () => { currentActivity = activityFilter.value; applyFilters(); });
+  filterToggle?.addEventListener('click', () => setFilterSheet(true));
+  filterClose?.addEventListener('click', () => setFilterSheet(false));
+  filterDone?.addEventListener('click', () => setFilterSheet(false));
+  filterBackdrop?.addEventListener('click', () => setFilterSheet(false));
+  filterReset?.addEventListener('click', () => {
+    currentStatus = 'all'; currentPackage = 'all'; currentActivity = 'all';
+    filterButtons.forEach(item => item.classList.toggle('active', item.dataset.status === 'all'));
+    if (packageFilter) packageFilter.value = 'all';
+    if (activityFilter) activityFilter.value = 'all';
+    if (sort) sort.value = 'expiry-asc';
+    applyFilters();
+  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') setFilterSheet(false); });
   applyFilters();
 
   const bulkForm = document.getElementById('bulk-customer-form');

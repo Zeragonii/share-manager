@@ -317,3 +317,10 @@ Share Manager now ships as an installable Progressive Web App when served over H
 
 ### v0.7.2 mobile Dashboard
 The installed PWA Dashboard uses a denser phone-first presentation: compact primary stats, collapsible package distribution and secondary Plex analytics, portrait-friendly live session rows, and collapsible recent activity. Desktop presentation remains unchanged.
+
+## v0.7.3 — Customers phone-first
+- Added a mobile filter/sort bottom sheet so package, activity, sort and status controls no longer consume the main Customers viewport.
+- Added an active-filter count and one-tap reset/done controls.
+- Tightened compact customer rows and made live Watching now state more prominent.
+- Increased mobile selection touch targets and selected-card feedback.
+- Reworked the bulk-action tray into a phone-friendly fixed panel above the PWA bottom navigation.

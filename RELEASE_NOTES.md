@@ -114,3 +114,6 @@ The repository contains 58 tests after this release (53 from v0.5.2 plus five ad
 - Moved secondary Tautulli usage metrics behind an expandable mobile section.
 - Converted Recent Activity into an expandable mobile card feed while preserving the desktop table.
 - Preserved desktop Dashboard behaviour and live Tautulli heartbeat semantics.
+
+## 0.7.3
+Customers mobile UX polish: compact filter sheet, improved selection/bulk controls, denser customer cards and stronger live-stream visibility. Desktop behavior remains unchanged.
