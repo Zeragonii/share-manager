@@ -488,7 +488,34 @@ def auth(request: Request):
 
 
 def render(request: Request, name: str, **ctx):
-    return templates.TemplateResponse(request=request, name=name, context={"request": request, "app_version": APP_VERSION, **ctx})
+    # Keep the admin navigation ticket badge available on every admin page.
+    # Use a short-lived session here rather than making every route remember to
+    # calculate the same count. If the database is temporarily unavailable, the
+    # page can still render without the badge.
+    admin_open_ticket_count = 0
+    if logged_in(request):
+        nav_db = SessionLocal()
+        try:
+            admin_open_ticket_count = (
+                nav_db.query(func.count(SupportTicket.id))
+                .filter(SupportTicket.status != "closed")
+                .scalar()
+                or 0
+            )
+        except Exception:
+            logger.debug("Could not calculate admin ticket navigation count", exc_info=True)
+        finally:
+            nav_db.close()
+    return templates.TemplateResponse(
+        request=request,
+        name=name,
+        context={
+            "request": request,
+            "app_version": APP_VERSION,
+            "admin_open_ticket_count": admin_open_ticket_count,
+            **ctx,
+        },
+    )
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)

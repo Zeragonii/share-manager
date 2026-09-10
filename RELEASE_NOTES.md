@@ -1,3 +1,9 @@
+# 0.10.0a
+
+- Added an active-ticket count badge to the admin sidebar. The badge counts every non-Closed support ticket and stays hidden when the active queue is empty.
+- Fixed the off-canvas admin sidebar shadow remaining visible along the left edge on mobile while the drawer was closed. The shadow now appears only while the navigation drawer is open.
+- Bumped admin and customer PWA cache versions to 0.10.0a.
+
 # v0.10.0 — Support Tickets
 
 - Added customer support-ticket creation with category, subject and description.

@@ -1,5 +1,7 @@
 # Share Manager
 
+> **Current version: 0.10.0a** — active ticket sidebar count and mobile navigation shadow polish.
+
 **Current version: 0.10.0**
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
