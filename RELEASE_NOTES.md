@@ -154,3 +154,10 @@ Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incomp
 - Added subscription/package history including tier, price, interval, status, and recorded coverage.
 - Internal audit entries, admin/payment notes, external references, reconciliation details, and system logs remain admin-only.
 - Expanded portal bottom navigation to Account / Activity / History.
+
+## 0.8.3 — Customer portal UX/PWA polish
+- Added a desktop customer-portal sidebar with Account, Activity, History and sign-out; mobile keeps the compact bottom navigation.
+- Added active navigation states and shared portal iconography across desktop/mobile.
+- Added a dedicated customer-portal PWA manifest and `/portal/`-scoped service worker so customer installs launch directly into the portal rather than the admin interface.
+- Added customer self-service password changes. Password changes rotate the portal session version, revoke other customer sessions, and refresh the current session safely.
+- Tightened desktop content width, mobile safe-area spacing, touch targets and portal security-form layout.

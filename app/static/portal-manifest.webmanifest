@@ -1,0 +1,23 @@
+{
+  "id": "/portal/",
+  "name": "Share Manager Portal",
+  "short_name": "SM Portal",
+  "description": "Customer access, Plex activity and billing history for Share Manager.",
+  "start_url": "/portal",
+  "scope": "/portal",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#0b0f15",
+  "theme_color": "#0f141c",
+  "orientation": "any",
+  "icons": [
+    {"src":"/static/icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"/static/icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+    {"src":"/static/icons/maskable-192.png","sizes":"192x192","type":"image/png","purpose":"maskable"},
+    {"src":"/static/icons/maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+  ],
+  "shortcuts": [
+    {"name":"Activity","short_name":"Activity","url":"/portal/activity","icons":[{"src":"/static/icons/icon-192.png","sizes":"192x192","type":"image/png"}]},
+    {"name":"History","short_name":"History","url":"/portal/history","icons":[{"src":"/static/icons/icon-192.png","sizes":"192x192","type":"image/png"}]}
+  ]
+}

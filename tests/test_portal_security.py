@@ -26,3 +26,21 @@ def test_portal_username_defaults_from_plex_username():
 def test_portal_username_defaults_from_email_local_part():
     customer = SimpleNamespace(id=8, plex_username="matt+plex@example.com", email=None, name="Matt Brown")
     assert _portal_username_base(customer) == "mattplex"
+
+
+def test_portal_manifest_is_scoped_to_customer_portal():
+    import json
+    from pathlib import Path
+    manifest = json.loads(Path("app/static/portal-manifest.webmanifest").read_text())
+    assert manifest["start_url"] == "/portal"
+    assert manifest["scope"] == "/portal"
+    assert manifest["display"] == "standalone"
+
+
+def test_portal_password_change_form_requires_current_and_confirmed_password():
+    from pathlib import Path
+    template = Path("app/templates/portal_dashboard.html").read_text()
+    assert 'action="/portal/password"' in template
+    assert 'name="current_password"' in template
+    assert 'name="new_password"' in template
+    assert 'name="confirm_password"' in template

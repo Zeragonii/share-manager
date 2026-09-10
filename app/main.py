@@ -425,6 +425,20 @@ def service_worker():
     )
 
 
+@app.get("/portal/manifest.webmanifest", include_in_schema=False)
+def portal_pwa_manifest():
+    return FileResponse("app/static/portal-manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/portal/service-worker.js", include_in_schema=False)
+def portal_service_worker():
+    return FileResponse(
+        "app/static/portal-service-worker.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Service-Worker-Allowed": "/portal"},
+    )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "version": APP_VERSION}
@@ -505,7 +519,50 @@ def portal_dashboard(request: Request, db: Session = Depends(get_db)):
     if not sub:
         sub = db.query(Subscription).options(joinedload(Subscription.billing_tier).joinedload(BillingTier.package)).filter(Subscription.customer_id == customer.id).order_by(Subscription.id.desc()).first()
     effective_status = "exempt" if customer.exempt else customer.status
-    return render(request, "portal_dashboard.html", customer=customer, subscription=sub, effective_status=effective_status, now=datetime.utcnow())
+    return render(
+        request, "portal_dashboard.html", customer=customer, subscription=sub, effective_status=effective_status,
+        notice=request.query_params.get("notice"), error=request.query_params.get("error"), now=datetime.utcnow(),
+    )
+
+
+@app.post("/portal/password")
+def portal_change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    customer = _portal_customer(request, db)
+    if not customer:
+        response = RedirectResponse("/portal/login", status_code=303)
+        response.delete_cookie("sm_portal_session", path="/portal")
+        return response
+
+    if not verify_portal_password(current_password, customer.portal_password_hash):
+        return RedirectResponse("/portal?error=" + quote_plus("Current password is incorrect."), status_code=303)
+    if new_password != confirm_password:
+        return RedirectResponse("/portal?error=" + quote_plus("New passwords do not match."), status_code=303)
+    if len(new_password) < 12:
+        return RedirectResponse("/portal?error=" + quote_plus("New password must be at least 12 characters."), status_code=303)
+    if len(new_password.encode("utf-8")) > 72:
+        return RedirectResponse("/portal?error=" + quote_plus("New password is too long; use no more than 72 UTF-8 bytes."), status_code=303)
+
+    customer.portal_password_hash = hash_portal_password(new_password)
+    customer.portal_session_version = int(customer.portal_session_version or 1) + 1
+    db.add(AuditLog(
+        actor=f"portal:{customer.id}", action="portal.password.change", target_type="customer",
+        target_id=str(customer.id), detail="Customer changed own portal password; other portal sessions revoked",
+    ))
+    db.commit()
+
+    response = RedirectResponse("/portal?notice=" + quote_plus("Password updated. Other portal sessions have been signed out."), status_code=303)
+    response.set_cookie(
+        "sm_portal_session", make_portal_session(customer.id, int(customer.portal_session_version or 1)),
+        httponly=True, samesite="lax", secure=settings.session_cookie_secure,
+        max_age=settings.session_max_age_seconds, path="/portal",
+    )
+    return response
 
 
 @app.get("/portal/history", response_class=HTMLResponse)

@@ -362,3 +362,6 @@ Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incomp
 
 ## v0.8.2 — Customer financial & subscription history
 The customer portal now includes a read-only History area. Authenticated customers can review their own recorded payments, complimentary access grants, and package/subscription history. Payment notes, external references, administrator audit entries, reconciliation details, and other internal-only operational data remain private. Reversed payments are shown transparently but excluded from completed-payment and lifetime-paid totals.
+
+### Customer portal UX (v0.8.3)
+The customer portal uses a left navigation rail on desktop and a bottom navigation bar on mobile. It has its own PWA manifest at `/portal/manifest.webmanifest` and service worker at `/portal/service-worker.js`, allowing customers to install the portal with `/portal` as its start URL. Customers can also change their own portal password from Account; doing so revokes other portal sessions while issuing a fresh session to the current browser.

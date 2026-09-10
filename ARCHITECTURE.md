@@ -251,3 +251,6 @@ Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incomp
 
 ## v0.8.2 — Portal history boundary
 `GET /portal/history` derives the customer exclusively from the signed portal session, then queries Payment, SubscriptionCredit, and Subscription rows scoped to that customer ID. No customer ID is accepted from the browser. The customer-facing view intentionally excludes `AuditLog`, payment notes/external references, reconciliation state, notification delivery records, and administrator-only metadata. The portal now has Account / Activity / History navigation.
+
+## Customer portal shell and PWA (v0.8.3)
+The customer portal is responsive with separate navigation presentations: a sticky left sidebar on desktop and a bottom navigation bar on mobile. Customer portal PWA resources are scoped beneath `/portal/`; the portal manifest starts at `/portal`, while its service worker caches only static assets and uses network-first navigation. Portal password changes verify the existing password, replace the bcrypt hash, increment `portal_session_version`, and issue a replacement cookie for the active browser so all other customer sessions are revoked.

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><title>Customer Portal · Share Manager</title><link rel="icon" href="/static/icons/favicon.ico"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><meta name="application-name" content="Share Manager Portal"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Share Manager Portal"><title>Customer Portal · Share Manager</title><link rel="manifest" href="/portal/manifest.webmanifest"><link rel="icon" href="/static/icons/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
 <body class="portal-body">
 <main class="portal-login-shell">
   <section class="portal-login-card">
@@ -13,4 +13,5 @@
     </form>
   </section>
 </main>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/portal/service-worker.js',{scope:'/portal'}).catch(()=>{}));}</script>
 </body></html>

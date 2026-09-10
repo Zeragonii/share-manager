@@ -1,0 +1,25 @@
+{% macro icon_account() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.42 0-8 2.24-8 5v2h16v-2c0-2.76-3.58-5-8-5Z"/></svg>{%- endmacro %}
+{% macro icon_activity() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h4l2-6 4 11 2-5h6v-2h-7.44L13 12.4 8.8 1 5.56 11H3v2Z"/></svg>{%- endmacro %}
+{% macro icon_history() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 1-7.45 5H2l3.5-3.5L9 9H6.6A6 6 0 1 0 12 6V4Zm-1 3h2v5.4l3.6 2.1-1 1.73L11 13.5V7Z"/></svg>{%- endmacro %}
+{% macro portal_sidebar(active, customer) -%}
+<aside class="portal-sidebar" aria-label="Customer portal navigation">
+  <div class="portal-sidebar-brand"><img src="/static/icons/icon-192.png" alt=""><div><strong>Share Manager</strong><span>Customer Portal</span></div></div>
+  <nav class="portal-sidebar-nav">
+    <a href="/portal" class="{{ 'active' if active == 'account' else '' }}" {% if active == 'account' %}aria-current="page"{% endif %}>{{ icon_account() }}<span>Account</span></a>
+    <a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>
+    <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>History</span></a>
+  </nav>
+  <div class="portal-sidebar-account"><span>Signed in as</span><strong>{{ customer.name }}</strong><small>{{ customer.portal_username }}</small></div>
+  <form method="post" action="/portal/logout" class="portal-sidebar-signout"><button class="ghost">Sign out</button></form>
+</aside>
+{%- endmacro %}
+{% macro portal_topbar(customer) -%}
+<header class="portal-topbar"><div class="portal-mobile-brand"><img src="/static/icons/icon-192.png" alt=""><div><strong>Share Manager</strong><span>Customer Portal</span></div></div><form method="post" action="/portal/logout"><button class="ghost">Sign out</button></form></header>
+{%- endmacro %}
+{% macro portal_bottom_nav(active) -%}
+<nav class="portal-bottom-nav" aria-label="Customer portal">
+  <a href="/portal" class="{{ 'active' if active == 'account' else '' }}" {% if active == 'account' %}aria-current="page"{% endif %}>{{ icon_account() }}<span>Account</span></a>
+  <a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>
+  <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>History</span></a>
+</nav>
+{%- endmacro %}

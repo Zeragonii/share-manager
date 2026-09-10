@@ -1,10 +1,13 @@
+{% from '_portal_navigation.html' import portal_sidebar, portal_topbar, portal_bottom_nav %}
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><title>Activity · Share Manager</title><link rel="icon" href="/static/icons/favicon.ico"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><meta name="application-name" content="Share Manager Portal"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Share Manager Portal"><title>Activity · Share Manager</title><link rel="manifest" href="/portal/manifest.webmanifest"><link rel="icon" href="/static/icons/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
 <body class="portal-body">
-<div class="portal-shell">
-<header class="portal-topbar"><div><strong>Share Manager</strong><span>Customer Portal</span></div><form method="post" action="/portal/logout"><button class="ghost">Sign out</button></form></header>
+<div class="portal-shell portal-app-shell">
+{{ portal_sidebar('activity', customer) }}
+<div class="portal-content-shell">
+{{ portal_topbar(customer) }}
 <main class="portal-main portal-main-with-nav">
-  <section class="portal-page-heading"><div><span class="muted">Your Plex account</span><h1>Activity</h1></div><a class="button-link secondary small-action" href="/portal">Account</a></section>
+  <section class="portal-page-heading"><div><span class="muted">Your Plex account</span><h1>Activity</h1></div></section>
   {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 
   <section class="portal-live-section">
@@ -45,7 +48,8 @@
     </div>
   </section>
 </main>
-<nav class="portal-bottom-nav" aria-label="Customer portal"><a href="/portal"><span>Account</span></a><a href="/portal/activity" class="active"><span>Activity</span></a><a href="/portal/history"><span>History</span></a></nav>
+{{ portal_bottom_nav('activity') }}
+</div>
 </div>
 <script>
 (() => {
@@ -79,5 +83,6 @@
   }
   window.setInterval(refresh, Math.max(10, refreshSeconds) * 1000);
 })();
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/portal/service-worker.js',{scope:'/portal'}).catch(()=>{}));}
 </script>
 </body></html>
