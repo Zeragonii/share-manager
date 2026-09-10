@@ -347,3 +347,7 @@ The installed PWA Dashboard uses a denser phone-first presentation: compact prim
 - Customer portal login is rate-limited and uses the same Secure/HttpOnly session policy as the administrator UI.
 - The initial read-only portal dashboard shows package, tier, price, access state, paid-through/grace dates, stream allowance, Plex identity, and contact email.
 - Activity, enforcement history, and payment/subscription history are intentionally reserved for later 0.8.x releases.
+
+
+### 0.8.0 build compatibility fix
+Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incompatible with Passlib 1.7.4's backend self-test on Python 3.12 and can fail before hashing otherwise-valid portal passwords.

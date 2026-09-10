@@ -133,3 +133,7 @@ Customers mobile UX polish: compact filter sheet, improved selection/bulk contro
 
 ## v0.8.0
 Customer portal foundation: opt-in per-customer credentials, one-time temporary-password display, bcrypt hashing, separate timed portal sessions, login throttling, cancellation/session revocation, and a read-only subscription/account dashboard.
+
+
+### 0.8.0 build compatibility fix
+Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incompatible with Passlib 1.7.4's backend self-test on Python 3.12 and can fail before hashing otherwise-valid portal passwords.

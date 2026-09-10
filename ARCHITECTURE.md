@@ -236,3 +236,7 @@ Dashboard mobile rendering remains server-rendered Jinja with progressive disclo
 Customer portal authentication is intentionally isolated from admin authentication. Each customer may have an optional unique portal username, bcrypt password hash, enable state, session-version integer, and login timestamps. The `sm_portal_session` signed cookie contains only the customer ID and current portal session version. Every portal request re-loads the customer from PostgreSQL and rejects disabled, archived, cancelled, or version-mismatched sessions.
 
 Passwords are never stored reversibly. Enable/reset operations display the submitted/generated temporary password exactly once, then only the hash remains. Cancellation disables portal access and rotates the portal session version. Portal routes are read-only in 0.8.0 and derive the customer exclusively from the authenticated session rather than URL/query customer IDs.
+
+
+### 0.8.0 build compatibility fix
+Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incompatible with Passlib 1.7.4's backend self-test on Python 3.12 and can fail before hashing otherwise-valid portal passwords.
