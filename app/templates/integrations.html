@@ -75,7 +75,9 @@
   <div class="row tautulli-actions secondary-actions">
     <form method="post" action="/integrations/tautulli/test"><button class="secondary">Test connection</button></form>
     <form method="post" action="/integrations/tautulli/sync"><button class="secondary">Sync now</button></form>
+    <form method="post" action="/integrations/tautulli/history/force-resync" onsubmit="return confirm('Force a complete watch-history re-sync? This deletes only Share Manager\'s cached Tautulli watch history and rebuilds it from scratch. On large histories this may take a long time. Customer, billing and stream-limit data are not affected.');"><button class="danger">Force full re-sync</button></form>
   </div>
+  <p class="muted tautulli-resync-help">Force full re-sync clears only the cached watch-history rows and backfill checkpoints, then the asynchronous worker rebuilds the complete history from Tautulli.</p>
   {% endif %}
 </section>
 

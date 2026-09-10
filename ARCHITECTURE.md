@@ -281,3 +281,6 @@ Portal detailed watch-history pagination is performed server-side against the ca
 
 ### v0.8.5c library history hotfix
 Detailed Tautulli watch history now resolves library names by syncing history per Plex library section. Existing cached history with missing library names is repaired asynchronously by the resumable full-history worker.
+
+## v0.8.5d watch-history rebuild
+A forced Tautulli history rebuild is an explicit cache-maintenance operation. The admin POST action is serialized through the application's DB worker lock, deletes `tautulli_watch_history` and `tautulli_history_library_sync`, resets legacy backfill fields on `tautulli_activity`, writes an audit event, and commits atomically. It does not mutate customer, billing, subscription, payment, Plex entitlement, notification or stream-limit records. The existing asynchronous backfill worker recreates per-library checkpoints and repopulates history from Tautulli on subsequent cycles.

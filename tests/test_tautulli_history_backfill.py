@@ -107,3 +107,50 @@ def test_history_page_uses_library_context_when_tautulli_row_omits_it(monkeypatc
     page = client.history_page("42", section_id="7", library_name="TV Shows")
     assert page["rows"][0]["library_name"] == "TV Shows"
     assert page["rows"][0]["section_id"] == "7"
+
+
+def test_force_full_resync_clears_only_history_cache_and_checkpoints():
+    from app.models import TautulliHistoryLibrarySync
+    from app.services.tautulli import force_full_watch_history_resync
+
+    db = make_db()
+    customer = Customer(name="Reset User", plex_user_id="42")
+    integration = Integration(kind="tautulli", name="T", enabled=True, base_url="http://tautulli", secret="key")
+    db.add_all([customer, integration]); db.flush()
+    db.add(TautulliSettings(id=1, integration_id=integration.id, sync_interval_minutes=30, live_refresh_seconds=10))
+    activity = TautulliActivity(
+        customer_id=customer.id,
+        tautulli_user_id="42",
+        history_backfill_complete=True,
+        history_backfill_offset=500,
+        history_backfill_total=500,
+        history_backfill_started_at=datetime(2026, 9, 10, 10, 0),
+        history_backfill_updated_at=datetime(2026, 9, 10, 10, 5),
+        history_backfill_error="old error",
+    )
+    db.add(activity); db.flush()
+    db.add(TautulliHistoryLibrarySync(
+        customer_id=customer.id, tautulli_user_id="42", section_id="1",
+        library_name="TV Shows", offset=500, total=500, complete=True,
+    ))
+    db.add(TautulliWatchHistory(
+        customer_id=customer.id, tautulli_user_id="42", source_row_id="abc",
+        watched_at=datetime(2026, 9, 10, 10, 0), title="Episode",
+        library_name="TV Shows", section_id="1", media_type="episode",
+        duration_seconds=1200,
+    ))
+    db.commit()
+
+    result = force_full_watch_history_resync(db, now=datetime(2026, 9, 10, 12, 0))
+    db.commit()
+
+    assert result == {"deleted_history_rows": 1, "deleted_checkpoints": 1, "customers_reset": 1}
+    assert db.query(TautulliWatchHistory).count() == 0
+    assert db.query(TautulliHistoryLibrarySync).count() == 0
+    assert db.query(Customer).count() == 1
+    refreshed = db.query(TautulliActivity).filter(TautulliActivity.customer_id == customer.id).one()
+    assert refreshed.history_backfill_complete is False
+    assert refreshed.history_backfill_offset == 0
+    assert refreshed.history_backfill_total is None
+    assert refreshed.history_backfill_started_at is None
+    assert refreshed.history_backfill_error is None

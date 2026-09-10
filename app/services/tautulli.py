@@ -254,6 +254,36 @@ def watch_history_backfill_status(db: Session) -> dict[str, Any]:
     }
 
 
+
+def force_full_watch_history_resync(db: Session, *, now: datetime | None = None) -> dict[str, int]:
+    """Clear only cached Tautulli watch history and reset all backfill checkpoints.
+
+    The caller is responsible for serializing this operation against background
+    workers and for committing the transaction. Customer, billing, subscription,
+    stream-limit and other application data are intentionally untouched.
+    """
+    now = now or datetime.utcnow()
+    deleted_history = db.query(TautulliWatchHistory).delete(synchronize_session=False)
+    deleted_checkpoints = db.query(TautulliHistoryLibrarySync).delete(synchronize_session=False)
+
+    # These fields predate the per-library checkpoint table, but reset them too so
+    # a forced rebuild is unambiguous across upgrades and old installations.
+    activities = db.query(TautulliActivity).all()
+    for activity in activities:
+        activity.history_backfill_complete = False
+        activity.history_backfill_offset = 0
+        activity.history_backfill_total = None
+        activity.history_backfill_started_at = None
+        activity.history_backfill_updated_at = now
+        activity.history_backfill_error = None
+
+    db.flush()
+    return {
+        "deleted_history_rows": int(deleted_history or 0),
+        "deleted_checkpoints": int(deleted_checkpoints or 0),
+        "customers_reset": len(activities),
+    }
+
 def sync_tautulli(db: Session, *, now: datetime | None = None) -> TautulliSyncResult:
     now = now or datetime.utcnow()
     settings_row = get_tautulli_settings(db)

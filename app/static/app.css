@@ -705,3 +705,6 @@ a.button-link, .button-link{white-space:nowrap}
 .portal-watch-page-controls{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.portal-watch-page-controls .button-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;padding:9px 12px;border-radius:7px}.portal-watch-page-controls .disabled{opacity:.45;pointer-events:none}.portal-watch-page-label{font-size:11px;color:var(--muted);white-space:nowrap}
 .portal-watch-meta span{min-height:54px;align-content:start}
 @media(max-width:700px){.portal-watch-pagination{align-items:stretch;flex-direction:column}.portal-watch-page-size label{width:100%}.portal-watch-page-controls{display:grid;grid-template-columns:1fr 1fr}.portal-watch-page-controls .button-link{width:100%}.portal-watch-page-label{grid-column:1/-1;grid-row:1;text-align:center;white-space:normal}}
+
+/* v0.8.5d force watch-history rebuild */
+.tautulli-resync-help{margin:8px 0 0;font-size:10px;max-width:760px;line-height:1.45}.secondary-actions form{margin:0}

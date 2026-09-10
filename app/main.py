@@ -59,7 +59,7 @@ from .services.backups import create_backup, list_backups, apply_retention, sche
 from .services.tautulli import (
     get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage,
     enforce_stream_limits, customer_live_sessions, terminate_customer_session,
-    backfill_watch_history_page, watch_history_backfill_status,
+    backfill_watch_history_page, watch_history_backfill_status, force_full_watch_history_resync,
 )
 from .version import APP_VERSION
 
@@ -2025,6 +2025,46 @@ def tautulli_live(request: Request, db: Session = Depends(get_db)):
         "error": live.get("error"),
         "refresh_seconds": row.live_refresh_seconds,
     }
+
+
+@app.post("/integrations/tautulli/history/force-resync")
+def force_resync_tautulli_history(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    row = get_tautulli_settings(db)
+    if not row.integration or not row.integration.enabled:
+        return RedirectResponse("/integrations?error=Enable+and+configure+Tautulli+before+forcing+a+history+re-sync", status_code=303)
+    try:
+        # Background DB workers use this same lock, so a page cannot be committed
+        # while the cache/checkpoints are being cleared. The next backfill worker
+        # cycle will reseed per-library checkpoints and begin the rebuild.
+        with DB_WORK_LOCK:
+            result = force_full_watch_history_resync(db)
+            db.add(AuditLog(
+                actor=settings.admin_username,
+                action="tautulli.history.force_resync",
+                target_type="integration",
+                target_id=str(row.integration_id),
+                detail=(
+                    f"Cleared {result['deleted_history_rows']} cached history rows and "
+                    f"{result['deleted_checkpoints']} backfill checkpoints; "
+                    f"reset {result['customers_reset']} customer history states"
+                ),
+            ))
+            db.commit()
+        notice = (
+            f"Full watch-history re-sync started. Cleared {result['deleted_history_rows']} cached rows; "
+            "the asynchronous backfill will repopulate them from Tautulli."
+        )
+        return RedirectResponse(f"/integrations?notice={quote_plus(notice)}", status_code=303)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Forced Tautulli watch-history re-sync failed")
+        return RedirectResponse(
+            f"/integrations?error={quote_plus('Could not start full watch-history re-sync: ' + str(exc))}",
+            status_code=303,
+        )
 
 
 @app.get("/api/tautulli/backfill")

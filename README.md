@@ -394,3 +394,8 @@ The customer portal uses a left navigation rail on desktop and a bottom navigati
 
 ### v0.8.5c library history hotfix
 Detailed Tautulli watch history now resolves library names by syncing history per Plex library section. Existing cached history with missing library names is repaired asynchronously by the resumable full-history worker.
+
+## v0.8.5d
+
+### Force full Tautulli history rebuild
+Integrations → Tautulli now includes **Force full re-sync**. Use it when cached detailed watch history needs to be rebuilt after parser/library-resolution changes. It clears only the local watch-history cache and its backfill checkpoints; all customer, billing and stream-limit data remains intact. The normal asynchronous backfill worker then reconstructs the full history from Tautulli.

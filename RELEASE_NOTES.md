@@ -188,3 +188,14 @@ Watch-history usability hotfix: server-side 10/25/50 row pagination and stable m
 
 ### v0.8.5c library history hotfix
 Detailed Tautulli watch history now resolves library names by syncing history per Plex library section. Existing cached history with missing library names is repaired asynchronously by the resumable full-history worker.
+
+## v0.8.5d
+
+### Force full watch-history re-sync hotfix
+- Adds an admin-only **Force full re-sync** action under Integrations → Tautulli.
+- The action deletes only Share Manager's cached Tautulli watch-history rows and per-library backfill checkpoints.
+- Customer, package, billing, payment, subscription, Plex entitlement, stream-limit and audit history data are left untouched.
+- Legacy per-customer history checkpoint fields are reset for upgrade consistency.
+- The operation is serialized against background DB workers to prevent a backfill page racing with the cache reset.
+- The existing asynchronous backfill worker automatically reseeds library checkpoints on its next cycle and rebuilds the full history from Tautulli.
+- Adds a destructive-action confirmation and records the operation in the audit log.
