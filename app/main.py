@@ -508,6 +508,51 @@ def portal_dashboard(request: Request, db: Session = Depends(get_db)):
     return render(request, "portal_dashboard.html", customer=customer, subscription=sub, effective_status=effective_status, now=datetime.utcnow())
 
 
+@app.get("/portal/history", response_class=HTMLResponse)
+def portal_history(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        response = RedirectResponse("/portal/login", status_code=303)
+        response.delete_cookie("sm_portal_session", path="/portal")
+        return response
+
+    payments = (
+        db.query(Payment)
+        .filter(Payment.customer_id == customer.id)
+        .order_by(Payment.paid_at.desc(), Payment.id.desc())
+        .all()
+    )
+    credits = (
+        db.query(SubscriptionCredit)
+        .filter(SubscriptionCredit.customer_id == customer.id)
+        .order_by(SubscriptionCredit.granted_at.desc(), SubscriptionCredit.id.desc())
+        .all()
+    )
+    subscriptions = (
+        db.query(Subscription)
+        .options(joinedload(Subscription.billing_tier).joinedload(BillingTier.package))
+        .filter(Subscription.customer_id == customer.id)
+        .order_by(Subscription.started_at.desc(), Subscription.id.desc())
+        .all()
+    )
+
+    active_payments = [payment for payment in payments if not payment.voided_at]
+    total_paid = sum((Decimal(payment.amount) for payment in active_payments), Decimal("0.00"))
+    complimentary_periods = sum(int(credit.billing_periods or 0) for credit in credits)
+
+    return render(
+        request,
+        "portal_history.html",
+        customer=customer,
+        payments=payments,
+        credits=credits,
+        subscriptions=subscriptions,
+        payment_count=len(active_payments),
+        total_paid=total_paid,
+        complimentary_periods=complimentary_periods,
+    )
+
+
 @app.get("/portal/activity", response_class=HTMLResponse)
 def portal_activity(request: Request, db: Session = Depends(get_db)):
     customer = _portal_customer(request, db)

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><title>History · Share Manager</title><link rel="icon" href="/static/icons/favicon.ico"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
+<body class="portal-body">
+<div class="portal-shell">
+<header class="portal-topbar"><div><strong>Share Manager</strong><span>Customer Portal</span></div><form method="post" action="/portal/logout"><button class="ghost">Sign out</button></form></header>
+<main class="portal-main portal-main-with-nav">
+  <section class="portal-page-heading"><div><span class="muted">Your account</span><h1>History</h1></div><a class="button-link secondary small-action" href="/portal">Account</a></section>
+
+  <section class="portal-info-section portal-history-summary-section">
+    <div class="portal-history-summary">
+      <div><span>Payments</span><strong>{{ payment_count }}</strong><small>Completed</small></div>
+      <div><span>Lifetime paid</span><strong>£{{ '%.2f'|format(total_paid) }}</strong><small>Excludes reversed payments</small></div>
+      <div><span>Complimentary</span><strong>{{ complimentary_periods }}</strong><small>Billing period{{ '' if complimentary_periods == 1 else 's' }}</small></div>
+    </div>
+  </section>
+
+  <section class="portal-info-section">
+    <div class="portal-section-heading"><div><h2>Payments</h2><span class="muted">Your recorded payment history</span></div></div>
+    <div class="portal-history-list">
+      {% for payment in payments %}
+      <article class="portal-history-card{% if payment.voided_at %} portal-history-voided{% endif %}">
+        <div class="portal-history-card-top">
+          <div><strong>£{{ '%.2f'|format(payment.amount) }}</strong><span>{{ payment.paid_at.strftime('%d %b %Y') }}</span></div>
+          <span class="badge {{ 'suspended' if payment.voided_at else 'active' }}">{{ 'Reversed' if payment.voided_at else 'Paid' }}</span>
+        </div>
+        <div class="portal-history-meta">
+          <div><span>Source</span><strong>{{ payment.source or 'Manual' }}</strong></div>
+          {% if payment.billing_periods %}<div><span>Periods</span><strong>{{ payment.billing_periods }}</strong></div>{% endif %}
+        </div>
+        {% if payment.coverage_start or payment.coverage_end %}
+        <div class="portal-history-coverage"><span>Coverage</span><strong>{{ payment.coverage_start.strftime('%d %b %Y') if payment.coverage_start else '—' }} → {{ payment.coverage_end.strftime('%d %b %Y') if payment.coverage_end else '—' }}</strong></div>
+        {% endif %}
+      </article>
+      {% else %}<div class="portal-empty-live">No payments are recorded for your account yet.</div>{% endfor %}
+    </div>
+  </section>
+
+  <section class="portal-info-section">
+    <div class="portal-section-heading"><div><h2>Complimentary access</h2><span class="muted">Free access periods granted to your account</span></div></div>
+    <div class="portal-history-list">
+      {% for credit in credits %}
+      <article class="portal-history-card">
+        <div class="portal-history-card-top"><div><strong>+{{ credit.billing_periods }} period{{ '' if credit.billing_periods == 1 else 's' }}</strong><span>{{ credit.granted_at.strftime('%d %b %Y') }}</span></div><span class="badge grace">Complimentary</span></div>
+        <div class="portal-history-coverage"><span>Coverage</span><strong>{{ credit.coverage_start.strftime('%d %b %Y') }} → {{ credit.coverage_end.strftime('%d %b %Y') }}</strong></div>
+        {% if credit.reason %}<div class="portal-history-reason"><span>Reason</span><strong>{{ credit.reason }}</strong></div>{% endif %}
+      </article>
+      {% else %}<div class="portal-empty-live">No complimentary access has been recorded for your account.</div>{% endfor %}
+    </div>
+  </section>
+
+  <section class="portal-info-section">
+    <div class="portal-section-heading"><div><h2>Subscription history</h2><span class="muted">Packages and billing tiers assigned to your account</span></div></div>
+    <div class="portal-history-list">
+      {% for sub in subscriptions %}
+      <article class="portal-history-card">
+        <div class="portal-history-card-top"><div><strong>{{ sub.billing_tier.package.name }}</strong><span>{{ sub.billing_tier.name }} · started {{ sub.started_at.strftime('%d %b %Y') }}</span></div><span class="badge {{ sub.status }}">{{ sub.status }}</span></div>
+        <div class="portal-history-meta">
+          <div><span>Price</span><strong>£{{ '%.2f'|format(sub.billing_tier.price) }}</strong></div>
+          <div><span>Interval</span><strong>{{ sub.billing_tier.interval_count }} {{ sub.billing_tier.interval_unit }}{{ 's' if sub.billing_tier.interval_count != 1 else '' }}</strong></div>
+        </div>
+        {% if sub.current_period_end %}<div class="portal-history-coverage"><span>Last recorded access</span><strong>Paid through {{ sub.current_period_end.strftime('%d %b %Y') }}{% if sub.grace_until %} · grace until {{ sub.grace_until.strftime('%d %b %Y') }}{% endif %}</strong></div>{% endif %}
+      </article>
+      {% else %}<div class="portal-empty-live">No subscription history is recorded for your account.</div>{% endfor %}
+    </div>
+  </section>
+
+  <section class="portal-privacy-note"><strong>What you can see here</strong><span>This page contains your customer-facing billing and access history. Internal administrator notes, audit records, reconciliation details and system logs are not shown.</span></section>
+</main>
+<nav class="portal-bottom-nav" aria-label="Customer portal"><a href="/portal"><span>Account</span></a><a href="/portal/activity"><span>Activity</span></a><a href="/portal/history" class="active"><span>History</span></a></nav>
+</div>
+</body></html>

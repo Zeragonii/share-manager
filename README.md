@@ -359,3 +359,6 @@ Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incomp
 - Live sessions refresh asynchronously using the configured Tautulli live interval.
 - Customers can stop only their own currently active Plex sessions. Ownership is re-verified server-side against a fresh Tautulli activity response before termination; arbitrary session keys cannot be used to stop another customer's playback.
 - Customer-initiated stops are recorded in the admin audit log but are not counted as stream-limit enforcement events.
+
+## v0.8.2 — Customer financial & subscription history
+The customer portal now includes a read-only History area. Authenticated customers can review their own recorded payments, complimentary access grants, and package/subscription history. Payment notes, external references, administrator audit entries, reconciliation details, and other internal-only operational data remain private. Reversed payments are shown transparently but excluded from completed-payment and lifetime-paid totals.
