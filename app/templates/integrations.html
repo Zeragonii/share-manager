@@ -95,6 +95,26 @@
     <p class="muted" id="admin-push-status">Checking this browser…</p>
   </article>
 
+  <article class="card critical-broadcast-card" id="critical-customer-broadcast">
+    <div class="row between critical-broadcast-heading">
+      <div><h3>Critical customer broadcast</h3><p class="muted">Send an important service announcement to every eligible customer device with push notifications enabled.</p></div>
+      <span class="badge error-badge">critical</span>
+    </div>
+    <div class="critical-broadcast-audience">
+      <span><strong>{{ critical_broadcast_audience.customers }}</strong><small>customer{{ '' if critical_broadcast_audience.customers == 1 else 's' }}</small></span>
+      <span><strong>{{ critical_broadcast_audience.devices }}</strong><small>enabled device{{ '' if critical_broadcast_audience.devices == 1 else 's' }}</small></span>
+    </div>
+    <form method="post" action="/notifications/broadcast/critical" class="critical-broadcast-form" onsubmit="return confirm('Send this CRITICAL notification to {{ critical_broadcast_audience.customers }} customer{{ '' if critical_broadcast_audience.customers == 1 else 's' }} across {{ critical_broadcast_audience.devices }} enabled device{{ '' if critical_broadcast_audience.devices == 1 else 's' }}?');">
+      <label>Title<input name="title" maxlength="120" placeholder="Planned service maintenance" required></label>
+      <label>Message<textarea name="message" maxlength="1000" rows="4" placeholder="Share Manager/Plex will be unavailable from 22:00 while scheduled maintenance is carried out. Service is expected to return by 23:00." required></textarea><small class="muted">Keep it concise enough to read comfortably from a phone notification.</small></label>
+      <label>Open when tapped<select name="destination"><option value="/portal">Account</option><option value="/portal/activity">Activity</option><option value="/portal/history">History</option></select></label>
+      <div class="critical-broadcast-footer">
+        <p class="muted">Critical broadcasts bypass category-level notification preferences, but still respect the customer's master push-notification setting.</p>
+        <button class="danger" {% if critical_broadcast_audience.devices == 0 %}disabled title="No eligible customer devices"{% endif %}>Send critical broadcast</button>
+      </div>
+    </form>
+  </article>
+
   <div class="notification-add-grid">
     <details class="integration-add">
       <summary>Add Home Assistant</summary>

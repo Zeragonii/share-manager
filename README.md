@@ -423,3 +423,10 @@ Share Manager now has a first-class notification event layer and native PWA Web 
 - Notification deliveries now record channel and recipient metadata for troubleshooting.
 
 Web Push requires HTTPS (or localhost) and browser/OS notification permission. The existing Cloudflare/NPM HTTPS deployment is suitable; the customer portal service worker remains scoped to `/portal`.
+
+
+## v0.9.1 — Critical Customer Broadcasts
+
+Administrators can send critical service announcements from **Integrations → Notifications** to all eligible customer Web Push subscriptions. The broadcast composer shows the current customer/device audience, accepts a title/message and customer-portal destination, and requires confirmation before sending.
+
+Critical broadcasts are deliberately different from ordinary customer events: they ignore per-category event preferences but still respect the customer's master **Allow push notifications** setting. Archived, Cancelled or portal-disabled customers are never included. Broadcast events and every device delivery remain visible in the normal notification event/delivery audit trail.

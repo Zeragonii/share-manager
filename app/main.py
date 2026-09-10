@@ -61,6 +61,7 @@ from .services.notifications import (
     EVENT_DEFINITIONS, CUSTOMER_PUSH_EVENTS, format_due_reminder_days, notify_due_reminders, notify_event, send_test,
     ensure_platform_settings, save_push_subscription, disable_push_subscription, customer_push_status,
     update_customer_preferences, send_portal_test, send_admin_push_test,
+    critical_broadcast_audience, send_critical_customer_broadcast,
 )
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy, validate_application_schema, BackupStorageError
 from .services.tautulli import (
@@ -2002,6 +2003,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         notification_events=EVENT_DEFINITIONS,
         notification_default_due_days=max(0, int(settings.notification_due_soon_days)),
         admin_push_devices=admin_push_devices, notification_event_count=notification_event_count,
+        critical_broadcast_audience=critical_broadcast_audience(db),
         tautulli_settings=get_tautulli_settings(db),
         tautulli_backfill=watch_history_backfill_status(db),
         error=error,
@@ -2179,6 +2181,41 @@ def tautulli_backfill_status_api(request: Request, db: Session = Depends(get_db)
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     return watch_history_backfill_status(db)
 
+
+
+@app.post("/notifications/broadcast/critical")
+def critical_customer_broadcast(
+    request: Request,
+    title: str = Form(...),
+    message: str = Form(...),
+    destination: str = Form("/portal"),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    try:
+        event_row, deliveries = send_critical_customer_broadcast(
+            db, title=title, message=message, url=destination
+        )
+    except ValueError as exc:
+        return RedirectResponse(f"/integrations?error={quote_plus(str(exc))}#critical-customer-broadcast", status_code=303)
+
+    successful = sum(1 for delivery in deliveries if delivery.success)
+    failed = len(deliveries) - successful
+    customer_ids = {delivery.recipient_id for delivery in deliveries if delivery.recipient_type == "customer" and delivery.recipient_id}
+    db.add(AuditLog(
+        actor=settings.admin_username,
+        action="notification.critical_broadcast",
+        target_type="customer_broadcast",
+        target_id=str(event_row.id),
+        detail=f"{event_row.title}; customers={len(customer_ids)} devices={len(deliveries)} delivered={successful} failed={failed}",
+    ))
+    db.commit()
+    notice = f"Critical broadcast sent to {successful} device{'s' if successful != 1 else ''}"
+    if failed:
+        notice += f" ({failed} failed)"
+    return RedirectResponse(f"/integrations?notice={quote_plus(notice)}#critical-customer-broadcast", status_code=303)
 
 @app.post("/notifications")
 def add_notification_endpoint(

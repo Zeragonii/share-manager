@@ -301,3 +301,10 @@ The admin and customer PWAs use separate service-worker scopes but the same noti
 ## v0.9.0a portal responsive filter shell
 
 The customer Activity page keeps the desktop Watch History filter grid, but at viewport widths of 700px or below the same server-side filter form is exposed through a CSS-only collapsible control and rendered as a single vertical stack. No alternate mobile filtering endpoint or duplicated filter state is introduced.
+
+
+## Critical customer broadcasts (v0.9.1)
+
+`system.critical_broadcast` is an administrator-originated Web Push event intended for service-impacting announcements. It creates one canonical `NotificationEvent` and one `NotificationDelivery` per targeted browser subscription. The broadcast path is intentionally separate from normal customer-event dispatch because category-level opt-outs do not apply; the customer's master `push_enabled` preference remains authoritative. Normal portal eligibility rules also apply, excluding archived, Cancelled and portal-disabled customers.
+
+Broadcast destinations are constrained to `/portal` paths. Delivery continues to use the common Web Push adapter, including VAPID authentication, per-device success/failure accounting and automatic disabling of 404/410 subscriptions. This keeps future Support Ticket notifications on the normal preference-aware event path while preserving an explicit emergency/maintenance channel for administrators.

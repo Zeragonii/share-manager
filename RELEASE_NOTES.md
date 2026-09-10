@@ -1,3 +1,15 @@
+# v0.9.1 — Critical Customer Broadcasts
+
+- Added an admin-only Critical customer broadcast composer under Integrations → Notifications.
+- Broadcasts fan out through Web Push to every eligible customer device with the master push-notification setting enabled.
+- Critical broadcasts intentionally bypass category-level customer notification choices so maintenance/service-disruption notices cannot be accidentally hidden while push remains enabled.
+- Archived, Cancelled, portal-disabled customers and disabled/stale subscriptions are excluded.
+- The composer shows the current eligible customer/device audience before sending, requires confirmation, and supports deep-linking to Account, Activity or History.
+- Each broadcast is recorded as a canonical `system.critical_broadcast` NotificationEvent; per-device attempts continue to use NotificationDelivery and expired subscriptions retain the existing 404/410 cleanup behavior.
+- Sending a broadcast writes an admin audit entry with customer/device/delivery counts.
+- Critical Web Push notifications request persistent interaction where supported by the browser.
+- Customer notification settings now explain that service-status/maintenance broadcasts remain enabled whenever the master push setting is enabled.
+
 # v0.8.5e
 
 Watch-history backfill progress hotfix.

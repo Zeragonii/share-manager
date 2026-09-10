@@ -110,3 +110,72 @@ def test_due_soon_reminders_are_per_endpoint_and_deduplicated():
     delivery = db.query(NotificationDelivery).filter(NotificationDelivery.success.is_(True)).one()
     assert delivery.endpoint_id == three_day.id
     assert delivery.event_key.endswith(":3")
+
+
+def test_critical_broadcast_audience_respects_master_push_setting_not_categories():
+    from app.models import Customer, CustomerNotificationPreference, PushSubscription
+    from app.services.notifications import critical_broadcast_audience
+
+    db = db_session()
+    enabled = Customer(name="Enabled", status="active", portal_enabled=True)
+    disabled = Customer(name="Disabled", status="active", portal_enabled=True)
+    cancelled = Customer(name="Cancelled", status="cancelled", portal_enabled=True)
+    db.add_all([enabled, disabled, cancelled]); db.flush()
+    db.add_all([
+        CustomerNotificationPreference(customer_id=enabled.id, push_enabled=True, events=""),
+        CustomerNotificationPreference(customer_id=disabled.id, push_enabled=False, events="payment.received"),
+        CustomerNotificationPreference(customer_id=cancelled.id, push_enabled=True, events="*"),
+        PushSubscription(owner_type="customer", customer_id=enabled.id, endpoint="https://push/1", p256dh="a", auth="b", enabled=True),
+        PushSubscription(owner_type="customer", customer_id=enabled.id, endpoint="https://push/2", p256dh="a", auth="b", enabled=True),
+        PushSubscription(owner_type="customer", customer_id=disabled.id, endpoint="https://push/3", p256dh="a", auth="b", enabled=True),
+        PushSubscription(owner_type="customer", customer_id=cancelled.id, endpoint="https://push/4", p256dh="a", auth="b", enabled=True),
+    ])
+    db.commit()
+
+    audience = critical_broadcast_audience(db)
+    assert audience == {"customers": 1, "devices": 2}
+
+
+def test_critical_broadcast_bypasses_event_categories_but_not_master_disable():
+    from app.models import Customer, CustomerNotificationPreference, NotificationDelivery, PushSubscription
+    from app.services.notifications import send_critical_customer_broadcast
+
+    db = db_session()
+    enabled = Customer(name="Enabled", status="active", portal_enabled=True)
+    disabled = Customer(name="Disabled", status="active", portal_enabled=True)
+    db.add_all([enabled, disabled]); db.flush()
+    good_sub = PushSubscription(owner_type="customer", customer_id=enabled.id, endpoint="https://push/good", p256dh="a", auth="b", enabled=True)
+    bad_sub = PushSubscription(owner_type="customer", customer_id=disabled.id, endpoint="https://push/bad", p256dh="a", auth="b", enabled=True)
+    db.add_all([
+        CustomerNotificationPreference(customer_id=enabled.id, push_enabled=True, events="payment.received"),
+        CustomerNotificationPreference(customer_id=disabled.id, push_enabled=False, events="*"),
+        good_sub, bad_sub,
+    ]); db.commit()
+
+    def fake_delivery(_db, sub, event):
+        return NotificationDelivery(
+            notification_event_id=event.id, channel="web_push", push_subscription_id=sub.id,
+            event=event.event, severity=event.severity, title=event.title, message=event.message,
+            success=True, recipient_type="customer", recipient_id=str(sub.customer_id),
+        )
+
+    with patch("app.services.notifications._deliver_push", side_effect=fake_delivery) as deliver:
+        event, deliveries = send_critical_customer_broadcast(
+            db, title="Maintenance", message="Service will be unavailable briefly.", url="/portal"
+        )
+
+    assert event.event == "system.critical_broadcast"
+    assert event.severity == "critical"
+    assert len(deliveries) == 1
+    assert deliver.call_args.args[1].customer_id == enabled.id
+
+
+def test_critical_broadcast_rejects_non_portal_destination():
+    from app.services.notifications import send_critical_customer_broadcast
+
+    db = db_session()
+    try:
+        send_critical_customer_broadcast(db, title="Maintenance", message="Notice", url="/integrations")
+        assert False, "admin destinations must not be accepted for customer broadcasts"
+    except ValueError as exc:
+        assert "customer portal path" in str(exc)

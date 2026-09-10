@@ -96,6 +96,7 @@ EVENT_DEFINITIONS = {
     "stream.limit_enforced": {"label": "Stream limit enforced", "severity": "warning", "customer": True},
     "stream.limit_enforcement_failed": {"label": "Stream limit enforcement failed", "severity": "critical", "customer": False},
     "portal.notification.test": {"label": "Portal push test", "severity": "info", "customer": True},
+    "system.critical_broadcast": {"label": "Critical system broadcast", "severity": "critical", "customer": False},
 }
 
 CUSTOMER_PUSH_EVENTS = {key for key, meta in EVENT_DEFINITIONS.items() if meta.get("customer")}
@@ -396,6 +397,88 @@ def update_customer_preferences(db: Session, customer_id: int, *, enabled: bool,
     db.commit(); db.refresh(row)
     return row
 
+
+
+def critical_broadcast_audience(db: Session) -> dict:
+    """Return the eligible customer/device audience for an admin critical broadcast.
+
+    Critical broadcasts intentionally ignore per-event category selections, but they still
+    respect the customer's master push-enabled preference and normal portal eligibility.
+    """
+    subscriptions = (
+        db.query(PushSubscription)
+        .filter(PushSubscription.owner_type == "customer", PushSubscription.enabled.is_(True))
+        .all()
+    )
+    customer_ids: set[int] = set()
+    devices = 0
+    for sub in subscriptions:
+        if not sub.customer_id:
+            continue
+        customer = db.get(Customer, sub.customer_id)
+        if not customer or not customer.portal_enabled or customer.archived or customer.status == "cancelled":
+            continue
+        pref = db.get(CustomerNotificationPreference, customer.id)
+        if pref is not None and not pref.push_enabled:
+            continue
+        devices += 1
+        customer_ids.add(customer.id)
+    return {"customers": len(customer_ids), "devices": devices}
+
+
+def send_critical_customer_broadcast(db: Session, *, title: str, message: str, url: str = "/portal") -> tuple[NotificationEvent, list[NotificationDelivery]]:
+    """Broadcast a critical Web Push announcement to every eligible customer device.
+
+    This is intentionally Web-Push-only and bypasses category-level customer preferences.
+    The master push_enabled preference, portal eligibility, and stale-subscription handling
+    remain enforced.
+    """
+    clean_title = (title or "").strip()
+    clean_message = (message or "").strip()
+    clean_url = (url or "/portal").strip() or "/portal"
+    if not clean_title:
+        raise ValueError("Broadcast title is required")
+    if not clean_message:
+        raise ValueError("Broadcast message is required")
+    if len(clean_title) > 120:
+        raise ValueError("Broadcast title must be 120 characters or fewer")
+    if len(clean_message) > 1000:
+        raise ValueError("Broadcast message must be 1000 characters or fewer")
+    if not clean_url.startswith("/portal"):
+        raise ValueError("Broadcast destination must be a customer portal path")
+
+    event_row = NotificationEvent(
+        event="system.critical_broadcast",
+        event_key=None,
+        severity="critical",
+        title=clean_title,
+        message=clean_message,
+        target_type="customer_broadcast",
+        target_id=None,
+        customer_id=None,
+        data_json=json.dumps({"url": clean_url}),
+    )
+    db.add(event_row)
+    db.commit()
+    db.refresh(event_row)
+
+    deliveries: list[NotificationDelivery] = []
+    subscriptions = (
+        db.query(PushSubscription)
+        .filter(PushSubscription.owner_type == "customer", PushSubscription.enabled.is_(True))
+        .all()
+    )
+    for sub in subscriptions:
+        if not sub.customer_id:
+            continue
+        customer = db.get(Customer, sub.customer_id)
+        if not customer or not customer.portal_enabled or customer.archived or customer.status == "cancelled":
+            continue
+        pref = db.get(CustomerNotificationPreference, customer.id)
+        if pref is not None and not pref.push_enabled:
+            continue
+        deliveries.append(_deliver_push(db, sub, event_row))
+    return event_row, deliveries
 
 def send_portal_test(db: Session, customer: Customer) -> list[NotificationDelivery]:
     return notify_event(db, event="portal.notification.test", title="Share Manager notifications enabled", message="Push notifications are working on this device.", target_type="customer", target_id=str(customer.id), data={"customer_id": customer.id, "url": "/portal"}, include_endpoints=False)
