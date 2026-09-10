@@ -117,3 +117,7 @@ The repository contains 58 tests after this release (53 from v0.5.2 plus five ad
 
 ## 0.7.3
 Customers mobile UX polish: compact filter sheet, improved selection/bulk controls, denser customer cards and stronger live-stream visibility. Desktop behavior remains unchanged.
+
+
+## v0.7.4
+- Payments phone-first pass: denser mobile payment entry, improved customer picker, portrait-friendly previews, and native-style mobile payment-history cards while preserving the desktop table.

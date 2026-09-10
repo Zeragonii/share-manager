@@ -324,3 +324,7 @@ The installed PWA Dashboard uses a denser phone-first presentation: compact prim
 - Tightened compact customer rows and made live Watching now state more prominent.
 - Increased mobile selection touch targets and selected-card feedback.
 - Reworked the bulk-action tray into a phone-friendly fixed panel above the PWA bottom navigation.
+
+
+## v0.7.4
+- Payments phone-first pass: denser mobile payment entry, improved customer picker, portrait-friendly previews, and native-style mobile payment-history cards while preserving the desktop table.

@@ -2,7 +2,7 @@
 <header><h1>Payments</h1><p>Payments are permanent ledger records. Applied payments also advance subscription coverage.</p></header>
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
-<section><h2>Record payment</h2>
+<section class="payment-entry-section"><div class="payment-entry-heading"><h2>Record payment</h2><span class="muted">Fast entry</span></div>
 <form method="post" class="grid-form payment-form">
   <label class="payment-customer-label">Customer
     <div class="customer-picker" id="payment-customer-picker">
@@ -25,14 +25,14 @@
       </div>
     </div>
   </label>
-  <label>Amount (£)<input id="payment-amount" name="amount" type="number" min="0" step="0.01" required></label>
-  <label>Payment received<input name="paid_at" type="date" value="{{ today }}" required></label>
-  <label>Source<select name="source" required>{% for source in payment_sources if source.active %}<option value="{{ source.name }}">{{ source.name }}</option>{% endfor %}</select></label>
-  <label>Reference<input name="external_reference"></label>
-  <label>Note<input name="note"></label>
-  <label>Billing periods <span class="muted">(optional override)</span><input id="billing-periods" name="billing_periods" type="number" min="1" step="1" placeholder="Auto"></label>
+  <label class="payment-amount-field">Amount (£)<input id="payment-amount" name="amount" type="number" min="0" step="0.01" required></label>
+  <label class="payment-date-field">Payment received<input name="paid_at" type="date" value="{{ today }}" required></label>
+  <label class="payment-source-field">Source<select name="source" required>{% for source in payment_sources if source.active %}<option value="{{ source.name }}">{{ source.name }}</option>{% endfor %}</select></label>
+  <label class="payment-secondary-field">Reference<input name="external_reference"></label>
+  <label class="payment-secondary-field">Note<input name="note"></label>
+  <label class="payment-periods-field">Billing periods <span class="muted">(optional override)</span><input id="billing-periods" name="billing_periods" type="number" min="1" step="1" placeholder="Auto"></label>
   <label class="check apply-payment"><input id="apply-payment" name="apply_to_subscription" type="checkbox" value="true" checked> Apply to current subscription</label>
-  <button>Record payment</button>
+  <button class="payment-record-button">Record payment</button>
 </form>
 <div id="payment-period-preview" class="payment-period-preview muted"></div>
 <p class="muted payment-help">Leave Billing periods blank to calculate automatically from amount ÷ current tier price (for example £30 on a £10/month tier = 3 monthly periods). Enter a number manually to override that calculation, which is useful for discounts or special arrangements. If paid before expiry or during grace, all purchased periods extend from the previous expiry; after grace, they start from the payment date.</p>
@@ -61,16 +61,35 @@
   </div>
 </details>
 </section>
-<section><h2>Payment history</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Source</th><th>Periods</th><th>Coverage</th><th>Reference</th><th></th></tr></thead><tbody>
+<section class="payment-history-section"><h2>Payment history</h2>
+<div class="payment-history-desktop table-wrap"><table><thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Source</th><th>Periods</th><th>Coverage</th><th>Reference</th><th></th></tr></thead><tbody>
 {% for p in payments %}<tr class="{% if p.voided_at %}payment-voided{% endif %}"><td>{{ p.paid_at.strftime('%Y-%m-%d') }}</td><td><a class="plain-link" href="/customers/{{ p.customer.id }}/history">{{ p.customer.name }}</a>{% if p.voided_at %}<span class="badge cancelled">deleted</span>{% endif %}</td><td>£{{ '%.2f'|format(p.amount) }}</td><td>{{ p.source }}</td><td>{{ p.billing_periods if p.billing_periods else '—' }}</td><td>{% if p.coverage_end %}{{ p.coverage_start.strftime('%Y-%m-%d') }} → {{ p.coverage_end.strftime('%Y-%m-%d') }}{% else %}<span class="muted">Ledger only</span>{% endif %}</td><td>{{ p.external_reference or '' }}</td><td class="payment-actions">{% if not p.voided_at %}<button type="button" class="secondary small-action" onclick="document.getElementById('payment-edit-{{ p.id }}').showModal()">Edit</button>{% endif %}</td></tr>
-{% else %}<tr><td colspan="8" class="muted">No payments recorded.</td></tr>{% endfor %}</tbody></table></div></section>
+{% else %}<tr><td colspan="8" class="muted">No payments recorded.</td></tr>{% endfor %}</tbody></table></div>
+<div class="payment-history-mobile">
+{% for p in payments %}
+<article class="payment-mobile-card{% if p.voided_at %} payment-mobile-card-voided{% endif %}">
+  <div class="payment-mobile-card-top">
+    <div><a class="plain-link" href="/customers/{{ p.customer.id }}/history"><strong>{{ p.customer.name }}</strong></a><span class="muted">{{ p.paid_at.strftime('%Y-%m-%d') }} · {{ p.source }}</span></div>
+    <div class="payment-mobile-amount">£{{ '%.2f'|format(p.amount) }}</div>
+  </div>
+  <div class="payment-mobile-meta">
+    <div><span>Coverage</span><strong>{% if p.coverage_end %}{{ p.coverage_start.strftime('%Y-%m-%d') }} → {{ p.coverage_end.strftime('%Y-%m-%d') }}{% else %}Ledger only{% endif %}</strong></div>
+    <div><span>Periods</span><strong>{{ p.billing_periods if p.billing_periods else '—' }}</strong></div>
+    {% if p.external_reference %}<div class="payment-mobile-reference"><span>Reference</span><strong>{{ p.external_reference }}</strong></div>{% endif %}
+  </div>
+  <div class="payment-mobile-actions">
+    {% if p.voided_at %}<span class="badge cancelled">deleted</span>{% elif not p.voided_at %}<button type="button" class="secondary small-action" onclick="document.getElementById('payment-edit-{{ p.id }}').showModal()">Edit payment</button>{% endif %}
+  </div>
+</article>
+{% else %}<div class="muted payment-mobile-empty">No payments recorded.</div>{% endfor %}
+</div></section>
 {% for p in payments if not p.voided_at %}
 <dialog id="payment-edit-{{ p.id }}" class="customer-modal">
   <div class="modal-heading"><div><h3>Edit payment · {{ p.customer.name }}</h3><span class="muted">Received {{ p.paid_at.strftime('%Y-%m-%d') }}{% if p.coverage_end %} · applied to subscription{% else %} · ledger only{% endif %}</span></div><button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()">×</button></div>
   <form method="post" action="/payments/{{ p.id }}/edit" class="modal-form">
     <label>Amount (£)<input name="amount" type="number" min="0" step="0.01" value="{{ '%.2f'|format(p.amount) }}" required></label>
-    <label>Payment received<input name="paid_at" type="date" value="{{ p.paid_at.strftime('%Y-%m-%d') }}" required></label>
-    <label>Source<select name="source" required>{% for source in payment_sources %}{% if source.active or source.name == p.source %}<option value="{{ source.name }}" {% if source.name == p.source %}selected{% endif %}>{{ source.name }}{% if not source.active %} (archived){% endif %}</option>{% endif %}{% endfor %}</select></label>
+    <label class="payment-date-field">Payment received<input name="paid_at" type="date" value="{{ p.paid_at.strftime('%Y-%m-%d') }}" required></label>
+    <label class="payment-source-field">Source<select name="source" required>{% for source in payment_sources %}{% if source.active or source.name == p.source %}<option value="{{ source.name }}" {% if source.name == p.source %}selected{% endif %}>{{ source.name }}{% if not source.active %} (archived){% endif %}</option>{% endif %}{% endfor %}</select></label>
     <label>Reference<input name="external_reference" value="{{ p.external_reference or '' }}"></label>
     <label>Note<input name="note" value="{{ p.note or '' }}"></label>
     <label>Billing periods<input name="billing_periods" type="number" min="1" step="1" value="{{ p.billing_periods or '' }}" {% if not p.subscription_id %}disabled{% endif %}></label>

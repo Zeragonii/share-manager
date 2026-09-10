@@ -218,3 +218,7 @@ The web UI exposes `/manifest.webmanifest` and a root-scoped `/service-worker.js
 
 ### v0.7.2 Dashboard presentation
 Dashboard mobile rendering remains server-rendered Jinja with progressive disclosure through native `<details>` elements. Historical and live data sources are unchanged; the Tautulli live count updates both desktop and mobile presentation nodes from the same asynchronous heartbeat.
+
+
+## v0.7.4
+- Payments phone-first pass: denser mobile payment entry, improved customer picker, portrait-friendly previews, and native-style mobile payment-history cards while preserving the desktop table.
