@@ -40,6 +40,9 @@ from .models import (
     SubscriptionCredit,
     NotificationEndpoint,
     NotificationDelivery,
+    NotificationEvent,
+    PushSubscription,
+    CustomerNotificationPreference,
     TautulliActivity,
     TautulliSettings,
     TautulliWatchHistory,
@@ -54,7 +57,11 @@ from .security import (
 from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
 from .services.reconcile import enqueue_reconciliation, reconcile_customer, retry_pending_reconciliations
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
-from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
+from .services.notifications import (
+    EVENT_DEFINITIONS, CUSTOMER_PUSH_EVENTS, format_due_reminder_days, notify_due_reminders, notify_event, send_test,
+    ensure_platform_settings, save_push_subscription, disable_push_subscription, customer_push_status,
+    update_customer_preferences, send_portal_test, send_admin_push_test,
+)
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy, validate_application_schema, BackupStorageError
 from .services.tautulli import (
     get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage,
@@ -557,8 +564,9 @@ def portal_dashboard(request: Request, db: Session = Depends(get_db)):
     if not sub:
         sub = db.query(Subscription).options(joinedload(Subscription.billing_tier).joinedload(BillingTier.package)).filter(Subscription.customer_id == customer.id).order_by(Subscription.id.desc()).first()
     effective_status = "exempt" if customer.exempt else customer.status
+    push_status = customer_push_status(db, customer.id)
     return render(
-        request, "portal_dashboard.html", customer=customer, subscription=sub, effective_status=effective_status,
+        request, "portal_dashboard.html", customer=customer, subscription=sub, effective_status=effective_status, push_status=push_status,
         notice=request.query_params.get("notice"), error=request.query_params.get("error"), now=datetime.utcnow(),
     )
 
@@ -647,6 +655,100 @@ def portal_history(request: Request, db: Session = Depends(get_db)):
         complimentary_periods=complimentary_periods,
     )
 
+
+@app.get("/portal/api/push/public-key")
+def portal_push_public_key(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return {"public_key": ensure_platform_settings(db).vapid_public_key}
+
+@app.post("/portal/api/push/subscribe")
+async def portal_push_subscribe(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    try:
+        body = await request.json(); keys = body.get("keys") or {}
+        endpoint = str(body.get("endpoint") or "").strip(); p256dh = str(keys.get("p256dh") or "").strip(); auth_key = str(keys.get("auth") or "").strip()
+        if not endpoint or not p256dh or not auth_key:
+            raise ValueError("Incomplete browser push subscription")
+        save_push_subscription(db, owner_type="customer", customer_id=customer.id, endpoint=endpoint, p256dh=p256dh, auth_key=auth_key, user_agent=request.headers.get("user-agent"))
+        db.add(AuditLog(actor=f"portal:{customer.portal_username}", action="notification.push.subscribe", target_type="customer", target_id=str(customer.id), detail="Customer enabled Web Push on a device")); db.commit()
+        return {"ok": True, "devices": customer_push_status(db, customer.id)["devices"]}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+@app.post("/portal/api/push/unsubscribe")
+async def portal_push_unsubscribe(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    body = await request.json(); endpoint = str(body.get("endpoint") or "").strip()
+    if endpoint:
+        disable_push_subscription(db, endpoint=endpoint, owner_type="customer", customer_id=customer.id)
+    db.add(AuditLog(actor=f"portal:{customer.portal_username}", action="notification.push.unsubscribe", target_type="customer", target_id=str(customer.id), detail="Customer disabled Web Push on a device")); db.commit()
+    return {"ok": True, "devices": customer_push_status(db, customer.id)["devices"]}
+
+@app.post("/portal/notifications/preferences")
+def portal_notification_preferences(request: Request, push_enabled: str | None = Form(None), events: list[str] = Form(default=[]), db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    update_customer_preferences(db, customer.id, enabled=bool(push_enabled), events=events)
+    db.add(AuditLog(actor=f"portal:{customer.portal_username}", action="notification.preferences.updated", target_type="customer", target_id=str(customer.id), detail=f"push={'enabled' if push_enabled else 'disabled'}; events={','.join(events)}")); db.commit()
+    return RedirectResponse("/portal?notice=Notification+preferences+saved", status_code=303)
+
+@app.post("/portal/api/push/test")
+def portal_push_test(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    deliveries = send_portal_test(db, customer)
+    success = sum(1 for d in deliveries if d.channel == "web_push" and d.success)
+    return {"ok": success > 0, "delivered": success}
+
+@app.get("/api/notifications/push/public-key")
+def admin_push_public_key(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return {"public_key": ensure_platform_settings(db).vapid_public_key}
+
+@app.post("/api/notifications/push/subscribe")
+async def admin_push_subscribe(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    try:
+        body = await request.json(); keys = body.get("keys") or {}
+        endpoint = str(body.get("endpoint") or "").strip(); p256dh = str(keys.get("p256dh") or "").strip(); auth_key = str(keys.get("auth") or "").strip()
+        if not endpoint or not p256dh or not auth_key:
+            raise ValueError("Incomplete browser push subscription")
+        save_push_subscription(db, owner_type="admin", customer_id=None, endpoint=endpoint, p256dh=p256dh, auth_key=auth_key, user_agent=request.headers.get("user-agent"))
+        db.add(AuditLog(actor=settings.admin_username, action="notification.push.subscribe", target_type="admin", detail="Admin enabled Web Push on a device")); db.commit()
+        return {"ok": True}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+@app.post("/api/notifications/push/unsubscribe")
+async def admin_push_unsubscribe(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    body = await request.json(); endpoint = str(body.get("endpoint") or "").strip()
+    if endpoint:
+        disable_push_subscription(db, endpoint=endpoint, owner_type="admin")
+    return {"ok": True}
+
+@app.post("/api/notifications/push/test")
+def admin_push_test(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    deliveries = send_admin_push_test(db)
+    success = sum(1 for d in deliveries if d.channel == "web_push" and d.recipient_type == "admin" and d.success)
+    return {"ok": success > 0, "delivered": success}
 
 @app.get("/portal/activity", response_class=HTMLResponse)
 def portal_activity(
@@ -1888,7 +1990,9 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         else:
             parts = urlsplit(endpoint.url)
             endpoint.ui_url = f"{parts.scheme}://{parts.netloc}/…" if parts.scheme and parts.netloc else "Configured webhook"
-    notification_deliveries = db.query(NotificationDelivery).options(joinedload(NotificationDelivery.endpoint)).order_by(NotificationDelivery.created_at.desc()).limit(30).all()
+    notification_deliveries = db.query(NotificationDelivery).options(joinedload(NotificationDelivery.endpoint)).order_by(NotificationDelivery.created_at.desc()).limit(50).all()
+    admin_push_devices = db.query(PushSubscription).filter(PushSubscription.owner_type == "admin", PushSubscription.enabled.is_(True)).count()
+    notification_event_count = db.query(NotificationEvent).count()
     return render(
         request,
         "integrations.html",
@@ -1897,6 +2001,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         notification_deliveries=notification_deliveries,
         notification_events=EVENT_DEFINITIONS,
         notification_default_due_days=max(0, int(settings.notification_due_soon_days)),
+        admin_push_devices=admin_push_devices, notification_event_count=notification_event_count,
         tautulli_settings=get_tautulli_settings(db),
         tautulli_backfill=watch_history_backfill_status(db),
         error=error,

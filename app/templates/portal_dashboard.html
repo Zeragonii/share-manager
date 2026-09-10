@@ -37,9 +37,43 @@
       </form>
     </details>
   </section>
+
+  <section class="portal-info-section portal-notifications-section">
+    <div class="portal-section-heading"><div><h2>Notifications</h2><span class="muted">Receive Share Manager updates on this device</span></div><span class="badge" id="push-device-count">{{ push_status.devices }} device{{ '' if push_status.devices == 1 else 's' }}</span></div>
+    <div class="push-device-actions">
+      <button type="button" id="push-enable">Enable on this device</button>
+      <button type="button" class="secondary" id="push-disable">Disable on this device</button>
+      <button type="button" class="ghost" id="push-test">Send test</button>
+      <span class="muted" id="push-status">{{ 'Push enabled' if push_status.enabled else 'Push not enabled on any device' }}</span>
+    </div>
+    <form method="post" action="/portal/notifications/preferences" class="portal-notification-preferences">
+      <label class="toggle-choice"><input type="checkbox" name="push_enabled" value="1" {% if push_status.enabled %}checked{% endif %}><span><strong>Allow push notifications</strong><small class="muted">Applies across your subscribed devices.</small></span></label>
+      <div class="portal-notification-event-grid">
+      {% for key,meta in push_status.available_events.items() %}
+        <label class="notification-event-choice"><input type="checkbox" name="events" value="{{ key }}" {% if key in push_status.events %}checked{% endif %}><span><strong>{{ meta.label }}</strong><small>{{ meta.severity }}</small></span></label>
+      {% endfor %}
+      </div>
+      <button type="submit" class="secondary">Save notification preferences</button>
+    </form>
+  </section>
 </main>
 {{ portal_bottom_nav('account') }}
 </div>
 </div>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/portal/service-worker.js',{scope:'/portal'}).catch(()=>{}));}</script>
+
+<script>
+(() => {
+  const status = document.getElementById('push-status');
+  if (!status || !('serviceWorker' in navigator) || !('PushManager' in window)) { if(status) status.textContent='Push is not supported by this browser'; return; }
+  const b64 = s => { const p='='.repeat((4-s.length%4)%4); const raw=atob((s+p).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from([...raw].map(c=>c.charCodeAt(0))); };
+  const registration = () => navigator.serviceWorker.ready;
+  async function current(){ return (await registration()).pushManager.getSubscription(); }
+  async function refresh(){ const sub=await current(); status.textContent=sub?'Enabled on this device':'Not enabled on this device'; }
+  document.getElementById('push-enable').onclick=async()=>{ try { if(Notification.permission==='denied') throw new Error('Notifications are blocked in browser/OS settings'); const key=(await (await fetch('/portal/api/push/public-key')).json()).public_key; const reg=await registration(); let sub=await reg.pushManager.getSubscription(); if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(key)}); const r=await fetch('/portal/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub.toJSON())}); if(!r.ok) throw new Error((await r.json()).error||'Subscription failed'); status.textContent='Enabled on this device'; } catch(e){ status.textContent=e.message; } };
+  document.getElementById('push-disable').onclick=async()=>{ const sub=await current(); if(!sub){return refresh();} await fetch('/portal/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})}); await sub.unsubscribe(); refresh(); };
+  document.getElementById('push-test').onclick=async()=>{ status.textContent='Sending test…'; const r=await fetch('/portal/api/push/test',{method:'POST'}); const d=await r.json(); status.textContent=d.ok?`Test sent to ${d.delivered} device(s)`:'No enabled push subscription received the test'; };
+  refresh();
+})();
+</script>
 </body></html>

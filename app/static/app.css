@@ -708,3 +708,5 @@ a.button-link, .button-link{white-space:nowrap}
 
 /* v0.8.5d force watch-history rebuild */
 .tautulli-resync-help{margin:8px 0 0;font-size:10px;max-width:760px;line-height:1.45}.secondary-actions form{margin:0}
+/* v0.9 notification platform */
+.notification-platform-card{margin:1rem 0 1.25rem}.notification-platform-stats{display:flex;gap:1.5rem;flex-wrap:wrap;margin:.75rem 0}.notification-platform-stats span{display:flex;gap:.35rem;align-items:baseline}.push-device-actions{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap;margin:.75rem 0 1rem}.portal-notification-preferences{display:grid;gap:1rem}.portal-notification-event-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}.portal-notification-event-grid .notification-event-choice{margin:0}@media(max-width:700px){.portal-notification-event-grid{grid-template-columns:1fr}.push-device-actions button{flex:1 1 auto}}

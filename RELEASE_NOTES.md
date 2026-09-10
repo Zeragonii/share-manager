@@ -209,3 +209,16 @@ Detailed Tautulli watch history now resolves library names by syncing history pe
 - The operation is serialized against background DB workers to prevent a backfill page racing with the cache reset.
 - The existing asynchronous backfill worker automatically reseeds library checkpoints on its next cycle and rebuilds the full history from Tautulli.
 - Adds a destructive-action confirmation and records the operation in the audit log.
+
+## 0.9.0 — Notification Platform
+
+- Added canonical notification event records as the common source for all notification delivery channels.
+- Added native Web Push for the admin PWA and customer portal PWA using VAPID.
+- Added automatic persistent VAPID key generation.
+- Added per-device push subscription storage, failure tracking and stale-subscription disabling.
+- Added customer notification preferences for payment, billing status, renewal, Plex invite and stream-limit events.
+- Added customer and admin push test actions plus current-device enable/disable controls.
+- Added push notification deep links through the service workers.
+- Extended the notification delivery ledger with channel/recipient metadata.
+- Preserved Home Assistant, Discord and generic webhook behavior.
+- During Tautulli history discovery, the progress bar now uses measured library histories as the best available progress analogue until the final row denominator is known.

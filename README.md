@@ -403,3 +403,19 @@ Integrations → Tautulli now includes **Force full re-sync**. Use it when cache
 ## v0.8.5e backfill progress semantics
 
 Tautulli full-history totals are discovered per customer/library checkpoint. While any checkpoint total is still unknown, the UI reports cached rows and the number of library histories measured, and does not present the partial sum as a final denominator. Once all checkpoint totals are known, the UI switches to processed/total progress and an overall percentage.
+
+## v0.9.0 — Notification Platform
+
+Share Manager now has a first-class notification event layer and native PWA Web Push support.
+
+- Every notification is recorded as a canonical `notification_events` row before delivery.
+- Existing Home Assistant, Discord and generic webhook integrations continue to use the same event definitions and delivery ledger.
+- Admin browsers/PWAs can subscribe to Web Push from **Integrations → Notifications**.
+- Customer portal users can enable Web Push from **Account → Notifications**, choose which customer-facing events they want, disable the current device, and send themselves a test notification.
+- VAPID keys are generated automatically on first use and persisted in PostgreSQL; changing/removing them would invalidate existing browser subscriptions.
+- Push subscriptions are stored per device. HTTP 404/410 responses automatically disable stale subscriptions.
+- Push notification clicks deep-link into the relevant Share Manager or customer portal page.
+- Customer pushes are restricted to customer-safe events and to the customer targeted by the event.
+- Notification deliveries now record channel and recipient metadata for troubleshooting.
+
+Web Push requires HTTPS (or localhost) and browser/OS notification permission. The existing Cloudflare/NPM HTTPS deployment is suitable; the customer portal service worker remains scoped to `/portal`.

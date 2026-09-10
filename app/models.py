@@ -317,4 +317,63 @@ class NotificationDelivery(Base):
     success: Mapped[bool] = mapped_column(Boolean, default=False)
     response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notification_event_id: Mapped[int | None] = mapped_column(ForeignKey("notification_events.id", ondelete="SET NULL"), nullable=True, index=True)
+    channel: Mapped[str] = mapped_column(String(32), default="endpoint")
+    push_subscription_id: Mapped[int | None] = mapped_column(ForeignKey("push_subscriptions.id", ondelete="SET NULL"), nullable=True)
+    recipient_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    recipient_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     endpoint: Mapped[NotificationEndpoint | None] = relationship()
+
+
+class NotificationEvent(Base):
+    """Canonical application event that can be delivered through one or more channels."""
+    __tablename__ = "notification_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event: Mapped[str] = mapped_column(String(120), index=True)
+    event_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    severity: Mapped[str] = mapped_column(String(16), default="info")
+    title: Mapped[str] = mapped_column(String(255))
+    message: Mapped[str] = mapped_column(Text)
+    target_type: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    target_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    data_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    customer: Mapped[Customer | None] = relationship()
+
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_type: Mapped[str] = mapped_column(String(16), index=True)  # admin | customer
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), nullable=True, index=True)
+    endpoint: Mapped[str] = mapped_column(Text, unique=True)
+    p256dh: Mapped[str] = mapped_column(Text)
+    auth: Mapped[str] = mapped_column(Text)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+    customer: Mapped[Customer | None] = relationship()
+
+
+class CustomerNotificationPreference(Base):
+    __tablename__ = "customer_notification_preferences"
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), primary_key=True)
+    push_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    events: Mapped[str] = mapped_column(Text, default="*")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    customer: Mapped[Customer] = relationship()
+
+
+class NotificationPlatformSettings(Base):
+    __tablename__ = "notification_platform_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    vapid_private_key: Mapped[str] = mapped_column(Text)
+    vapid_public_key: Mapped[str] = mapped_column(Text)
+    vapid_subject: Mapped[str] = mapped_column(String(255), default="mailto:admin@share-manager.local")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

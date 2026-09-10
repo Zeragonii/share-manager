@@ -58,6 +58,11 @@ add_column_if_missing("payments", "voided_by", "VARCHAR(120) NULL")
 _notification_columns = {c["name"] for c in inspect(engine).get_columns("notification_endpoints")}
 _notification_due_days_was_missing = "due_reminder_days" not in _notification_columns
 add_column_if_missing("notification_endpoints", "due_reminder_days", "VARCHAR(120) NOT NULL DEFAULT '3'")
+add_column_if_missing("notification_deliveries", "notification_event_id", "INTEGER NULL REFERENCES notification_events(id) ON DELETE SET NULL")
+add_column_if_missing("notification_deliveries", "channel", "VARCHAR(32) NOT NULL DEFAULT 'endpoint'")
+add_column_if_missing("notification_deliveries", "push_subscription_id", "INTEGER NULL REFERENCES push_subscriptions(id) ON DELETE SET NULL")
+add_column_if_missing("notification_deliveries", "recipient_type", "VARCHAR(16) NULL")
+add_column_if_missing("notification_deliveries", "recipient_id", "VARCHAR(64) NULL")
 if _notification_due_days_was_missing:
     with engine.begin() as conn:
         conn.execute(

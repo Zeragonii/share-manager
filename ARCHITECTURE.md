@@ -288,3 +288,11 @@ A forced Tautulli history rebuild is an explicit cache-maintenance operation. Th
 ## v0.8.5e backfill progress semantics
 
 Tautulli full-history totals are discovered per customer/library checkpoint. While any checkpoint total is still unknown, the UI reports cached rows and the number of library histories measured, and does not present the partial sum as a final denominator. Once all checkpoint totals are known, the UI switches to processed/total progress and an overall percentage.
+
+## Notification Platform (v0.9)
+
+Notification-producing features emit a canonical event before any delivery channel is invoked. `notification_events` is the application event ledger; `notification_deliveries` records each channel attempt. Existing endpoint adapters (Home Assistant, Discord, generic webhook) and Web Push consume the same event definitions.
+
+Web Push subscriptions are device-specific and belong either to the admin or a customer. Customer delivery is target-scoped and only customer-safe event types can reach customer devices. Customer preferences are stored separately from browser subscriptions so a user can control event categories across all their devices. VAPID credentials are generated once and persisted in PostgreSQL. Expired browser subscriptions reported with 404/410 are disabled rather than retried indefinitely.
+
+The admin and customer PWAs use separate service-worker scopes but the same notification platform. Notification payload URLs are relative, validated server-side, and notification clicks deep-link back into the appropriate surface. This notification layer is intended to be reused by future Support Tickets without coupling ticket code to a particular delivery provider.
