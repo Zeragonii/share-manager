@@ -14,7 +14,7 @@
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
 
-<section>
+<section class="integration-section plex-integration-section">
   <h2>Plex</h2>
   <details class="integration-add">
     <summary>Add Plex server</summary>
@@ -70,7 +70,7 @@
   {% endif %}
 </section>
 
-<section>
+<section class="integration-section notification-section">
   <div class="row between notification-heading">
     <div><h2>Notifications</h2><p class="muted">Route Share Manager events to Home Assistant, Discord or a generic webhook.</p></div>
   </div>
@@ -153,9 +153,9 @@
   </div>
 </section>
 
-<section>
+<section class="integration-section notification-delivery-section">
   <h2>Recent notification deliveries</h2>
-  <div class="table-wrap"><table>
+  <div class="table-wrap notification-delivery-desktop"><table>
     <thead><tr><th>Time</th><th>Endpoint</th><th>Event</th><th>Severity</th><th>Result</th></tr></thead>
     <tbody>
       {% for delivery in notification_deliveries %}
@@ -163,5 +163,15 @@
       {% else %}<tr><td colspan="5" class="muted">No notifications sent yet.</td></tr>{% endfor %}
     </tbody>
   </table></div>
+  <div class="notification-delivery-mobile">
+    {% for delivery in notification_deliveries %}
+    <article class="notification-delivery-card {{ 'success' if delivery.success else 'failed' }}">
+      <div class="row between"><strong>{{ delivery.endpoint.name if delivery.endpoint else 'Deleted endpoint' }}</strong><span class="badge {{ 'ok' if delivery.success else 'error-badge' }}">{{ 'sent' if delivery.success else 'failed' }}</span></div>
+      <code>{{ delivery.event }}</code>
+      <div class="notification-delivery-meta"><span>{{ delivery.created_at.strftime('%Y-%m-%d %H:%M') }}</span><span>{{ delivery.severity }}</span></div>
+      {% if not delivery.success and delivery.detail %}<div class="muted delivery-error">{{ delivery.detail }}</div>{% endif %}
+    </article>
+    {% else %}<div class="empty-state">No notifications sent yet.</div>{% endfor %}
+  </div>
 </section>
 {% endblock %}

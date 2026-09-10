@@ -227,3 +227,7 @@ Dashboard mobile rendering remains server-rendered Jinja with progressive disclo
 ## v0.7.5a
 - Fixed Stream Limits filtering when `All customers` submits an empty `customer_id`; blank values now mean no customer filter instead of triggering FastAPI integer validation.
 - Invalid non-numeric customer filter values now redirect safely back to the unfiltered Stream Limits page.
+
+
+## v0.7.6
+- Phone-first Backups and Integrations pass: compact DR status/settings, mobile backup cards, touch-friendly restore controls, denser Plex/Tautulli/notification integration cards, and mobile notification-delivery cards without horizontal scrolling. Desktop behavior remains unchanged.

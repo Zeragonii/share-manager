@@ -515,3 +515,104 @@ a.button-link, .button-link{white-space:nowrap}
   .stream-limit-event-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
   .stream-limit-event-counts span:last-child{grid-column:1/-1}
 }
+
+
+/* v0.7.6 Backups + Integrations phone-first pass */
+.backup-mobile-list,.notification-delivery-mobile{display:none}
+
+@media(max-width:700px){
+  /* Disaster recovery */
+  .backup-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px}
+  .backup-status-card{padding:12px!important;min-width:0}
+  .backup-status-card:first-child{grid-column:1/-1}
+  .backup-status-card>strong{font-size:17px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}
+  .backup-status-card>small{font-size:9px;line-height:1.35;overflow-wrap:anywhere}
+  .backup-settings-panel{padding:14px}
+  .backup-settings-heading p{font-size:10px;line-height:1.4}
+  .backup-settings-form{gap:10px;margin-top:12px}
+  .backup-toggle{padding:10px;min-height:54px}
+  .backup-setting-group{padding:11px;gap:8px}
+  .backup-setting-group-heading>span{font-size:9px}
+  .backup-setting-row{gap:9px}
+  .backup-setting-row input,.backup-setting-row select{height:44px;font-size:16px}
+  .backup-settings-actions button{min-height:44px}
+  .backup-heading{gap:10px}
+  .backup-heading p{font-size:10px;line-height:1.4;overflow-wrap:anywhere}
+  .backup-heading form button{min-height:44px}
+  .backup-table-desktop{display:none!important}
+  .backup-mobile-list{display:grid;gap:8px;margin-top:12px}
+  .backup-mobile-card{display:grid;gap:10px;padding:11px;border:1px solid var(--line);border-radius:10px;background:#0e141d;min-width:0}
+  .backup-mobile-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0}
+  .backup-mobile-card-head>div{display:grid;gap:3px;min-width:0}
+  .backup-mobile-card-head strong{font-size:11px;line-height:1.3;overflow-wrap:anywhere}
+  .backup-mobile-card-head small{font-size:9px;color:var(--muted)}
+  .backup-mobile-card-head .badge{flex:0 0 auto}
+  .backup-mobile-meta{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .backup-mobile-meta>span{display:grid;gap:2px;padding:8px;border-radius:8px;background:#121a26}
+  .backup-mobile-meta small{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .backup-mobile-meta strong{font-size:12px}
+  .backup-mobile-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .backup-mobile-actions .button-link,.backup-mobile-actions button{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:42px}
+  .backup-external-restore{padding:14px}
+  .backup-external-restore p,.backup-note p{font-size:10px;line-height:1.45}
+  .restore-upload-form input,.restore-upload-form button{min-height:44px;font-size:16px}
+  .backup-note{padding:14px}
+
+  /* Integrations */
+  .integration-section,.tautulli-integration{padding:14px}
+  .integration-add{margin:8px 0}
+  .integration-add>summary{min-height:44px;display:flex;align-items:center;padding:10px 11px}
+  .integration-add-body{padding:11px}
+  .integration-add-body input,.integration-add-body select,.integration-add-body button{min-height:44px;font-size:16px}
+  .integration-cards{gap:8px;margin-top:10px}
+  .integration-cards .card{padding:11px}
+  .integration-cards .card h3{font-size:14px}
+  .integration-cards .card .muted{font-size:10px;overflow-wrap:anywhere}
+  .integration-cards .card p{font-size:10px;margin:8px 0}
+  .integration-cards .card button{width:100%;min-height:42px}
+
+  .tautulli-heading{display:flex!important;align-items:flex-start!important;gap:8px}
+  .tautulli-heading>div{min-width:0}
+  .tautulli-heading p{font-size:10px;line-height:1.35}
+  .tautulli-settings-form{gap:10px;margin-top:10px}
+  .toggle-choice{padding:10px;min-height:54px}
+  .tautulli-settings-grid{gap:9px}
+  .tautulli-settings-grid input,.tautulli-settings-grid select{min-height:44px;font-size:16px}
+  .tautulli-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .tautulli-status-grid>div{padding:9px;min-height:58px;align-content:center}
+  .tautulli-status-grid span{font-size:8px;line-height:1.2}
+  .tautulli-status-grid strong{font-size:11px;white-space:normal;overflow-wrap:anywhere}
+  .tautulli-actions{display:grid!important;grid-template-columns:1fr;gap:7px}
+  .tautulli-actions button,.tautulli-actions form{width:100%;min-height:42px}
+  .secondary-actions{grid-template-columns:1fr 1fr!important}
+  .secondary-actions form button{height:100%}
+
+  .notification-heading p{font-size:10px;line-height:1.35}
+  .notification-add-grid{gap:7px;margin-top:8px}
+  .notification-form{gap:9px}
+  .notification-form input,.notification-form select,.notification-form button{min-height:44px;font-size:16px}
+  .notification-form fieldset{padding:8px}
+  .notification-event-choice{min-height:38px;padding:6px 7px}
+  .notification-event-choice strong{font-size:10px}
+  .notification-cards{gap:8px;margin-top:10px}
+  .notification-card{padding:11px}
+  .notification-card h3{font-size:14px}
+  .notification-card p{font-size:10px;margin:7px 0}
+  .notification-actions{display:grid!important;grid-template-columns:1fr 1fr;gap:7px}
+  .notification-actions form,.notification-actions button{width:100%;min-height:42px}
+  .notification-editor>summary{min-height:40px;display:flex;align-items:center}
+  .notification-delivery-desktop{display:none!important}
+  .notification-delivery-mobile{display:grid;gap:8px}
+  .notification-delivery-card{display:grid;gap:7px;padding:10px;border:1px solid var(--line);border-radius:9px;background:#0e141d}
+  .notification-delivery-card.success{border-left:3px solid #2f855a}
+  .notification-delivery-card.failed{border-left:3px solid #c53030}
+  .notification-delivery-card>code{font-size:10px;overflow-wrap:anywhere}
+  .notification-delivery-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:9px;text-transform:capitalize}
+  .notification-delivery-card .delivery-error{font-size:9px;line-height:1.4;overflow-wrap:anywhere}
+}
+
+@media(max-width:430px){
+  .backup-status-grid{grid-template-columns:1fr 1fr}
+  .backup-status-card:first-child{grid-column:1/-1}
+  .secondary-actions{grid-template-columns:1fr!important}
+}

@@ -47,13 +47,13 @@
   </form>
 </section>
 
-<section>
+<section class="backup-list-section">
   <div class="row between backup-heading">
     <div><h2>Stored backups</h2><p>Backups are stored in <code>{{ backup_dir }}</code> inside the container. Map this to storage outside the PostgreSQL disk.</p></div>
     <form method="post" action="/backups/run"><button>Create backup now</button></form>
   </div>
   {% if backups %}
-  <div class="table-wrap backup-table"><table>
+  <div class="table-wrap backup-table backup-table-desktop"><table>
     <thead><tr><th>Backup</th><th>Created</th><th>Type</th><th>Size</th><th>Actions</th></tr></thead>
     <tbody>
     {% for b in backups %}
@@ -75,10 +75,19 @@
     {% endfor %}
     </tbody>
   </table></div>
+  <div class="backup-mobile-list">
+    {% for b in backups %}
+    <article class="backup-mobile-card">
+      <div class="backup-mobile-card-head"><div><strong>{{ b.name }}</strong><small>{{ b.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small></div><span class="badge {{ 'ok' if b.automatic else '' }}">{{ 'Scheduled' if b.automatic else 'Manual / safety' }}</span></div>
+      <div class="backup-mobile-meta"><span><small>Size</small><strong>{{ '%.2f'|format(b.size / 1048576) }} MB</strong></span><span><small>Type</small><strong>{{ 'Automatic' if b.automatic else 'Protected' }}</strong></span></div>
+      <div class="backup-mobile-actions"><a class="button-link secondary" href="/backups/files/{{ b.name }}">Download</a><button type="button" class="secondary" onclick="document.getElementById('restore-{{ loop.index }}').showModal()">Restore</button></div>
+    </article>
+    {% endfor %}
+  </div>
   {% else %}<div class="empty-state">No persistent backups exist yet.</div>{% endif %}
 </section>
 
-<section>
+<section class="backup-external-restore">
   <h2>Restore an external backup</h2>
   <p>Use this after rebuilding the stack or when importing a backup copied from another machine. PostgreSQL custom-format <code>.dump</code> files are validated with <code>pg_restore --list</code> before anything is changed.</p>
   <form method="post" action="/backups/upload-restore" enctype="multipart/form-data" class="restore-upload-form">
