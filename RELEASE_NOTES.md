@@ -1,3 +1,13 @@
+# v0.8.5e
+
+Watch-history backfill progress hotfix.
+
+- Stops treating partially discovered per-library totals as the final history denominator.
+- During total discovery the Tautulli integration now shows cached rows plus measured library-history targets instead of misleading `X / X` progress.
+- The overall processed/total row count and percentage bar appear only after every active customer/library checkpoint has a known total.
+- The status badge distinguishes the discovery phase (`scanning`) from normal measured backfill (`syncing`).
+- No history reset or re-sync is required; existing backfill checkpoints continue normally after upgrade.
+
 # v0.5.3
 
 This release continues the v0.5.2 correctness work and hardens disaster recovery, payment rollback, pending Plex invitations, authentication sessions, CI, and worker failure visibility.

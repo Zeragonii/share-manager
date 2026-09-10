@@ -284,3 +284,7 @@ Detailed Tautulli watch history now resolves library names by syncing history pe
 
 ## v0.8.5d watch-history rebuild
 A forced Tautulli history rebuild is an explicit cache-maintenance operation. The admin POST action is serialized through the application's DB worker lock, deletes `tautulli_watch_history` and `tautulli_history_library_sync`, resets legacy backfill fields on `tautulli_activity`, writes an audit event, and commits atomically. It does not mutate customer, billing, subscription, payment, Plex entitlement, notification or stream-limit records. The existing asynchronous backfill worker recreates per-library checkpoints and repopulates history from Tautulli on subsequent cycles.
+
+## v0.8.5e backfill progress semantics
+
+Tautulli full-history totals are discovered per customer/library checkpoint. While any checkpoint total is still unknown, the UI reports cached rows and the number of library histories measured, and does not present the partial sum as a final denominator. Once all checkpoint totals are known, the UI switches to processed/total progress and an overall percentage.

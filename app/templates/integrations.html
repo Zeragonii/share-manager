@@ -58,11 +58,12 @@
       <div><span>Last result</span><strong class="{% if tautulli_settings.last_sync_error %}text-error{% endif %}">{{ tautulli_settings.last_sync_error or 'OK' }}</strong></div>
     </div>
     <div class="tautulli-backfill-card" id="tautulli-backfill-card">
-      <div class="row between tautulli-backfill-heading"><div><strong>Full watch-history backfill</strong><span class="muted">Runs asynchronously in 500-row pages; normal analytics sync stays lightweight.</span></div><span class="badge {{ 'active' if tautulli_backfill.complete else 'grace' }}" id="tautulli-backfill-state">{{ 'complete' if tautulli_backfill.complete else 'syncing' }}</span></div>
-      <div class="tautulli-backfill-progress"><div id="tautulli-backfill-bar" style="width:{% if tautulli_backfill.known_total %}{{ [100, (tautulli_backfill.progress_rows * 100 / tautulli_backfill.known_total)|round(1)]|min }}{% else %}0{% endif %}%"></div></div>
+      <div class="row between tautulli-backfill-heading"><div><strong>Full watch-history backfill</strong><span class="muted">Runs asynchronously in 500-row pages; normal analytics sync stays lightweight.</span></div><span class="badge {{ 'active' if tautulli_backfill.complete else 'grace' }}" id="tautulli-backfill-state">{{ 'complete' if tautulli_backfill.complete else ('syncing' if tautulli_backfill.total_is_final else 'scanning') }}</span></div>
+      <div class="tautulli-backfill-progress"><div id="tautulli-backfill-bar" style="width:{% if tautulli_backfill.total_is_final and tautulli_backfill.known_total %}{{ [100, (tautulli_backfill.progress_rows * 100 / tautulli_backfill.known_total)|round(1)]|min }}{% else %}0{% endif %}%"></div></div>
       <div class="tautulli-backfill-meta">
-        <span><strong id="tautulli-backfill-rows">{{ tautulli_backfill.cached_rows }}{% if tautulli_backfill.known_total %} / {{ tautulli_backfill.known_total }}{% endif %}</strong><small>cached history rows</small></span>
+        <span><strong id="tautulli-backfill-rows">{% if tautulli_backfill.total_is_final %}{{ tautulli_backfill.progress_rows }} / {{ tautulli_backfill.known_total }}{% else %}{{ tautulli_backfill.cached_rows }}{% endif %}</strong><small id="tautulli-backfill-rows-label">{{ 'history rows processed' if tautulli_backfill.total_is_final else 'cached history rows' }}</small></span>
         <span><strong id="tautulli-backfill-customers">{{ tautulli_backfill.customers_complete }} / {{ tautulli_backfill.customers_total }}</strong><small>customers complete</small></span>
+        <span><strong id="tautulli-backfill-targets">{{ tautulli_backfill.targets_measured }} / {{ tautulli_backfill.targets_total }}</strong><small>library histories measured</small></span>
       </div>
       <div class="muted tautulli-backfill-error{% if not tautulli_backfill.last_error %} hidden{% endif %}" id="tautulli-backfill-error">{{ tautulli_backfill.last_error or '' }}</div>
     </div>
@@ -194,18 +195,23 @@
   const state = document.getElementById('tautulli-backfill-state');
   const bar = document.getElementById('tautulli-backfill-bar');
   const rows = document.getElementById('tautulli-backfill-rows');
+  const rowsLabel = document.getElementById('tautulli-backfill-rows-label');
   const customers = document.getElementById('tautulli-backfill-customers');
+  const targets = document.getElementById('tautulli-backfill-targets');
   const error = document.getElementById('tautulli-backfill-error');
   const update = async () => {
     try {
       const response = await fetch('/api/tautulli/backfill', {cache:'no-store', credentials:'same-origin'});
       if (!response.ok) return;
       const data = await response.json();
-      rows.textContent = data.known_total ? `${data.cached_rows} / ${data.known_total}` : `${data.cached_rows}`;
+      const denominatorReady = !!data.total_is_final;
+      rows.textContent = denominatorReady ? `${data.progress_rows} / ${data.known_total}` : `${data.cached_rows}`;
+      rowsLabel.textContent = denominatorReady ? 'history rows processed' : 'cached history rows';
       customers.textContent = `${data.customers_complete} / ${data.customers_total}`;
-      const percent = data.known_total ? Math.min(100, (data.progress_rows / data.known_total) * 100) : 0;
+      targets.textContent = `${data.targets_measured} / ${data.targets_total}`;
+      const percent = denominatorReady && data.known_total ? Math.min(100, (data.progress_rows / data.known_total) * 100) : 0;
       bar.style.width = `${percent}%`;
-      state.textContent = data.complete ? 'complete' : 'syncing';
+      state.textContent = data.complete ? 'complete' : (denominatorReady ? 'syncing' : 'scanning');
       state.classList.toggle('active', !!data.complete);
       state.classList.toggle('grace', !data.complete);
       if (data.last_error) { error.textContent = data.last_error; error.classList.remove('hidden'); }

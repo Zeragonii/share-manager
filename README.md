@@ -399,3 +399,7 @@ Detailed Tautulli watch history now resolves library names by syncing history pe
 
 ### Force full Tautulli history rebuild
 Integrations → Tautulli now includes **Force full re-sync**. Use it when cached detailed watch history needs to be rebuilt after parser/library-resolution changes. It clears only the local watch-history cache and its backfill checkpoints; all customer, billing and stream-limit data remains intact. The normal asynchronous backfill worker then reconstructs the full history from Tautulli.
+
+## v0.8.5e backfill progress semantics
+
+Tautulli full-history totals are discovered per customer/library checkpoint. While any checkpoint total is still unknown, the UI reports cached rows and the number of library histories measured, and does not present the partial sum as a final denominator. Once all checkpoint totals are known, the UI switches to processed/total progress and an overall percentage.

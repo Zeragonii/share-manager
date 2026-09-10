@@ -232,8 +232,19 @@ def watch_history_backfill_status(db: Session) -> dict[str, Any]:
         .filter(Customer.archived.is_(False))
         .scalar() or 0
     )
-    known_total = sum(max(0, int(row.total or 0)) for row in states)
-    progress_rows = sum(min(max(0, int(row.offset or 0)), max(0, int(row.total or 0))) for row in states if row.total is not None)
+    # A library checkpoint does not know its total until Tautulli has returned
+    # the first page for that customer/library. Do not present the sum of only
+    # discovered totals as the final denominator: during a fresh rebuild that
+    # makes the UI misleadingly report values such as 1,315 / 1,315 while many
+    # library histories have not been measured yet.
+    targets_total = len(states)
+    targets_measured = sum(1 for row in states if row.total is not None)
+    total_is_final = bool(states) and targets_measured == targets_total
+    known_total = sum(max(0, int(row.total or 0)) for row in states if row.total is not None)
+    progress_rows = sum(
+        min(max(0, int(row.offset or 0)), max(0, int(row.total or 0)))
+        for row in states if row.total is not None
+    )
     complete_customer_ids = {
         customer_id for customer_id in customer_ids
         if all(row.complete for row in states if row.customer_id == customer_id)
@@ -246,6 +257,9 @@ def watch_history_backfill_status(db: Session) -> dict[str, Any]:
         "cached_rows": int(cached_rows),
         "known_total": known_total,
         "progress_rows": progress_rows,
+        "total_is_final": total_is_final,
+        "targets_measured": targets_measured,
+        "targets_total": targets_total,
         "complete": bool(states) and all(row.complete for row in states),
         "active_customer_id": active.customer_id if active else None,
         "active_offset": int(active.offset or 0) if active else 0,

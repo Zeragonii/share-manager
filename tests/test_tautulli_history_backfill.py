@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
 from app.integrations.tautulli import TautulliIntegration
-from app.models import Customer, Integration, TautulliActivity, TautulliSettings, TautulliWatchHistory
+from app.models import Customer, Integration, TautulliActivity, TautulliSettings, TautulliWatchHistory, TautulliHistoryLibrarySync
 from app.services.tautulli import backfill_watch_history_page, watch_history_backfill_status
 
 
@@ -154,3 +154,33 @@ def test_force_full_resync_clears_only_history_cache_and_checkpoints():
     assert refreshed.history_backfill_total is None
     assert refreshed.history_backfill_started_at is None
     assert refreshed.history_backfill_error is None
+
+
+def test_backfill_status_hides_partial_denominator_until_all_targets_measured():
+    db = make_db()
+    customer = Customer(name="Progress User", plex_user_id="42")
+    db.add(customer); db.flush()
+    db.add_all([
+        TautulliHistoryLibrarySync(customer_id=customer.id, tautulli_user_id="42", section_id="1", library_name="TV", offset=100, total=100, complete=True),
+        TautulliHistoryLibrarySync(customer_id=customer.id, tautulli_user_id="42", section_id="2", library_name="Movies", offset=0, total=None, complete=False),
+    ])
+    db.commit()
+
+    status = watch_history_backfill_status(db)
+    assert status["known_total"] == 100
+    assert status["progress_rows"] == 100
+    assert status["targets_measured"] == 1
+    assert status["targets_total"] == 2
+    assert status["total_is_final"] is False
+
+    movie = db.query(TautulliHistoryLibrarySync).filter_by(section_id="2").one()
+    movie.total = 900
+    movie.offset = 250
+    db.commit()
+
+    status = watch_history_backfill_status(db)
+    assert status["known_total"] == 1000
+    assert status["progress_rows"] == 350
+    assert status["targets_measured"] == 2
+    assert status["targets_total"] == 2
+    assert status["total_is_final"] is True
