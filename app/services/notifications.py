@@ -20,11 +20,14 @@ from ..models import (
     NotificationEvent,
     NotificationPlatformSettings,
     PushSubscription,
+    ScheduledCustomerBroadcast,
     Subscription,
     Payment,
 )
 
 SEVERITY_RANK = {"info": 10, "warning": 20, "critical": 30}
+RETRY_DELAYS_SECONDS = (60, 300, 900)  # initial attempt + up to three retries
+NON_RETRY_EVENTS = {"notification.test", "portal.notification.test"}
 
 
 def _b64url(raw: bytes) -> str:
@@ -236,28 +239,61 @@ def _push_url(event: NotificationEvent, owner_type: str) -> str:
     return "/integrations"
 
 
-def _deliver_endpoint(db: Session, endpoint: NotificationEndpoint, event_row: NotificationEvent) -> NotificationDelivery:
+def _retry_delay(attempt_count: int) -> int | None:
+    # attempt_count is the attempt that just completed.
+    index = max(0, attempt_count - 1)
+    return RETRY_DELAYS_SECONDS[index] if index < len(RETRY_DELAYS_SECONDS) else None
+
+
+def _schedule_retry(delivery: NotificationDelivery, event_row: NotificationEvent, *, transient: bool) -> None:
+    if event_row.event in NON_RETRY_EVENTS or not transient:
+        delivery.next_attempt_at = None
+        delivery.final_failure = True
+        return
+    delay = _retry_delay(int(delivery.attempt_count or 1))
+    if delay is None:
+        delivery.next_attempt_at = None
+        delivery.final_failure = True
+    else:
+        delivery.next_attempt_at = datetime.utcnow() + timedelta(seconds=delay)
+        delivery.final_failure = False
+
+
+def _attempt_endpoint_delivery(db: Session, delivery: NotificationDelivery, endpoint: NotificationEndpoint, event_row: NotificationEvent) -> NotificationDelivery:
     data = json.loads(event_row.data_json or "{}")
-    delivery = NotificationDelivery(
-        endpoint_id=endpoint.id, notification_event_id=event_row.id, channel=endpoint.kind,
-        event=event_row.event, event_key=event_row.event_key, severity=event_row.severity,
-        title=event_row.title, message=event_row.message, success=False,
-        recipient_type="integration", recipient_id=str(endpoint.id),
-    )
-    db.add(delivery); db.flush()
+    delivery.attempt_count = max(1, int(delivery.attempt_count or 1))
+    delivery.last_attempt_at = datetime.utcnow()
+    delivery.next_attempt_at = None
     try:
         code, detail = _send(endpoint, title=event_row.title, message=event_row.message, event=event_row.event, severity=event_row.severity, data=data)
-        delivery.success = True; delivery.response_code = code; delivery.detail = detail
+        delivery.success = True; delivery.response_code = code; delivery.detail = detail; delivery.final_failure = False
     except httpx.HTTPStatusError as exc:
-        delivery.response_code = exc.response.status_code
-        delivery.detail = f"HTTP {exc.response.status_code}: notification endpoint rejected the request"
+        status = exc.response.status_code
+        delivery.response_code = status
+        delivery.detail = f"HTTP {status}: notification endpoint rejected the request"
+        _schedule_retry(delivery, event_row, transient=(status == 429 or status >= 500))
+    except (httpx.TimeoutException, httpx.NetworkError) as exc:
+        delivery.detail = f"{type(exc).__name__}: temporary notification transport failure"
+        _schedule_retry(delivery, event_row, transient=True)
     except Exception as exc:
         delivery.detail = f"{type(exc).__name__}: notification delivery failed"
+        _schedule_retry(delivery, event_row, transient=True)
     db.commit()
     return delivery
 
 
-def _deliver_push(db: Session, subscription: PushSubscription, event_row: NotificationEvent) -> NotificationDelivery:
+def _deliver_endpoint(db: Session, endpoint: NotificationEndpoint, event_row: NotificationEvent) -> NotificationDelivery:
+    delivery = NotificationDelivery(
+        endpoint_id=endpoint.id, notification_event_id=event_row.id, channel=endpoint.kind,
+        event=event_row.event, event_key=event_row.event_key, severity=event_row.severity,
+        title=event_row.title, message=event_row.message, success=False,
+        recipient_type="integration", recipient_id=str(endpoint.id), attempt_count=1,
+    )
+    db.add(delivery); db.flush()
+    return _attempt_endpoint_delivery(db, delivery, endpoint, event_row)
+
+
+def _attempt_push_delivery(db: Session, delivery: NotificationDelivery, subscription: PushSubscription, event_row: NotificationEvent) -> NotificationDelivery:
     platform = ensure_platform_settings(db)
     payload = json.dumps({
         "event": event_row.event,
@@ -267,14 +303,9 @@ def _deliver_push(db: Session, subscription: PushSubscription, event_row: Notifi
         "url": _push_url(event_row, subscription.owner_type),
         "tag": event_row.event_key or f"share-manager-{event_row.id}",
     })
-    delivery = NotificationDelivery(
-        notification_event_id=event_row.id, channel="web_push", push_subscription_id=subscription.id,
-        event=event_row.event, event_key=event_row.event_key, severity=event_row.severity,
-        title=event_row.title, message=event_row.message, success=False,
-        recipient_type=subscription.owner_type,
-        recipient_id=str(subscription.customer_id) if subscription.customer_id else "admin",
-    )
-    db.add(delivery); db.flush()
+    delivery.attempt_count = max(1, int(delivery.attempt_count or 1))
+    delivery.last_attempt_at = datetime.utcnow()
+    delivery.next_attempt_at = None
     try:
         response = webpush(
             subscription_info={"endpoint": subscription.endpoint, "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth}},
@@ -287,6 +318,7 @@ def _deliver_push(db: Session, subscription: PushSubscription, event_row: Notifi
         delivery.success = True
         delivery.response_code = getattr(response, "status_code", 201)
         delivery.detail = "Push accepted by browser push service"
+        delivery.final_failure = False
         subscription.failure_count = 0
         subscription.last_error = None
         subscription.last_success_at = datetime.utcnow()
@@ -300,14 +332,75 @@ def _deliver_push(db: Session, subscription: PushSubscription, event_row: Notifi
         if status in {404, 410}:
             subscription.enabled = False
             delivery.detail = f"HTTP {status}: push subscription expired and was disabled"
+            _schedule_retry(delivery, event_row, transient=False)
+        else:
+            _schedule_retry(delivery, event_row, transient=(status is None or status == 429 or status >= 500))
     except Exception as exc:
         delivery.detail = f"{type(exc).__name__}: push delivery failed"
         subscription.failure_count = int(subscription.failure_count or 0) + 1
         subscription.last_error_at = datetime.utcnow()
         subscription.last_error = delivery.detail
+        _schedule_retry(delivery, event_row, transient=True)
     db.commit()
     return delivery
 
+
+def _deliver_push(db: Session, subscription: PushSubscription, event_row: NotificationEvent) -> NotificationDelivery:
+    delivery = NotificationDelivery(
+        notification_event_id=event_row.id, channel="web_push", push_subscription_id=subscription.id,
+        event=event_row.event, event_key=event_row.event_key, severity=event_row.severity,
+        title=event_row.title, message=event_row.message, success=False,
+        recipient_type=subscription.owner_type,
+        recipient_id=str(subscription.customer_id) if subscription.customer_id else "admin",
+        attempt_count=1,
+    )
+    db.add(delivery); db.flush()
+    return _attempt_push_delivery(db, delivery, subscription, event_row)
+
+
+def retry_failed_deliveries(db: Session, *, now: datetime | None = None, limit: int = 50) -> int:
+    """Retry transient notification failures whose backoff window has elapsed."""
+    now = now or datetime.utcnow()
+    rows = (
+        db.query(NotificationDelivery)
+        .filter(
+            NotificationDelivery.success.is_(False),
+            NotificationDelivery.final_failure.is_(False),
+            NotificationDelivery.next_attempt_at.is_not(None),
+            NotificationDelivery.next_attempt_at <= now,
+        )
+        .order_by(NotificationDelivery.next_attempt_at.asc())
+        .limit(max(1, int(limit)))
+        .all()
+    )
+    attempted = 0
+    for delivery in rows:
+        event_row = db.get(NotificationEvent, delivery.notification_event_id) if delivery.notification_event_id else None
+        if not event_row:
+            delivery.final_failure = True; delivery.next_attempt_at = None; delivery.detail = "Notification event no longer exists"; db.commit(); continue
+        delivery.attempt_count = int(delivery.attempt_count or 1) + 1
+        if delivery.channel == "web_push":
+            sub = db.get(PushSubscription, delivery.push_subscription_id) if delivery.push_subscription_id else None
+            if not sub or not sub.enabled:
+                delivery.final_failure = True; delivery.next_attempt_at = None; delivery.detail = "Push subscription is no longer enabled"; db.commit(); continue
+            if sub.owner_type == "admin" and not _admin_preference_allows(db, event_row.event):
+                delivery.final_failure = True; delivery.next_attempt_at = None; delivery.detail = "Admin push preference no longer allows this event"; db.commit(); continue
+            if sub.owner_type == "customer":
+                customer = db.get(Customer, sub.customer_id) if sub.customer_id else None
+                pref = db.get(CustomerNotificationPreference, sub.customer_id) if sub.customer_id else None
+                eligible = bool(customer and customer.portal_enabled and not customer.archived and customer.status != "cancelled" and (pref is None or pref.push_enabled))
+                if eligible and event_row.event != "system.critical_broadcast":
+                    eligible = bool(event_row.customer_id == sub.customer_id and event_row.event in CUSTOMER_PUSH_EVENTS and _preference_allows(db, sub.customer_id, event_row.event))
+                if not eligible:
+                    delivery.final_failure = True; delivery.next_attempt_at = None; delivery.detail = "Customer push preference or portal state no longer allows this event"; db.commit(); continue
+            _attempt_push_delivery(db, delivery, sub, event_row)
+        else:
+            endpoint = db.get(NotificationEndpoint, delivery.endpoint_id) if delivery.endpoint_id else None
+            if not endpoint or not endpoint.enabled:
+                delivery.final_failure = True; delivery.next_attempt_at = None; delivery.detail = "Notification endpoint is no longer enabled"; db.commit(); continue
+            _attempt_endpoint_delivery(db, delivery, endpoint, event_row)
+        attempted += 1
+    return attempted
 
 def dispatch_event(db: Session, event_row: NotificationEvent, *, only_endpoint_id: int | None = None, include_push: bool = True, include_endpoints: bool = True) -> list[NotificationDelivery]:
     deliveries: list[NotificationDelivery] = []
@@ -473,7 +566,7 @@ def critical_broadcast_audience(db: Session) -> dict:
     return {"customers": len(customer_ids), "devices": devices}
 
 
-def send_critical_customer_broadcast(db: Session, *, title: str, message: str, url: str = "/portal") -> tuple[NotificationEvent, list[NotificationDelivery]]:
+def send_critical_customer_broadcast(db: Session, *, title: str, message: str, url: str = "/portal", event_key: str | None = None) -> tuple[NotificationEvent, list[NotificationDelivery]]:
     """Broadcast a critical Web Push announcement to every eligible customer device.
 
     This is intentionally Web-Push-only and bypasses category-level customer preferences.
@@ -494,20 +587,22 @@ def send_critical_customer_broadcast(db: Session, *, title: str, message: str, u
     if not clean_url.startswith("/portal"):
         raise ValueError("Broadcast destination must be a customer portal path")
 
-    event_row = NotificationEvent(
-        event="system.critical_broadcast",
-        event_key=None,
-        severity="critical",
-        title=clean_title,
-        message=clean_message,
-        target_type="customer_broadcast",
-        target_id=None,
-        customer_id=None,
-        data_json=json.dumps({"url": clean_url}),
-    )
-    db.add(event_row)
-    db.commit()
-    db.refresh(event_row)
+    event_row = db.query(NotificationEvent).filter(NotificationEvent.event_key == event_key).first() if event_key else None
+    if event_row is None:
+        event_row = NotificationEvent(
+            event="system.critical_broadcast",
+            event_key=event_key,
+            severity="critical",
+            title=clean_title,
+            message=clean_message,
+            target_type="customer_broadcast",
+            target_id=None,
+            customer_id=None,
+            data_json=json.dumps({"url": clean_url}),
+        )
+        db.add(event_row)
+        db.commit()
+        db.refresh(event_row)
 
     deliveries: list[NotificationDelivery] = []
     subscriptions = (
@@ -524,8 +619,50 @@ def send_critical_customer_broadcast(db: Session, *, title: str, message: str, u
         pref = db.get(CustomerNotificationPreference, customer.id)
         if pref is not None and not pref.push_enabled:
             continue
+        if event_row.event_key:
+            prior = db.query(NotificationDelivery).filter(NotificationDelivery.push_subscription_id == sub.id, NotificationDelivery.event_key == event_row.event_key, NotificationDelivery.success.is_(True)).first()
+            if prior:
+                continue
         deliveries.append(_deliver_push(db, sub, event_row))
     return event_row, deliveries
+
+def schedule_critical_customer_broadcast(db: Session, *, title: str, message: str, url: str, scheduled_for: datetime, created_by: str | None = None) -> ScheduledCustomerBroadcast:
+    clean_title = (title or "").strip(); clean_message = (message or "").strip(); clean_url = (url or "/portal").strip() or "/portal"
+    if not clean_title or not clean_message:
+        raise ValueError("Broadcast title and message are required")
+    if len(clean_title) > 120 or len(clean_message) > 1000:
+        raise ValueError("Broadcast title/message is too long")
+    if not clean_url.startswith("/portal"):
+        raise ValueError("Broadcast destination must be a customer portal path")
+    if scheduled_for <= datetime.utcnow() + timedelta(seconds=15):
+        raise ValueError("Scheduled broadcast time must be in the future")
+    row = ScheduledCustomerBroadcast(title=clean_title, message=clean_message, destination=clean_url, scheduled_for=scheduled_for, status="scheduled", created_by=created_by)
+    db.add(row); db.commit(); db.refresh(row)
+    return row
+
+
+def cancel_scheduled_broadcast(db: Session, broadcast_id: int) -> ScheduledCustomerBroadcast:
+    row = db.get(ScheduledCustomerBroadcast, broadcast_id)
+    if not row or row.status != "scheduled":
+        raise ValueError("Scheduled broadcast is no longer cancellable")
+    row.status = "cancelled"; db.commit(); db.refresh(row)
+    return row
+
+
+def process_scheduled_broadcasts(db: Session, *, now: datetime | None = None) -> int:
+    now = now or datetime.utcnow()
+    rows = db.query(ScheduledCustomerBroadcast).filter(ScheduledCustomerBroadcast.status.in_(["scheduled", "sending"]), ScheduledCustomerBroadcast.scheduled_for <= now).order_by(ScheduledCustomerBroadcast.scheduled_for.asc()).all()
+    processed = 0
+    for row in rows:
+        row.status = "sending"; db.commit()
+        try:
+            event_row, _deliveries = send_critical_customer_broadcast(db, title=row.title, message=row.message, url=row.destination, event_key=f"critical-broadcast-schedule:{row.id}")
+            row.event_id = event_row.id; row.status = "sent"; row.sent_at = datetime.utcnow(); row.error = None
+        except Exception as exc:
+            row.status = "failed"; row.error = f"{type(exc).__name__}: scheduled broadcast failed"
+        db.commit(); processed += 1
+    return processed
+
 
 def send_portal_test(db: Session, customer: Customer) -> list[NotificationDelivery]:
     return notify_event(db, event="portal.notification.test", title="Share Manager notifications enabled", message="Push notifications are working on this device.", target_type="customer", target_id=str(customer.id), data={"customer_id": customer.id, "url": "/portal"}, include_endpoints=False)

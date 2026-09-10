@@ -315,3 +315,10 @@ Broadcast destinations are constrained to `/portal` paths. Delivery continues to
 Admin Web Push subscriptions share a singleton preference policy (`admin_notification_preferences`). The master switch controls normal operational push delivery; event selections filter canonical notification events before per-device delivery. Test pushes bypass this preference policy so subscription health can always be verified. Missing preference state is treated as all supported admin events enabled for backward compatibility.
 
 The mobile Integrations view collapses the Tautulli configuration/status body client-side only; no Tautulli synchronization behavior changes.
+
+
+## v0.9.3 notification scheduling and retries
+
+`ScheduledCustomerBroadcast` stores future critical broadcasts independently of delivery events. The notification worker checks for due schedules every 30 seconds; the audience is resolved at execution time. Scheduled broadcasts use a stable event key (`critical-broadcast-schedule:<id>`) so successful per-device deliveries are deduplicated if processing resumes after an interruption.
+
+`NotificationDelivery` persists `attempt_count`, `last_attempt_at`, `next_attempt_at`, and `final_failure`. Transient failures are retried after 1, 5, and 15 minutes. HTTP 429/5xx and network/transport failures are transient; permanent HTTP failures and expired Web Push subscriptions are terminal. Notification tests are excluded from automatic retry. The `/notifications/history` view reads this delivery ledger rather than external provider logs.

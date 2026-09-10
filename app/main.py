@@ -44,6 +44,7 @@ from .models import (
     PushSubscription,
     CustomerNotificationPreference,
     AdminNotificationPreference,
+    ScheduledCustomerBroadcast,
     TautulliActivity,
     TautulliSettings,
     TautulliWatchHistory,
@@ -63,6 +64,7 @@ from .services.notifications import (
     ensure_platform_settings, save_push_subscription, disable_push_subscription, customer_push_status,
     update_customer_preferences, admin_push_status, update_admin_preferences, send_portal_test, send_admin_push_test,
     critical_broadcast_audience, send_critical_customer_broadcast,
+    retry_failed_deliveries, schedule_critical_customer_broadcast, cancel_scheduled_broadcast, process_scheduled_broadcasts,
 )
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy, validate_application_schema, BackupStorageError
 from .services.tautulli import (
@@ -330,6 +332,20 @@ def run_stream_limit_cycle() -> bool:
         db.close()
 
 
+@serialized_db_worker
+def run_notification_cycle() -> tuple[int, int]:
+    """Process due scheduled broadcasts and retry transient notification failures."""
+    if RESTORE_IN_PROGRESS.is_set():
+        return (0, 0)
+    db = SessionLocal()
+    try:
+        scheduled = process_scheduled_broadcasts(db, now=datetime.utcnow())
+        retried = retry_failed_deliveries(db, now=datetime.utcnow())
+        return scheduled, retried
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     async def billing_loop():
@@ -391,6 +407,15 @@ async def lifespan(_app: FastAPI):
                 logger.exception("Tautulli watch-history backfill worker cycle failed")
             await asyncio.sleep(5)
 
+    async def notification_loop():
+        await asyncio.sleep(12)
+        while True:
+            try:
+                await asyncio.to_thread(run_notification_cycle)
+            except Exception:
+                logger.exception("Notification scheduler/retry worker cycle failed")
+            await asyncio.sleep(30)
+
     async def stream_limit_loop():
         await asyncio.sleep(8)
         while True:
@@ -412,6 +437,7 @@ async def lifespan(_app: FastAPI):
     tautulli_task = asyncio.create_task(tautulli_loop())
     tautulli_backfill_task = asyncio.create_task(tautulli_backfill_loop())
     stream_limit_task = asyncio.create_task(stream_limit_loop())
+    notification_task = asyncio.create_task(notification_loop())
     try:
         yield
     finally:
@@ -421,6 +447,7 @@ async def lifespan(_app: FastAPI):
         tautulli_task.cancel()
         tautulli_backfill_task.cancel()
         stream_limit_task.cancel()
+        notification_task.cancel()
         with suppress(asyncio.CancelledError):
             await billing_task
         with suppress(asyncio.CancelledError):
@@ -2005,6 +2032,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
     notification_deliveries = db.query(NotificationDelivery).options(joinedload(NotificationDelivery.endpoint)).order_by(NotificationDelivery.created_at.desc()).limit(50).all()
     admin_push_devices = db.query(PushSubscription).filter(PushSubscription.owner_type == "admin", PushSubscription.enabled.is_(True)).count()
     notification_event_count = db.query(NotificationEvent).count()
+    scheduled_broadcasts = db.query(ScheduledCustomerBroadcast).filter(ScheduledCustomerBroadcast.status == "scheduled").order_by(ScheduledCustomerBroadcast.scheduled_for.asc()).limit(10).all()
     return render(
         request,
         "integrations.html",
@@ -2016,6 +2044,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         admin_push_devices=admin_push_devices, notification_event_count=notification_event_count,
         admin_push_status=admin_push_status(db),
         critical_broadcast_audience=critical_broadcast_audience(db),
+        scheduled_broadcasts=scheduled_broadcasts,
         tautulli_settings=get_tautulli_settings(db),
         tautulli_backfill=watch_history_backfill_status(db),
         error=error,
@@ -2228,6 +2257,59 @@ def critical_customer_broadcast(
     if failed:
         notice += f" ({failed} failed)"
     return RedirectResponse(f"/integrations?notice={quote_plus(notice)}#critical-customer-broadcast", status_code=303)
+
+@app.post("/notifications/broadcast/critical/schedule")
+def schedule_critical_broadcast_route(
+    request: Request, title: str = Form(...), message: str = Form(...), destination: str = Form("/portal"), scheduled_for_utc: str = Form(...), db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    try:
+        scheduled_for = datetime.fromisoformat((scheduled_for_utc or "").strip())
+        row = schedule_critical_customer_broadcast(db, title=title, message=message, url=destination, scheduled_for=scheduled_for, created_by=settings.admin_username)
+    except (ValueError, TypeError) as exc:
+        return RedirectResponse(f"/integrations?error={quote_plus(str(exc))}#critical-customer-broadcast", status_code=303)
+    db.add(AuditLog(actor=settings.admin_username, action="notification.critical_broadcast.scheduled", target_type="scheduled_customer_broadcast", target_id=str(row.id), detail=f"{row.title}; scheduled_for={row.scheduled_for.isoformat()}Z")); db.commit()
+    return RedirectResponse(f"/integrations?notice={quote_plus('Critical broadcast scheduled')}#critical-customer-broadcast", status_code=303)
+
+
+@app.post("/notifications/broadcast/scheduled/{broadcast_id}/cancel")
+def cancel_critical_broadcast_route(request: Request, broadcast_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    try:
+        row = cancel_scheduled_broadcast(db, broadcast_id)
+    except ValueError as exc:
+        return RedirectResponse(f"/integrations?error={quote_plus(str(exc))}#critical-customer-broadcast", status_code=303)
+    db.add(AuditLog(actor=settings.admin_username, action="notification.critical_broadcast.cancelled", target_type="scheduled_customer_broadcast", target_id=str(row.id), detail=row.title)); db.commit()
+    return RedirectResponse("/integrations?notice=Scheduled+broadcast+cancelled#critical-customer-broadcast", status_code=303)
+
+
+@app.get("/notifications/history", response_class=HTMLResponse)
+def notification_history(request: Request, page: int = 1, per_page: int = 25, event: str = "", channel: str = "", result: str = "", db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    page = max(1, int(page or 1)); per_page = int(per_page or 25); per_page = per_page if per_page in {10, 25, 50, 100} else 25
+    q = db.query(NotificationDelivery).options(joinedload(NotificationDelivery.endpoint))
+    if event:
+        q = q.filter(NotificationDelivery.event == event)
+    if channel:
+        q = q.filter(NotificationDelivery.channel == channel)
+    if result == "sent":
+        q = q.filter(NotificationDelivery.success.is_(True))
+    elif result == "retrying":
+        q = q.filter(NotificationDelivery.success.is_(False), NotificationDelivery.next_attempt_at.is_not(None), NotificationDelivery.final_failure.is_(False))
+    elif result == "failed":
+        q = q.filter(NotificationDelivery.success.is_(False)).filter(or_(NotificationDelivery.final_failure.is_(True), NotificationDelivery.next_attempt_at.is_(None)))
+    total = q.count(); pages = max(1, (total + per_page - 1) // per_page); page = min(page, pages)
+    deliveries = q.order_by(NotificationDelivery.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    channels = [r[0] for r in db.query(NotificationDelivery.channel).distinct().order_by(NotificationDelivery.channel).all() if r[0]]
+    schedules = db.query(ScheduledCustomerBroadcast).order_by(ScheduledCustomerBroadcast.created_at.desc()).limit(50).all()
+    return render(request, "notification_history.html", title="Notification History", deliveries=deliveries, total=total, page=page, pages=pages, per_page=per_page, event_filter=event, channel_filter=channel, result_filter=result, notification_events=EVENT_DEFINITIONS, channels=channels, scheduled_broadcasts=schedules)
+
 
 @app.post("/notifications")
 def add_notification_endpoint(

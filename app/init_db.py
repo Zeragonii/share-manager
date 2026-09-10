@@ -63,6 +63,10 @@ add_column_if_missing("notification_deliveries", "channel", "VARCHAR(32) NOT NUL
 add_column_if_missing("notification_deliveries", "push_subscription_id", "INTEGER NULL REFERENCES push_subscriptions(id) ON DELETE SET NULL")
 add_column_if_missing("notification_deliveries", "recipient_type", "VARCHAR(16) NULL")
 add_column_if_missing("notification_deliveries", "recipient_id", "VARCHAR(64) NULL")
+add_column_if_missing("notification_deliveries", "attempt_count", "INTEGER NOT NULL DEFAULT 1")
+add_column_if_missing("notification_deliveries", "last_attempt_at", "TIMESTAMP NULL")
+add_column_if_missing("notification_deliveries", "next_attempt_at", "TIMESTAMP NULL")
+add_column_if_missing("notification_deliveries", "final_failure", "BOOLEAN NOT NULL DEFAULT FALSE")
 if _notification_due_days_was_missing:
     with engine.begin() as conn:
         conn.execute(

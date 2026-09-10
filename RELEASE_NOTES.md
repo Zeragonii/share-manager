@@ -1,3 +1,16 @@
+# v0.9.3 — Notification Operations Hardening
+
+- Added scheduled critical customer broadcasts. Admins choose a browser-local date/time; the UI converts it to UTC for storage and delivery.
+- Scheduled broadcasts resolve their eligible customer/device audience at send time and can be cancelled before they are due.
+- Scheduled broadcasts use stable event keys so a worker/container interruption can safely resume without re-sending to devices that already accepted the same broadcast.
+- Added automatic retry/backoff for transient notification failures: 1 minute, 5 minutes and 15 minutes after the initial attempt.
+- HTTP 429, HTTP 5xx, transport/network errors and temporary Web Push errors are retried. Permanent endpoint failures and expired Web Push subscriptions are terminal; 404/410 push subscriptions remain automatically disabled.
+- Test notifications are never retried automatically.
+- Added a dedicated Notification History admin page with filters for event, channel and result, pagination, attempt counts, next-retry visibility, response details, and scheduled-broadcast history.
+- Added a 30-second notification worker for due scheduled broadcasts and retry processing.
+- Existing notification records remain valid; additive PostgreSQL columns provide retry state and a new scheduled broadcast table stores future announcements.
+- Bumped admin and customer PWA cache versions to 0.9.3.
+
 # v0.9.2 — Admin Push Preferences & Mobile Tautulli Polish
 
 - Added admin Web Push event preferences with a master enable/disable switch.

@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<header class="row between notification-history-heading"><div><h1>Notification History</h1><p>Delivery ledger, retries and scheduled critical broadcasts.</p></div><a class="button-link secondary" href="/integrations#notifications">Back to Notifications</a></header>
+
+<section class="card notification-history-filters">
+  <form method="get" action="/notifications/history" class="notification-history-filter-grid">
+    <label>Event<select name="event"><option value="">All events</option>{% for key,meta in notification_events.items() %}<option value="{{ key }}" {% if event_filter==key %}selected{% endif %}>{{ meta.label }}</option>{% endfor %}<option value="notification.test" {% if event_filter=='notification.test' %}selected{% endif %}>Notification test</option></select></label>
+    <label>Channel<select name="channel"><option value="">All channels</option>{% for value in channels %}<option value="{{ value }}" {% if channel_filter==value %}selected{% endif %}>{{ value.replace('_',' ') }}</option>{% endfor %}</select></label>
+    <label>Result<select name="result"><option value="">All results</option><option value="sent" {% if result_filter=='sent' %}selected{% endif %}>Sent</option><option value="retrying" {% if result_filter=='retrying' %}selected{% endif %}>Retrying</option><option value="failed" {% if result_filter=='failed' %}selected{% endif %}>Failed</option></select></label>
+    <label>Rows<select name="per_page"><option value="10" {% if per_page==10 %}selected{% endif %}>10</option><option value="25" {% if per_page==25 %}selected{% endif %}>25</option><option value="50" {% if per_page==50 %}selected{% endif %}>50</option><option value="100" {% if per_page==100 %}selected{% endif %}>100</option></select></label>
+    <button>Apply filters</button>
+  </form>
+</section>
+
+<section class="integration-section">
+  <div class="row between"><h2>Deliveries</h2><span class="muted">{{ total }} matching deliver{{ 'y' if total == 1 else 'ies' }}</span></div>
+  <div class="notification-history-list">
+    {% for d in deliveries %}
+    <article class="card notification-history-card">
+      <div class="row between notification-history-card-top"><div><strong>{{ d.title }}</strong><code>{{ d.event }}</code></div><span class="badge {{ 'ok' if d.success else ('warning' if d.next_attempt_at and not d.final_failure else 'error-badge') }}">{{ 'sent' if d.success else ('retrying' if d.next_attempt_at and not d.final_failure else 'failed') }}</span></div>
+      <p>{{ d.message }}</p>
+      <div class="notification-history-meta">
+        <span><b>Time</b>{{ d.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</span>
+        <span><b>Channel</b>{{ d.channel.replace('_',' ') }}</span>
+        <span><b>Recipient</b>{{ d.endpoint.name if d.endpoint else ((d.recipient_type or 'device') ~ ' · ' ~ (d.recipient_id or '—')) }}</span>
+        <span><b>Attempts</b>{{ d.attempt_count or 1 }}</span>
+        {% if d.next_attempt_at and not d.success and not d.final_failure %}<span><b>Next retry</b>{{ d.next_attempt_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</span>{% endif %}
+        {% if d.response_code %}<span><b>HTTP</b>{{ d.response_code }}</span>{% endif %}
+      </div>
+      {% if d.detail %}<div class="muted notification-history-detail">{{ d.detail }}</div>{% endif %}
+    </article>
+    {% else %}<div class="empty-state">No notification deliveries match these filters.</div>{% endfor %}
+  </div>
+  <div class="notification-history-pagination">
+    {% set qs = 'per_page=' ~ per_page ~ '&event=' ~ event_filter ~ '&channel=' ~ channel_filter ~ '&result=' ~ result_filter %}
+    {% if page > 1 %}<a class="button-link secondary" href="/notifications/history?page={{ page-1 }}&{{ qs }}">Previous</a>{% else %}<span></span>{% endif %}
+    <span class="muted">Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a class="button-link secondary" href="/notifications/history?page={{ page+1 }}&{{ qs }}">Next</a>{% else %}<span></span>{% endif %}
+  </div>
+</section>
+
+<section class="integration-section">
+  <h2>Critical broadcast schedule</h2>
+  <div class="notification-schedule-history">
+    {% for item in scheduled_broadcasts %}
+    <article class="card scheduled-broadcast-history-row"><div><strong>{{ item.title }}</strong><span class="muted">{{ item.message }}</span></div><div class="scheduled-broadcast-history-meta"><span class="badge {{ 'ok' if item.status=='sent' else ('error-badge' if item.status=='failed' else '') }}">{{ item.status }}</span><span>{{ item.scheduled_for.strftime('%Y-%m-%d %H:%M') }} UTC</span>{% if item.sent_at %}<span>Sent {{ item.sent_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>{% endif %}</div>{% if item.error %}<div class="muted delivery-error">{{ item.error }}</div>{% endif %}</article>
+    {% else %}<div class="empty-state">No scheduled broadcasts yet.</div>{% endfor %}
+  </div>
+</section>
+{% endblock %}

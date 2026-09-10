@@ -322,6 +322,10 @@ class NotificationDelivery(Base):
     push_subscription_id: Mapped[int | None] = mapped_column(ForeignKey("push_subscriptions.id", ondelete="SET NULL"), nullable=True)
     recipient_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     recipient_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=1)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    final_failure: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     endpoint: Mapped[NotificationEndpoint | None] = relationship()
 
 
@@ -376,6 +380,24 @@ class AdminNotificationPreference(Base):
     push_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     events: Mapped[str] = mapped_column(Text, default="*")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+
+
+class ScheduledCustomerBroadcast(Base):
+    __tablename__ = "scheduled_customer_broadcasts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(120))
+    message: Mapped[str] = mapped_column(Text)
+    destination: Mapped[str] = mapped_column(String(255), default="/portal")
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="scheduled", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("notification_events.id", ondelete="SET NULL"), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    event: Mapped[NotificationEvent | None] = relationship()
 
 
 class NotificationPlatformSettings(Base):

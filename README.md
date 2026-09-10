@@ -1,5 +1,7 @@
 # Share Manager
 
+**Current version: 0.9.3**
+
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
 ## v0.5.2
@@ -439,3 +441,7 @@ Critical broadcasts are deliberately different from ordinary customer events: th
 ## v0.9.2 — Admin Push Preferences & Mobile Tautulli Polish
 
 Admin Web Push can now be filtered by event category from Integrations → Notifications. Upgrades preserve the previous all-events behavior until preferences are changed. On mobile, the Tautulli integration body is collapsible to reduce vertical space while the desktop layout remains expanded.
+
+## Notification operations (v0.9.3)
+
+The notification platform supports immediate and scheduled critical customer broadcasts, automatic retry/backoff for transient Web Push and integration delivery failures, and a dedicated admin Notification History view. Scheduled times are entered in the browser's local time and stored as UTC. Retry state is persisted in PostgreSQL so container restarts do not discard pending retries.

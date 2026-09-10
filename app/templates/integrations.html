@@ -87,6 +87,7 @@
 <section class="integration-section notification-section" id="notifications">
   <div class="row between notification-heading">
     <div><h2>Notifications</h2><p class="muted">Route Share Manager events to Web Push, Home Assistant, Discord or a generic webhook.</p></div>
+    <a class="button-link secondary" href="/notifications/history">Notification history</a>
   </div>
 
 
@@ -130,6 +131,25 @@
         <button class="danger" {% if critical_broadcast_audience.devices == 0 %}disabled title="No eligible customer devices"{% endif %}>Send critical broadcast</button>
       </div>
     </form>
+    <details class="critical-broadcast-schedule">
+      <summary>Schedule this broadcast for later</summary>
+      <form method="post" action="/notifications/broadcast/critical/schedule" class="critical-broadcast-form critical-broadcast-schedule-form" id="critical-broadcast-schedule-form">
+        <label>Title<input name="title" maxlength="120" placeholder="Planned service maintenance" required></label>
+        <label>Message<textarea name="message" maxlength="1000" rows="4" placeholder="Plex will be unavailable while scheduled maintenance is carried out." required></textarea></label>
+        <label>Open when tapped<select name="destination"><option value="/portal">Account</option><option value="/portal/activity">Activity</option><option value="/portal/history">History</option></select></label>
+        <label>Send at <span class="muted">(your local time)</span><input type="datetime-local" id="critical-broadcast-local-time" required></label>
+        <input type="hidden" name="scheduled_for_utc" id="critical-broadcast-utc-time">
+        <div class="critical-broadcast-footer"><p class="muted">The browser converts your local time to UTC before saving. The eligible audience is calculated when the broadcast actually sends.</p><button class="secondary">Schedule critical broadcast</button></div>
+      </form>
+    </details>
+    {% if scheduled_broadcasts %}
+    <div class="scheduled-broadcast-list">
+      <h4>Upcoming broadcasts</h4>
+      {% for item in scheduled_broadcasts %}
+      <div class="scheduled-broadcast-row"><div><strong>{{ item.title }}</strong><span class="muted">{{ item.scheduled_for.strftime('%Y-%m-%d %H:%M') }} UTC</span></div><form method="post" action="/notifications/broadcast/scheduled/{{ item.id }}/cancel" onsubmit="return confirm('Cancel this scheduled broadcast?')"><button class="ghost">Cancel</button></form></div>
+      {% endfor %}
+    </div>
+    {% endif %}
   </article>
 
   <div class="notification-add-grid">
@@ -216,14 +236,14 @@
     <thead><tr><th>Time</th><th>Endpoint</th><th>Event</th><th>Severity</th><th>Result</th></tr></thead>
     <tbody>
       {% for delivery in notification_deliveries %}
-      <tr><td>{{ delivery.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ delivery.endpoint.name if delivery.endpoint else ('Web Push · ' ~ (delivery.recipient_type or 'device') if delivery.channel == 'web_push' else 'Deleted endpoint') }}</td><td><code>{{ delivery.event }}</code></td><td>{{ delivery.severity }}</td><td><span class="badge {{ 'ok' if delivery.success else 'error-badge' }}">{{ 'sent' if delivery.success else 'failed' }}</span>{% if not delivery.success and delivery.detail %}<div class="muted delivery-error">{{ delivery.detail }}</div>{% endif %}</td></tr>
+      <tr><td>{{ delivery.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ delivery.endpoint.name if delivery.endpoint else ('Web Push · ' ~ (delivery.recipient_type or 'device') if delivery.channel == 'web_push' else 'Deleted endpoint') }}</td><td><code>{{ delivery.event }}</code></td><td>{{ delivery.severity }}</td><td><span class="badge {{ 'ok' if delivery.success else ('warning' if delivery.next_attempt_at and not delivery.final_failure else 'error-badge') }}">{{ 'sent' if delivery.success else ('retrying' if delivery.next_attempt_at and not delivery.final_failure else 'failed') }}</span>{% if not delivery.success and delivery.detail %}<div class="muted delivery-error">{{ delivery.detail }}</div>{% endif %}</td></tr>
       {% else %}<tr><td colspan="5" class="muted">No notifications sent yet.</td></tr>{% endfor %}
     </tbody>
   </table></div>
   <div class="notification-delivery-mobile">
     {% for delivery in notification_deliveries %}
     <article class="notification-delivery-card {{ 'success' if delivery.success else 'failed' }}">
-      <div class="row between"><strong>{{ delivery.endpoint.name if delivery.endpoint else ('Web Push · ' ~ (delivery.recipient_type or 'device') if delivery.channel == 'web_push' else 'Deleted endpoint') }}</strong><span class="badge {{ 'ok' if delivery.success else 'error-badge' }}">{{ 'sent' if delivery.success else 'failed' }}</span></div>
+      <div class="row between"><strong>{{ delivery.endpoint.name if delivery.endpoint else ('Web Push · ' ~ (delivery.recipient_type or 'device') if delivery.channel == 'web_push' else 'Deleted endpoint') }}</strong><span class="badge {{ 'ok' if delivery.success else ('warning' if delivery.next_attempt_at and not delivery.final_failure else 'error-badge') }}">{{ 'sent' if delivery.success else ('retrying' if delivery.next_attempt_at and not delivery.final_failure else 'failed') }}</span></div>
       <code>{{ delivery.event }}</code>
       <div class="notification-delivery-meta"><span>{{ delivery.created_at.strftime('%Y-%m-%d %H:%M') }}</span><span>{{ delivery.severity }}</span></div>
       {% if not delivery.success and delivery.detail %}<div class="muted delivery-error">{{ delivery.detail }}</div>{% endif %}
@@ -232,6 +252,20 @@
   </div>
 </section>
 
+
+<script>
+(() => {
+  const form=document.getElementById('critical-broadcast-schedule-form');
+  const local=document.getElementById('critical-broadcast-local-time');
+  const utc=document.getElementById('critical-broadcast-utc-time');
+  if(!form||!local||!utc)return;
+  form.addEventListener('submit',e=>{
+    const d=new Date(local.value);
+    if(!local.value||Number.isNaN(d.getTime())){e.preventDefault();return;}
+    utc.value=d.toISOString().slice(0,19);
+  });
+})();
+</script>
 
 <script>
 (() => {

@@ -232,3 +232,23 @@ def test_admin_push_master_disable_blocks_normal_events_but_not_test():
         assert deliver.call_count == 0
         send_admin_push_test(db)
         assert deliver.call_count == 1
+
+
+def test_retry_delays_are_bounded():
+    from app.services.notifications import _retry_delay
+    assert _retry_delay(1) == 60
+    assert _retry_delay(2) == 300
+    assert _retry_delay(3) == 900
+    assert _retry_delay(4) is None
+
+
+def test_scheduled_broadcast_requires_future_time():
+    from datetime import datetime, timedelta
+    from app.services.notifications import schedule_critical_customer_broadcast
+    import pytest
+    db = db_session()
+    with pytest.raises(ValueError):
+        schedule_critical_customer_broadcast(
+            db, title="Maintenance", message="Soon", url="/portal",
+            scheduled_for=datetime.utcnow() - timedelta(minutes=1), created_by="admin",
+        )
