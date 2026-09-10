@@ -55,7 +55,7 @@ from .services.reconcile import enqueue_reconciliation, reconcile_customer, retr
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy, validate_application_schema, BackupStorageError
-from .services.tautulli import get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage, enforce_stream_limits
+from .services.tautulli import get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage, enforce_stream_limits, customer_live_sessions, terminate_customer_session
 from .version import APP_VERSION
 
 
@@ -506,6 +506,75 @@ def portal_dashboard(request: Request, db: Session = Depends(get_db)):
         sub = db.query(Subscription).options(joinedload(Subscription.billing_tier).joinedload(BillingTier.package)).filter(Subscription.customer_id == customer.id).order_by(Subscription.id.desc()).first()
     effective_status = "exempt" if customer.exempt else customer.status
     return render(request, "portal_dashboard.html", customer=customer, subscription=sub, effective_status=effective_status, now=datetime.utcnow())
+
+
+@app.get("/portal/activity", response_class=HTMLResponse)
+def portal_activity(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        response = RedirectResponse("/portal/login", status_code=303)
+        response.delete_cookie("sm_portal_session", path="/portal")
+        return response
+    activity = db.query(TautulliActivity).filter(TautulliActivity.customer_id == customer.id).first()
+    settings_row = get_tautulli_settings(db)
+    live = customer_live_sessions(db, customer, max_age_seconds=settings_row.live_refresh_seconds)
+    sub = db.query(Subscription).options(joinedload(Subscription.billing_tier)).filter(
+        Subscription.customer_id == customer.id,
+        Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES),
+    ).order_by(Subscription.id.desc()).first()
+    if not sub:
+        sub = db.query(Subscription).options(joinedload(Subscription.billing_tier)).filter(Subscription.customer_id == customer.id).order_by(Subscription.id.desc()).first()
+    events = db.query(StreamLimitEvent).filter(StreamLimitEvent.customer_id == customer.id).order_by(StreamLimitEvent.created_at.desc()).limit(25).all()
+    return render(
+        request, "portal_activity.html", customer=customer, activity=activity, live=live,
+        live_refresh_seconds=settings_row.live_refresh_seconds, subscription=sub, stream_events=events,
+        notice=request.query_params.get("notice"), error=request.query_params.get("error"), now=datetime.utcnow(),
+    )
+
+
+@app.get("/portal/api/activity", response_class=JSONResponse)
+def portal_activity_api(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    settings_row = get_tautulli_settings(db)
+    live = customer_live_sessions(db, customer, max_age_seconds=settings_row.live_refresh_seconds)
+    sessions = []
+    for item in live.get("sessions", []):
+        sessions.append({
+            "session_key": item.get("session_key"),
+            "title": item.get("title") or "Unknown title",
+            "state": item.get("state") or "playing",
+            "player": item.get("player"),
+        })
+    sampled_at = live.get("sampled_at")
+    return {
+        "available": not bool(live.get("error")),
+        "stale": bool(live.get("error")),
+        "sampled_at": sampled_at.isoformat() + "Z" if isinstance(sampled_at, datetime) else None,
+        "sessions": sessions,
+        "refresh_seconds": settings_row.live_refresh_seconds,
+    }
+
+
+@app.post("/portal/activity/stop")
+def portal_stop_stream(request: Request, session_key: str = Form(...), db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        response = RedirectResponse("/portal/login", status_code=303)
+        response.delete_cookie("sm_portal_session", path="/portal")
+        return response
+    try:
+        session = terminate_customer_session(db, customer, session_key)
+        title = str(session.get("title") or "stream")[:180]
+        db.add(AuditLog(actor=f"portal:{customer.id}", action="portal.stream.stop", target_type="customer", target_id=str(customer.id), detail=f"Customer stopped own stream: {title}"))
+        db.commit()
+        return RedirectResponse("/portal/activity?notice=" + quote_plus(f"Stopped {title}"), status_code=303)
+    except PermissionError as exc:
+        return RedirectResponse("/portal/activity?error=" + quote_plus(str(exc)), status_code=303)
+    except Exception:
+        logger.exception("Customer portal stream termination failed for customer %s", customer.id)
+        return RedirectResponse("/portal/activity?error=" + quote_plus("Could not stop that stream. Please try again."), status_code=303)
 
 
 @app.get("/", response_class=HTMLResponse)

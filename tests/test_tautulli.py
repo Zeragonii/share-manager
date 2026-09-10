@@ -96,3 +96,24 @@ def test_dashboard_usage_summarises_cached_activity():
     assert summary["never"] == 1
     assert summary["watch_time_30d"] == 5400
     assert summary["average_30d"] == 2700
+
+
+def test_customer_session_termination_verifies_owner(monkeypatch):
+    from app.models import Integration, TautulliSettings
+    from app.services.tautulli import terminate_customer_session
+    db = make_db()
+    customer = Customer(name="Portal User", plex_user_id="42")
+    integration = Integration(kind="tautulli", name="T", enabled=True, base_url="http://tautulli", secret="key")
+    db.add_all([customer, integration]); db.flush()
+    db.add(TautulliSettings(id=1, integration_id=integration.id, sync_interval_minutes=30, live_refresh_seconds=10))
+    db.commit()
+    monkeypatch.setattr(TautulliIntegration, "activity", lambda self: [{"session_key":"mine","user_id":"42","title":"Film"}, {"session_key":"theirs","user_id":"99","title":"Other"}])
+    seen = {}
+    monkeypatch.setattr(TautulliIntegration, "terminate_session", lambda self, key, message: seen.update({"key":key,"message":message}))
+    terminate_customer_session(db, customer, "mine")
+    assert seen["key"] == "mine"
+    try:
+        terminate_customer_session(db, customer, "theirs")
+        assert False, "other user's session should be rejected"
+    except PermissionError:
+        pass

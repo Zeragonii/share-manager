@@ -204,6 +204,66 @@ def get_live_activity(db: Session, *, max_age_seconds: int | None = None, now: d
         return dict(_live_cache)
 
 
+
+def remove_live_session_from_cache(session_key: str) -> None:
+    """Remove a session from the shared live cache after an explicit termination.
+
+    This is only a UI freshness helper; the next Tautulli sample remains authoritative.
+    """
+    key = str(session_key or "").strip()
+    if not key:
+        return
+    with _live_lock:
+        _live_cache["sessions"] = [
+            item for item in _live_cache.get("sessions", [])
+            if str(item.get("session_key") or "") != key
+        ]
+
+
+def customer_live_sessions(db: Session, customer: Customer, *, max_age_seconds: int | None = None, now: datetime | None = None) -> dict[str, Any]:
+    """Return only live sessions that Share Manager has matched to this customer."""
+    live = get_live_activity(db, max_age_seconds=max_age_seconds, now=now)
+    sessions = [item for item in live.get("sessions", []) if item.get("customer_id") == customer.id]
+    return {**live, "sessions": sessions}
+
+
+def terminate_customer_session(db: Session, customer: Customer, session_key: str) -> dict[str, Any]:
+    """Terminate one live Tautulli session only after fresh ownership verification.
+
+    The caller supplies only a session key. Ownership is resolved server-side from the
+    authenticated customer and the current Tautulli activity response.
+    """
+    key = str(session_key or "").strip()
+    if not key:
+        raise ValueError("A session key is required")
+
+    settings_row = get_tautulli_settings(db)
+    client = _client(settings_row)
+    activity = db.query(TautulliActivity).filter(TautulliActivity.customer_id == customer.id).first()
+    allowed_user_ids = {
+        str(value).strip() for value in (
+            activity.tautulli_user_id if activity else None,
+            customer.plex_user_id,
+        ) if value is not None and str(value).strip()
+    }
+    if not allowed_user_ids:
+        raise PermissionError("This portal account is not matched to a Tautulli user")
+
+    owned = None
+    for session in client.activity():
+        if str(session.get("session_key") or "") != key:
+            continue
+        if str(session.get("user_id") or "") in allowed_user_ids:
+            owned = session
+        break
+    if owned is None:
+        raise PermissionError("That stream is no longer active or does not belong to this account")
+
+    title = str(owned.get("title") or "Plex stream")
+    client.terminate_session(key, "This stream was stopped from your Share Manager customer portal.")
+    remove_live_session_from_cache(key)
+    return owned
+
 def dashboard_usage(db: Session, *, now: datetime | None = None) -> dict[str, int]:
     now = now or datetime.utcnow()
     rows = (db.query(TautulliActivity).join(Customer, Customer.id == TautulliActivity.customer_id).filter(Customer.archived.is_(False)).all())

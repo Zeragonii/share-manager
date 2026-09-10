@@ -137,3 +137,11 @@ Customer portal foundation: opt-in per-customer credentials, one-time temporary-
 
 ### 0.8.0 build compatibility fix
 Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incompatible with Passlib 1.7.4's backend self-test on Python 3.12 and can fail before hashing otherwise-valid portal passwords.
+
+
+## v0.8.1 — Customer activity
+- Added a read-only customer Activity portal page backed by the existing cached Tautulli analytics.
+- Customers can see last streamed/title, 30-day and lifetime watch time/play counts, current stream allowance, live sessions, and their own recent stream-limit enforcement history.
+- Live sessions refresh asynchronously using the configured Tautulli live interval.
+- Customers can stop only their own currently active Plex sessions. Ownership is re-verified server-side against a fresh Tautulli activity response before termination; arbitrary session keys cannot be used to stop another customer's playback.
+- Customer-initiated stops are recorded in the admin audit log but are not counted as stream-limit enforcement events.
