@@ -338,3 +338,10 @@ The shared admin render context exposes the current count of non-Closed support 
 ## v0.10.0b mobile ticket-detail layout hardening
 
 Navigation sidebar positioning is scoped to `#site-sidebar`. Semantic `<aside>` elements used by feature pages, including the ticket Workflow/Customer panel, remain normal document-flow content and do not inherit off-canvas or viewport-height navigation behavior.
+
+
+## v0.10.1 live ticket polling
+
+Support-ticket pseudo-realtime behavior uses short authenticated HTTP polls rather than persistent WebSockets. An open ticket view polls every five seconds only while `document.visibilityState` is `visible`. The client sends its latest rendered `SupportTicketMessage.id`, and the server returns only newer rows plus the current ticket status/priority/update metadata. Customer endpoints resolve the ticket through the signed portal customer and filter `visible_to_customer = true`; admin endpoints require the normal admin session and may include internal notes.
+
+The shared admin shell independently polls a compact ticket-summary endpoint every ten seconds. The navigation badge continues to represent all non-Closed tickets, while the unread count is used only for visual emphasis. This polling also pauses in hidden tabs and resumes on visibility return. No additional persistence or database schema is required for live updates.

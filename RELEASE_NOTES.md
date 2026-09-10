@@ -1,3 +1,15 @@
+# 0.10.1 — Live Ticket Updates
+
+- Added 5-second pseudo-realtime polling to open admin and customer ticket conversations.
+- Poll endpoints return only messages newer than the last message already rendered.
+- Added live ticket status/priority metadata refresh without replacing the reply composer or wiping drafted text.
+- Added a 10-second admin ticket-summary poll so the sidebar active-ticket count stays current across admin pages.
+- Added unread emphasis to the live admin ticket badge.
+- Polling pauses for hidden tabs/PWAs and resumes immediately on visibility return.
+- Customer polling remains portal-session/customer scoped and excludes private internal notes.
+- No database schema changes are required.
+- Bumped admin and customer PWA caches to 0.10.1.
+
 # 0.10.0b
 
 - Fixed excess blank scroll space below the admin ticket composer on mobile.

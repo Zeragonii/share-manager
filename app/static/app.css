@@ -765,3 +765,8 @@ a.button-link, .button-link{white-space:nowrap}
 
 /* v0.10.0b — scope navigation sidebar layout rules to the real site sidebar. */
 .ticket-admin-sidebar{background:transparent;border:0;padding:0}
+
+/* v0.10.1 — pseudo-realtime ticket updates */
+.ticket-message{transition:border-color .35s ease,background-color .35s ease,opacity .35s ease}
+.ticket-message.ticket-message-new{border-color:var(--accent);opacity:.72}
+#site-sidebar .nav-ticket-count.has-unread{box-shadow:0 0 0 3px rgba(229,160,13,.16)}

@@ -1,10 +1,19 @@
 # Share Manager
 
-> **Current version: 0.10.0b** — admin ticket-detail mobile overflow/blank-space fix.
+> **Current version: 0.10.1** — pseudo-realtime support ticket conversations and live admin queue counts.
 
-**Current version: 0.10.0**
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
+
+
+## v0.10.1 — Live Ticket Updates
+
+- Open admin and customer ticket conversations poll for new replies every 5 seconds while the page is visible.
+- Only messages newer than the last rendered message ID are returned, keeping polling lightweight.
+- Ticket status/priority metadata refreshes in place without resetting an in-progress reply.
+- Admin Tickets navigation count refreshes every 10 seconds and subtly highlights when unread ticket activity exists.
+- Polling pauses while the browser/PWA is hidden and catches up immediately when it becomes visible again.
+- Customer live-update endpoints remain session/customer scoped and never expose internal notes.
 
 ## v0.5.2
 

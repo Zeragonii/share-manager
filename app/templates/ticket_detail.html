@@ -1,7 +1,68 @@
 {% extends 'base.html' %}{% block content %}
-<header class="ticket-admin-detail-head"><div><a class="muted ticket-back" href="{{ '/tickets/closed' if ticket.status == 'closed' else '/tickets' }}">‹ {{ 'Closed tickets' if ticket.status == 'closed' else 'Active tickets' }}</a><div class="ticket-reference-line"><span>{{ ticket.reference }}</span><span class="ticket-status status-{{ ticket.status }}">{{ statuses.get(ticket.status,ticket.status) }}</span><span class="ticket-priority priority-{{ ticket.priority }}">{{ priorities.get(ticket.priority,ticket.priority) }}</span></div><h1>{{ ticket.subject }}</h1><p>{{ ticket.customer.name }} · {{ categories.get(ticket.category,ticket.category) }} · opened {{ ticket.created_at.strftime('%d %b %Y · %H:%M') }}</p></div><a class="button-link secondary" href="/customers/{{ ticket.customer_id }}/history">Customer history</a></header>
+<header class="ticket-admin-detail-head"><div><a class="muted ticket-back" href="{{ '/tickets/closed' if ticket.status == 'closed' else '/tickets' }}">‹ {{ 'Closed tickets' if ticket.status == 'closed' else 'Active tickets' }}</a><div class="ticket-reference-line"><span>{{ ticket.reference }}</span><span class="ticket-status status-{{ ticket.status }}" data-live-ticket-status>{{ statuses.get(ticket.status,ticket.status) }}</span><span class="ticket-priority priority-{{ ticket.priority }}" data-live-ticket-priority>{{ priorities.get(ticket.priority,ticket.priority) }}</span></div><h1>{{ ticket.subject }}</h1><p>{{ ticket.customer.name }} · {{ categories.get(ticket.category,ticket.category) }} · opened {{ ticket.created_at.strftime('%d %b %Y · %H:%M') }}</p></div><a class="button-link secondary" href="/customers/{{ ticket.customer_id }}/history">Customer history</a></header>
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
-<div class="ticket-admin-detail-grid"><section class="ticket-thread-section"><div class="row between"><div><h2>Conversation</h2><p class="muted">Customer-visible replies and private admin notes.</p></div></div><div class="ticket-thread admin-thread">{% for msg in ticket.messages %}<article class="ticket-message {{ msg.author_type }}"><div class="ticket-message-head"><strong>{% if msg.author_type=='customer' %}{{ ticket.customer.name }}{% elif msg.author_type=='internal' %}Internal note · {{ msg.author_label }}{% else %}Support{% endif %}</strong><time>{{ msg.created_at.strftime('%d %b %Y · %H:%M') }}</time></div><div class="ticket-message-body">{{ msg.body }}</div>{% if msg.author_type=='internal' %}<small>Not visible to customer</small>{% endif %}</article>{% endfor %}</div>
+<div class="ticket-admin-detail-grid"><section class="ticket-thread-section"><div class="row between"><div><h2>Conversation</h2><p class="muted">Customer-visible replies and private admin notes.</p></div></div><div class="ticket-thread admin-thread" data-live-ticket-thread data-last-message-id="{{ (ticket.messages[-1].id if ticket.messages else 0) }}">{% for msg in ticket.messages %}<article class="ticket-message {{ msg.author_type }}"><div class="ticket-message-head"><strong>{% if msg.author_type=='customer' %}{{ ticket.customer.name }}{% elif msg.author_type=='internal' %}Internal note · {{ msg.author_label }}{% else %}Support{% endif %}</strong><time>{{ msg.created_at.strftime('%d %b %Y · %H:%M') }}</time></div><div class="ticket-message-body">{{ msg.body }}</div>{% if msg.author_type=='internal' %}<small>Not visible to customer</small>{% endif %}</article>{% endfor %}</div>
 {% if ticket.status != 'closed' %}<div class="ticket-admin-composer"><form method="post" action="/tickets/{{ ticket.reference }}/reply"><label>Reply to customer<textarea name="body" rows="6" maxlength="10000" required></textarea></label><button>Send reply</button></form><details><summary>Add internal note</summary><form method="post" action="/tickets/{{ ticket.reference }}/note"><textarea name="body" rows="5" maxlength="10000" required placeholder="Private note — customer will not see this"></textarea><button class="secondary">Add internal note</button></form></details></div>{% endif %}</section>
-<aside class="ticket-admin-sidebar"><section><h2>Workflow</h2><form method="post" action="/tickets/{{ ticket.reference }}/status"><label>Status<select name="status">{% for key,label in statuses.items() %}<option value="{{ key }}" {% if ticket.status==key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><button class="secondary">Update status</button></form><form method="post" action="/tickets/{{ ticket.reference }}/priority"><label>Priority<select name="priority">{% for key,label in priorities.items() %}<option value="{{ key }}" {% if ticket.priority==key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><button class="secondary">Update priority</button></form></section><section><h2>Customer</h2><dl class="ticket-meta"><div><dt>Name</dt><dd>{{ ticket.customer.name }}</dd></div><div><dt>Email</dt><dd>{{ ticket.customer.email or '—' }}</dd></div><div><dt>Plex</dt><dd>{{ ticket.customer.plex_username or '—' }}</dd></div><div><dt>Ticket notifications</dt><dd>{{ 'Subscribed' if ticket.notifications_enabled else 'Off' }}</dd></div><div><dt>Last activity</dt><dd>{{ relative_time(ticket.updated_at) }}</dd></div></dl></section></aside></div>
+<aside class="ticket-admin-sidebar"><section><h2>Workflow</h2><form method="post" action="/tickets/{{ ticket.reference }}/status"><label>Status<select name="status">{% for key,label in statuses.items() %}<option value="{{ key }}" {% if ticket.status==key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><button class="secondary">Update status</button></form><form method="post" action="/tickets/{{ ticket.reference }}/priority"><label>Priority<select name="priority">{% for key,label in priorities.items() %}<option value="{{ key }}" {% if ticket.priority==key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><button class="secondary">Update priority</button></form></section><section><h2>Customer</h2><dl class="ticket-meta"><div><dt>Name</dt><dd>{{ ticket.customer.name }}</dd></div><div><dt>Email</dt><dd>{{ ticket.customer.email or '—' }}</dd></div><div><dt>Plex</dt><dd>{{ ticket.customer.plex_username or '—' }}</dd></div><div><dt>Ticket notifications</dt><dd>{{ 'Subscribed' if ticket.notifications_enabled else 'Off' }}</dd></div><div><dt>Last activity</dt><dd data-live-ticket-updated>{{ relative_time(ticket.updated_at) }}</dd></div></dl></section></aside></div>
+
+<script>
+(() => {
+  const thread = document.querySelector('[data-live-ticket-thread]');
+  if (!thread) return;
+  let after = Number(thread.dataset.lastMessageId || 0);
+  let inFlight = false;
+  const statusEl = document.querySelector('[data-live-ticket-status]');
+  const priorityEl = document.querySelector('[data-live-ticket-priority]');
+  const updatedEl = document.querySelector('[data-live-ticket-updated]');
+
+  function updateBadge(el, prefix, value, label) {
+    if (!el) return;
+    [...el.classList].filter(c => c.startsWith(prefix)).forEach(c => el.classList.remove(c));
+    el.classList.add(prefix + value);
+    el.textContent = label;
+  }
+  function appendMessage(msg) {
+    const article = document.createElement('article');
+    article.className = `ticket-message ${msg.author_type} ticket-message-new`;
+    const head = document.createElement('div');
+    head.className = 'ticket-message-head';
+    const strong = document.createElement('strong');
+    strong.textContent = msg.author;
+    const time = document.createElement('time');
+    time.textContent = msg.created_label || '';
+    head.append(strong, time);
+    const body = document.createElement('div');
+    body.className = 'ticket-message-body';
+    body.textContent = msg.body || '';
+    article.append(head, body);
+    if (msg.internal) {
+      const note = document.createElement('small');
+      note.textContent = 'Not visible to customer';
+      article.append(note);
+    }
+    thread.append(article);
+    requestAnimationFrame(() => article.classList.remove('ticket-message-new'));
+  }
+  async function poll() {
+    if (document.visibilityState !== 'visible' || inFlight) return;
+    inFlight = true;
+    try {
+      const response = await fetch(`/api/admin/tickets/{{ ticket.reference }}/updates?after=${after}`, {credentials:'same-origin', cache:'no-store'});
+      if (!response.ok) return;
+      const data = await response.json();
+      (data.messages || []).forEach(appendMessage);
+      if (data.latest_message_id) after = Math.max(after, Number(data.latest_message_id));
+      if (data.ticket) {
+        updateBadge(statusEl, 'status-', data.ticket.status, data.ticket.status_label);
+        updateBadge(priorityEl, 'priority-', data.ticket.priority, data.ticket.priority_label);
+        if (updatedEl) updatedEl.textContent = data.ticket.updated_label || 'just now';
+      }
+    } catch (_) {} finally { inFlight = false; }
+  }
+  poll();
+  setInterval(poll, 5000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
+})();
+</script>
+
 {% endblock %}

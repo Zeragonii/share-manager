@@ -822,6 +822,39 @@ def admin_notification_preferences(request: Request, push_enabled: str | None = 
     db.commit()
     return RedirectResponse("/integrations?notice=Admin+push+preferences+updated#notifications", status_code=303)
 
+
+def _ticket_message_json(msg: SupportTicketMessage, *, customer_view: bool = False, customer_name: str | None = None) -> dict:
+    if customer_view:
+        author = "You" if msg.author_type == "customer" else "Support"
+    elif msg.author_type == "customer":
+        author = customer_name or msg.author_label or "Customer"
+    elif msg.author_type == "internal":
+        author = f"Internal note · {msg.author_label}"
+    else:
+        author = "Support"
+    return {
+        "id": msg.id,
+        "author_type": msg.author_type,
+        "author": author,
+        "body": msg.body,
+        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+        "created_label": msg.created_at.strftime("%d %b %Y · %H:%M") if msg.created_at else "",
+        "internal": msg.author_type == "internal",
+    }
+
+
+def _ticket_state_json(ticket: SupportTicket) -> dict:
+    return {
+        "reference": ticket.reference,
+        "status": ticket.status,
+        "status_label": TICKET_STATUSES.get(ticket.status, ticket.status),
+        "priority": ticket.priority,
+        "priority_label": TICKET_PRIORITIES.get(ticket.priority, ticket.priority),
+        "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
+        "updated_label": _relative_time(ticket.updated_at),
+    }
+
+
 @app.get("/portal/tickets", response_class=HTMLResponse)
 def portal_tickets(request: Request, db: Session = Depends(get_db)):
     customer = _portal_customer(request, db)
@@ -895,6 +928,34 @@ def portal_ticket_notifications(reference: str, request: Request, enabled: str |
     ticket.notifications_enabled = bool(enabled); ticket.updated_at = datetime.utcnow()
     db.add(AuditLog(actor=f"portal:{customer.portal_username}", action="ticket.notifications", target_type="support_ticket", target_id=ticket.reference, detail="enabled" if enabled else "disabled")); db.commit()
     return RedirectResponse(f"/portal/tickets/{reference}?notice=" + quote_plus("Ticket notification preference updated"), status_code=303)
+
+
+@app.get("/portal/api/tickets/{reference}/updates")
+def portal_ticket_updates(reference: str, request: Request, after: int = 0, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    ticket = db.query(SupportTicket).filter(SupportTicket.reference == reference, SupportTicket.customer_id == customer.id).first()
+    if not ticket:
+        return JSONResponse({"error": "Ticket not found"}, status_code=404)
+    messages = (
+        db.query(SupportTicketMessage)
+        .filter(
+            SupportTicketMessage.ticket_id == ticket.id,
+            SupportTicketMessage.visible_to_customer.is_(True),
+            SupportTicketMessage.id > max(0, after),
+        )
+        .order_by(SupportTicketMessage.id.asc())
+        .all()
+    )
+    if ticket.customer_unread:
+        ticket.customer_unread = False
+        db.commit()
+    return {
+        "ticket": _ticket_state_json(ticket),
+        "messages": [_ticket_message_json(m, customer_view=True) for m in messages],
+        "latest_message_id": messages[-1].id if messages else after,
+    }
 
 
 @app.get("/portal/activity", response_class=HTMLResponse)
@@ -1130,6 +1191,38 @@ def admin_ticket_priority(reference: str, request: Request, priority: str = Form
     if not ticket: return RedirectResponse("/tickets?error=Ticket+not+found",status_code=303)
     try: change_priority(db,ticket,priority,settings.admin_username); return RedirectResponse(f"/tickets/{reference}?notice="+quote_plus("Priority updated"),status_code=303)
     except ValueError as exc: return RedirectResponse(f"/tickets/{reference}?error="+quote_plus(str(exc)),status_code=303)
+
+
+@app.get("/api/admin/tickets/summary")
+def admin_ticket_summary(request: Request, db: Session = Depends(get_db)):
+    if not logged_in(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    active_count = db.query(func.count(SupportTicket.id)).filter(SupportTicket.status != "closed").scalar() or 0
+    unread_count = db.query(func.count(SupportTicket.id)).filter(SupportTicket.status != "closed", SupportTicket.admin_unread.is_(True)).scalar() or 0
+    return {"active_count": int(active_count), "unread_count": int(unread_count)}
+
+
+@app.get("/api/admin/tickets/{reference}/updates")
+def admin_ticket_updates(reference: str, request: Request, after: int = 0, db: Session = Depends(get_db)):
+    if not logged_in(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    ticket = db.query(SupportTicket).options(joinedload(SupportTicket.customer)).filter(SupportTicket.reference == reference).first()
+    if not ticket:
+        return JSONResponse({"error": "Ticket not found"}, status_code=404)
+    messages = (
+        db.query(SupportTicketMessage)
+        .filter(SupportTicketMessage.ticket_id == ticket.id, SupportTicketMessage.id > max(0, after))
+        .order_by(SupportTicketMessage.id.asc())
+        .all()
+    )
+    if ticket.admin_unread:
+        ticket.admin_unread = False
+        db.commit()
+    return {
+        "ticket": _ticket_state_json(ticket),
+        "messages": [_ticket_message_json(m, customer_name=ticket.customer.name) for m in messages],
+        "latest_message_id": messages[-1].id if messages else after,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)

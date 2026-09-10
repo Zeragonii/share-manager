@@ -31,7 +31,7 @@
       <button type="button" class="ghost aside-close" aria-label="Close navigation">×</button>
     </div>
     <nav>
-      <a href="/" data-nav-root="/">Dashboard</a><a href="/customers" data-nav-root="/customers">Customers</a><a href="/tickets" data-nav-root="/tickets" class="nav-ticket-link"><span>Tickets</span>{% if admin_open_ticket_count %}<span class="nav-ticket-count" aria-label="{{ admin_open_ticket_count }} active tickets">{{ admin_open_ticket_count }}</span>{% endif %}</a><a href="/packages" data-nav-root="/packages">Packages</a><a href="/payments" data-nav-root="/payments">Payments</a><a href="/integrations" data-nav-root="/integrations">Integrations</a><a href="/stream-limits" data-nav-root="/stream-limits">Stream Limits</a><a href="/backups" data-nav-root="/backups">Backups</a>
+      <a href="/" data-nav-root="/">Dashboard</a><a href="/customers" data-nav-root="/customers">Customers</a><a href="/tickets" data-nav-root="/tickets" class="nav-ticket-link"><span>Tickets</span><span class="nav-ticket-count" data-ticket-count aria-label="{{ admin_open_ticket_count }} active tickets" {% if not admin_open_ticket_count %}hidden{% endif %}>{{ admin_open_ticket_count }}</span></a><a href="/packages" data-nav-root="/packages">Packages</a><a href="/payments" data-nav-root="/payments">Payments</a><a href="/integrations" data-nav-root="/integrations">Integrations</a><a href="/stream-limits" data-nav-root="/stream-limits">Stream Limits</a><a href="/backups" data-nav-root="/backups">Backups</a>
     </nav>
     <form method="post" action="/logout"><button class="ghost">Sign out</button></form>
   </aside>
@@ -89,6 +89,32 @@
     if (active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   });
+})();
+</script>
+
+<script>
+(() => {
+  const badge = document.querySelector('[data-ticket-count]');
+  if (!badge) return;
+  let inFlight = false;
+  async function refreshTicketCount() {
+    if (document.visibilityState !== 'visible' || inFlight) return;
+    inFlight = true;
+    try {
+      const response = await fetch('/api/admin/tickets/summary', {credentials: 'same-origin', cache: 'no-store'});
+      if (!response.ok) return;
+      const data = await response.json();
+      const count = Number(data.active_count || 0);
+      const unread = Number(data.unread_count || 0);
+      badge.textContent = String(count);
+      badge.hidden = count === 0;
+      badge.classList.toggle('has-unread', unread > 0);
+      badge.setAttribute('aria-label', `${count} active tickets${unread ? `, ${unread} unread` : ''}`);
+    } catch (_) {} finally { inFlight = false; }
+  }
+  refreshTicketCount();
+  setInterval(refreshTicketCount, 10000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshTicketCount(); });
 })();
 </script>
 <script>

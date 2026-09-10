@@ -1,9 +1,67 @@
 {% from '_portal_navigation.html' import portal_sidebar, portal_topbar, portal_bottom_nav %}
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><title>{{ ticket.reference }} · Share Manager</title><link rel="manifest" href="/portal/manifest.webmanifest"><link rel="icon" href="/static/icons/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
 <body class="portal-body"><div class="portal-shell portal-app-shell">{{ portal_sidebar('tickets', customer) }}<div class="portal-content-shell">{{ portal_topbar(customer) }}<main class="portal-main portal-main-with-nav">
-<header class="ticket-detail-heading"><div><a class="muted ticket-back" href="/portal/tickets">‹ Support tickets</a><div class="ticket-reference-line"><span>{{ ticket.reference }}</span><span class="ticket-status status-{{ ticket.status }}">{{ statuses.get(ticket.status,ticket.status) }}</span></div><h1>{{ ticket.subject }}</h1><p>{{ categories.get(ticket.category,ticket.category) }} · Opened {{ ticket.created_at.strftime('%d %b %Y · %H:%M') }}</p></div></header>
+<header class="ticket-detail-heading"><div><a class="muted ticket-back" href="/portal/tickets">‹ Support tickets</a><div class="ticket-reference-line"><span>{{ ticket.reference }}</span><span class="ticket-status status-{{ ticket.status }}" data-live-ticket-status>{{ statuses.get(ticket.status,ticket.status) }}</span></div><h1>{{ ticket.subject }}</h1><p>{{ categories.get(ticket.category,ticket.category) }} · Opened {{ ticket.created_at.strftime('%d %b %Y · %H:%M') }}</p></div></header>
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 <section class="portal-info-section ticket-subscription"><form method="post" action="/portal/tickets/{{ ticket.reference }}/notifications"><label class="toggle-choice"><input type="checkbox" name="enabled" value="1" {% if ticket.notifications_enabled %}checked{% endif %} onchange="this.form.submit()"><span><strong>Ticket notifications</strong><small class="muted">Notify me when support replies or changes this ticket's status.</small></span></label></form></section>
-<section class="portal-info-section"><div class="portal-section-heading"><div><h2>Conversation</h2><span class="muted">Latest activity {{ relative_time(ticket.updated_at) }}</span></div></div><div class="ticket-thread">{% for msg in messages %}<article class="ticket-message {{ msg.author_type }}"><div class="ticket-message-head"><strong>{{ 'You' if msg.author_type == 'customer' else 'Support' }}</strong><time>{{ msg.created_at.strftime('%d %b %Y · %H:%M') }}</time></div><div class="ticket-message-body">{{ msg.body }}</div></article>{% endfor %}</div></section>
+<section class="portal-info-section"><div class="portal-section-heading"><div><h2>Conversation</h2><span class="muted">Latest activity <span data-live-ticket-updated>{{ relative_time(ticket.updated_at) }}</span></span></div></div><div class="ticket-thread" data-live-ticket-thread data-last-message-id="{{ (messages[-1].id if messages else 0) }}">{% for msg in messages %}<article class="ticket-message {{ msg.author_type }}"><div class="ticket-message-head"><strong>{{ 'You' if msg.author_type == 'customer' else 'Support' }}</strong><time>{{ msg.created_at.strftime('%d %b %Y · %H:%M') }}</time></div><div class="ticket-message-body">{{ msg.body }}</div></article>{% endfor %}</div></section>
 {% if ticket.status != 'closed' %}<section class="portal-info-section"><h2>Reply</h2>{% if ticket.status == 'resolved' %}<p class="muted">Replying will reopen this resolved ticket.</p>{% endif %}<form method="post" action="/portal/tickets/{{ ticket.reference }}/reply" class="ticket-reply-form"><textarea name="body" rows="6" maxlength="10000" required placeholder="Write your reply…"></textarea><button type="submit">Send reply</button></form></section>{% else %}<section class="portal-info-section"><div class="portal-empty"><strong>This ticket is closed.</strong><span>If you need further help, raise a new support ticket.</span></div></section>{% endif %}
-</main>{{ portal_bottom_nav('tickets') }}</div></div><script>if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/portal/service-worker.js',{scope:'/portal'}).catch(()=>{}));}</script></body></html>
+</main>{{ portal_bottom_nav('tickets') }}</div></div><script>
+(() => {
+  const thread = document.querySelector('[data-live-ticket-thread]');
+  if (!thread) return;
+  let after = Number(thread.dataset.lastMessageId || 0);
+  let inFlight = false;
+  let currentStatus = '{{ ticket.status }}';
+  const statusEl = document.querySelector('[data-live-ticket-status]');
+  const updatedEl = document.querySelector('[data-live-ticket-updated]');
+
+  function appendMessage(msg) {
+    const article = document.createElement('article');
+    article.className = `ticket-message ${msg.author_type} ticket-message-new`;
+    const head = document.createElement('div');
+    head.className = 'ticket-message-head';
+    const strong = document.createElement('strong');
+    strong.textContent = msg.author;
+    const time = document.createElement('time');
+    time.textContent = msg.created_label || '';
+    head.append(strong, time);
+    const body = document.createElement('div');
+    body.className = 'ticket-message-body';
+    body.textContent = msg.body || '';
+    article.append(head, body);
+    thread.append(article);
+    requestAnimationFrame(() => article.classList.remove('ticket-message-new'));
+  }
+  function updateStatus(value, label) {
+    if (!statusEl) return;
+    [...statusEl.classList].filter(c => c.startsWith('status-')).forEach(c => statusEl.classList.remove(c));
+    statusEl.classList.add('status-' + value);
+    statusEl.textContent = label;
+  }
+  async function poll() {
+    if (document.visibilityState !== 'visible' || inFlight) return;
+    inFlight = true;
+    try {
+      const response = await fetch(`/portal/api/tickets/{{ ticket.reference }}/updates?after=${after}`, {credentials:'same-origin', cache:'no-store'});
+      if (response.status === 401) { window.location.href = '/portal/login'; return; }
+      if (!response.ok) return;
+      const data = await response.json();
+      (data.messages || []).forEach(appendMessage);
+      if (data.latest_message_id) after = Math.max(after, Number(data.latest_message_id));
+      if (data.ticket) {
+        updateStatus(data.ticket.status, data.ticket.status_label);
+        if (updatedEl) updatedEl.textContent = data.ticket.updated_label || 'just now';
+        if (data.ticket.status !== currentStatus && (data.ticket.status === 'closed' || currentStatus === 'closed')) {
+          window.location.reload();
+          return;
+        }
+        currentStatus = data.ticket.status;
+      }
+    } catch (_) {} finally { inFlight = false; }
+  }
+  poll();
+  setInterval(poll, 5000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
+})();
+</script><script>if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/portal/service-worker.js',{scope:'/portal'}).catch(()=>{}));}</script></body></html>
