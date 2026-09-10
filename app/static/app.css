@@ -683,3 +683,11 @@ a.button-link, .button-link{white-space:nowrap}
   .portal-password-change-form{grid-template-columns:1fr}
   .portal-password-change-form>button{width:100%;justify-self:stretch}
 }
+
+/* v0.8.4 detailed customer watch history */
+.portal-watch-filters{display:grid;grid-template-columns:minmax(220px,1.4fr) repeat(3,minmax(145px,.8fr)) minmax(135px,.7fr) minmax(135px,.7fr);gap:10px;align-items:end;margin:14px 0 16px}
+.portal-watch-filter-actions{display:flex;gap:8px;grid-column:1/-1;justify-content:flex-end}.portal-watch-filter-actions .button-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;padding:10px 14px;border-radius:7px}
+.portal-watch-list{display:grid;gap:10px}.portal-watch-card{border:1px solid var(--line);border-radius:10px;padding:13px;background:#0e141d}.portal-watch-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.portal-watch-top>div{display:grid;gap:3px;min-width:0}.portal-watch-top strong{font-size:14px}.portal-watch-top span{font-size:11px;color:var(--muted)}.portal-watch-top>.badge{color:#dbe3ee;flex:0 0 auto}
+.portal-watch-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}.portal-watch-meta span{display:grid;gap:2px;padding:8px 9px;background:#111925;border-radius:8px;font-size:12px;min-width:0;overflow-wrap:anywhere}.portal-watch-meta b{font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}.portal-watch-limit-note{font-size:11px;margin:12px 0 0}
+@media(max-width:900px){.portal-watch-filters{grid-template-columns:1fr 1fr}.portal-watch-filters label:first-child{grid-column:1/-1}.portal-watch-filter-actions{grid-column:1/-1}.portal-watch-filter-actions>*{flex:1}.portal-watch-meta{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.portal-watch-filters{grid-template-columns:1fr}.portal-watch-filters label:first-child,.portal-watch-filter-actions{grid-column:auto}.portal-watch-top{gap:8px}.portal-watch-meta{grid-template-columns:1fr 1fr}.portal-watch-card{padding:12px}.portal-watch-meta span{padding:7px 8px}}

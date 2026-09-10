@@ -117,6 +117,53 @@ class TautulliIntegration:
             "plays_lifetime": parsed[0]["plays"],
         }
 
+    def history(self, user_id: str, *, length: int = 250, start: int = 0) -> list[dict[str, Any]]:
+        """Return normalized viewing-history rows for one Plex/Tautulli user."""
+        data = self._call(
+            "get_history",
+            user_id=user_id,
+            grouping=1,
+            order_column="date",
+            order_dir="desc",
+            start=max(0, int(start)),
+            length=max(1, min(1000, int(length))),
+        ) or {}
+        rows = data.get("data", []) if isinstance(data, dict) else []
+        result: list[dict[str, Any]] = []
+        for row in rows if isinstance(rows, list) else []:
+            watched_at = self._dt(row.get("date") or row.get("stopped") or row.get("started"))
+            if not watched_at:
+                continue
+            source_row_id = str(row.get("row_id") or row.get("reference_id") or row.get("history_id") or "").strip()
+            if not source_row_id:
+                # Stable-enough fallback for older Tautulli versions lacking row_id.
+                source_row_id = ":".join([
+                    str(row.get("rating_key") or ""),
+                    str(row.get("started") or row.get("date") or ""),
+                    str(row.get("player") or ""),
+                ])
+            try:
+                duration = int(row.get("duration") or 0)
+            except (TypeError, ValueError):
+                duration = 0
+            try:
+                watched_status = int(row.get("watched_status")) if row.get("watched_status") is not None else None
+            except (TypeError, ValueError):
+                watched_status = None
+            result.append({
+                "source_row_id": source_row_id[:64],
+                "watched_at": watched_at,
+                "title": row.get("full_title") or row.get("title") or "Unknown title",
+                "library_name": row.get("section_name") or row.get("library_name") or None,
+                "section_id": str(row.get("section_id") or "") or None,
+                "media_type": row.get("media_type") or None,
+                "platform": row.get("platform") or None,
+                "player": row.get("player") or None,
+                "duration_seconds": max(0, duration),
+                "watched_status": watched_status,
+            })
+        return result
+
     def latest_history(self, user_id: str) -> dict[str, Any] | None:
         data = self._call(
             "get_history",

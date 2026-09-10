@@ -42,6 +42,7 @@ from .models import (
     NotificationDelivery,
     TautulliActivity,
     TautulliSettings,
+    TautulliWatchHistory,
     StreamLimitEvent,
 )
 from .integrations.plex import PlexIntegration
@@ -611,7 +612,16 @@ def portal_history(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/portal/activity", response_class=HTMLResponse)
-def portal_activity(request: Request, db: Session = Depends(get_db)):
+def portal_activity(
+    request: Request,
+    device: str | None = None,
+    library: str | None = None,
+    media_type: str | None = None,
+    q: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    db: Session = Depends(get_db),
+):
     customer = _portal_customer(request, db)
     if not customer:
         response = RedirectResponse("/portal/login", status_code=303)
@@ -627,9 +637,47 @@ def portal_activity(request: Request, db: Session = Depends(get_db)):
     if not sub:
         sub = db.query(Subscription).options(joinedload(Subscription.billing_tier)).filter(Subscription.customer_id == customer.id).order_by(Subscription.id.desc()).first()
     events = db.query(StreamLimitEvent).filter(StreamLimitEvent.customer_id == customer.id).order_by(StreamLimitEvent.created_at.desc()).limit(25).all()
+
+    watch_query = db.query(TautulliWatchHistory).filter(TautulliWatchHistory.customer_id == customer.id)
+    clean_device = (device or "").strip()
+    clean_library = (library or "").strip()
+    clean_media_type = (media_type or "").strip()
+    clean_q = (q or "").strip()
+    if clean_device:
+        watch_query = watch_query.filter(or_(TautulliWatchHistory.player == clean_device, TautulliWatchHistory.platform == clean_device))
+    if clean_library:
+        watch_query = watch_query.filter(TautulliWatchHistory.library_name == clean_library)
+    if clean_media_type:
+        watch_query = watch_query.filter(TautulliWatchHistory.media_type == clean_media_type)
+    if clean_q:
+        watch_query = watch_query.filter(func.lower(TautulliWatchHistory.title).contains(clean_q.lower()))
+    parsed_from = parsed_to = None
+    try:
+        if (from_date or "").strip():
+            parsed_from = datetime.strptime(from_date.strip(), "%Y-%m-%d")
+            watch_query = watch_query.filter(TautulliWatchHistory.watched_at >= parsed_from)
+    except ValueError:
+        from_date = None
+    try:
+        if (to_date or "").strip():
+            parsed_to = datetime.strptime(to_date.strip(), "%Y-%m-%d") + timedelta(days=1)
+            watch_query = watch_query.filter(TautulliWatchHistory.watched_at < parsed_to)
+    except ValueError:
+        to_date = None
+
+    watch_history = watch_query.order_by(TautulliWatchHistory.watched_at.desc(), TautulliWatchHistory.id.desc()).limit(250).all()
+    base_history = db.query(TautulliWatchHistory).filter(TautulliWatchHistory.customer_id == customer.id)
+    device_rows = base_history.with_entities(TautulliWatchHistory.player, TautulliWatchHistory.platform).distinct().all()
+    devices = sorted({str(player or platform).strip() for player, platform in device_rows if str(player or platform or "").strip()}, key=str.lower)
+    libraries = sorted({row[0] for row in base_history.with_entities(TautulliWatchHistory.library_name).distinct().all() if row[0]}, key=str.lower)
+    media_types = sorted({row[0] for row in base_history.with_entities(TautulliWatchHistory.media_type).distinct().all() if row[0]}, key=str.lower)
+    total_cached = base_history.count()
+
     return render(
         request, "portal_activity.html", customer=customer, activity=activity, live=live,
         live_refresh_seconds=settings_row.live_refresh_seconds, subscription=sub, stream_events=events,
+        watch_history=watch_history, watch_devices=devices, watch_libraries=libraries, watch_media_types=media_types,
+        watch_total_cached=total_cached, watch_filters={"device": clean_device, "library": clean_library, "media_type": clean_media_type, "q": clean_q, "from_date": from_date or "", "to_date": to_date or ""},
         notice=request.query_params.get("notice"), error=request.query_params.get("error"), now=datetime.utcnow(),
     )
 

@@ -229,6 +229,26 @@ class TautulliActivity(Base):
     customer: Mapped[Customer] = relationship()
 
 
+class TautulliWatchHistory(Base):
+    __tablename__ = "tautulli_watch_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    tautulli_user_id: Mapped[str] = mapped_column(String(64), index=True)
+    source_row_id: Mapped[str] = mapped_column(String(64))
+    watched_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    title: Mapped[str] = mapped_column(Text)
+    library_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    section_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    media_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    platform: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    player: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    watched_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    customer: Mapped[Customer] = relationship()
+    __table_args__ = (UniqueConstraint("customer_id", "source_row_id", name="uq_tautulli_watch_customer_row"),)
+
+
 class StreamLimitEvent(Base):
     __tablename__ = "stream_limit_events"
     id: Mapped[int] = mapped_column(primary_key=True)

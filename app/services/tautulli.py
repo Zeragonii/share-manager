@@ -9,7 +9,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..integrations.tautulli import TautulliIntegration, TautulliUser
-from ..models import ASSIGNED_SUBSCRIPTION_STATES, AuditLog, BillingTier, Customer, Integration, StreamLimitEvent, Subscription, TautulliActivity, TautulliSettings
+from ..models import ASSIGNED_SUBSCRIPTION_STATES, AuditLog, BillingTier, Customer, Integration, StreamLimitEvent, Subscription, TautulliActivity, TautulliSettings, TautulliWatchHistory
 from .notifications import notify_event
 
 
@@ -62,6 +62,41 @@ def _client(settings_row: TautulliSettings) -> TautulliIntegration:
     return TautulliIntegration(integration.base_url or "", integration.secret or "")
 
 
+def _sync_watch_history(db: Session, client: TautulliIntegration, customer: Customer, user_id: str, *, now: datetime) -> int:
+    """Upsert detailed viewing history. First sync backfills more rows; later syncs stay lightweight."""
+    existing_count = db.query(func.count(TautulliWatchHistory.id)).filter(TautulliWatchHistory.customer_id == customer.id).scalar() or 0
+    rows = client.history(user_id, length=500 if existing_count == 0 else 100)
+    if not rows:
+        return 0
+    source_ids = [row["source_row_id"] for row in rows]
+    existing = {
+        item.source_row_id: item
+        for item in db.query(TautulliWatchHistory).filter(
+            TautulliWatchHistory.customer_id == customer.id,
+            TautulliWatchHistory.source_row_id.in_(source_ids),
+        ).all()
+    }
+    changed = 0
+    for row in rows:
+        item = existing.get(row["source_row_id"])
+        if item is None:
+            item = TautulliWatchHistory(customer_id=customer.id, tautulli_user_id=user_id, source_row_id=row["source_row_id"])
+            db.add(item)
+            changed += 1
+        item.tautulli_user_id = user_id
+        item.watched_at = row["watched_at"]
+        item.title = row["title"]
+        item.library_name = row["library_name"]
+        item.section_id = row["section_id"]
+        item.media_type = row["media_type"]
+        item.platform = row["platform"]
+        item.player = row["player"]
+        item.duration_seconds = row["duration_seconds"]
+        item.watched_status = row["watched_status"]
+        item.synced_at = now
+    return changed
+
+
 def sync_tautulli(db: Session, *, now: datetime | None = None) -> TautulliSyncResult:
     now = now or datetime.utcnow()
     settings_row = get_tautulli_settings(db)
@@ -110,6 +145,7 @@ def sync_tautulli(db: Session, *, now: datetime | None = None) -> TautulliSyncRe
             activity.plays_lifetime = stats["plays_lifetime"]
             activity.synced_at = now
             synced += 1
+            _sync_watch_history(db, client, customer, user.user_id, now=now)
 
             if not customer.exempt and customer.status in {"active", "grace"}:
                 if last_streamed and last_streamed <= now - timedelta(days=90):

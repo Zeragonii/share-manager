@@ -254,3 +254,11 @@ Pinned `bcrypt==4.0.1` alongside Passlib 1.7.4. Newer bcrypt releases are incomp
 
 ## Customer portal shell and PWA (v0.8.3)
 The customer portal is responsive with separate navigation presentations: a sticky left sidebar on desktop and a bottom navigation bar on mobile. Customer portal PWA resources are scoped beneath `/portal/`; the portal manifest starts at `/portal`, while its service worker caches only static assets and uses network-first navigation. Portal password changes verify the existing password, replace the bcrypt hash, increment `portal_session_version`, and issue a replacement cookie for the active browser so all other customer sessions are revoked.
+
+
+## v0.8.4 — Detailed watch history
+- Added PostgreSQL-cached Tautulli viewing-history rows per customer.
+- First detailed sync backfills up to 500 recent rows per matched user; later syncs refresh the newest 100 rows to stay lightweight.
+- Customer Activity now exposes title, watched date/time, library, device/player, platform, media type and playback duration.
+- Added customer-scoped filters for title search, device, library, media type and date range.
+- Portal queries always derive customer ownership from the authenticated portal session; watch history cannot be queried for another customer.

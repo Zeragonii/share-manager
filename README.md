@@ -365,3 +365,11 @@ The customer portal now includes a read-only History area. Authenticated custome
 
 ### Customer portal UX (v0.8.3)
 The customer portal uses a left navigation rail on desktop and a bottom navigation bar on mobile. It has its own PWA manifest at `/portal/manifest.webmanifest` and service worker at `/portal/service-worker.js`, allowing customers to install the portal with `/portal` as its start URL. Customers can also change their own portal password from Account; doing so revokes other portal sessions while issuing a fresh session to the current browser.
+
+
+## v0.8.4 — Detailed watch history
+- Added PostgreSQL-cached Tautulli viewing-history rows per customer.
+- First detailed sync backfills up to 500 recent rows per matched user; later syncs refresh the newest 100 rows to stay lightweight.
+- Customer Activity now exposes title, watched date/time, library, device/player, platform, media type and playback duration.
+- Added customer-scoped filters for title search, device, library, media type and date range.
+- Portal queries always derive customer ownership from the authenticated portal session; watch history cannot be queried for another customer.
