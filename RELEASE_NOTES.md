@@ -97,3 +97,11 @@ The repository contains 58 tests after this release (53 from v0.5.2 plus five ad
 - Added root-scoped service worker with versioned static-only caching.
 - Added a deliberate offline/unreachable page instead of caching live admin data.
 - Added standalone safe-area handling for mobile status/gesture areas.
+
+
+## v0.7.1 — Mobile quick navigation
+- Added a persistent mobile bottom navigation bar for Dashboard, Customers, and Payments.
+- Added current-page highlighting to both the bottom navigation and sidebar drawer.
+- Added safe-area-aware bottom spacing so navigation does not cover page controls on installed PWAs or gesture-navigation devices.
+- Kept all secondary areas in the existing hamburger drawer.
+- Bumped the PWA service-worker cache version so updated navigation/CSS replaces the 0.7.0 shell cleanly.

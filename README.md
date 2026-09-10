@@ -306,3 +306,11 @@ The Customers page supports multi-select with Select visible / Clear selection c
 
 ## v0.7.0 — PWA foundation
 Share Manager now ships as an installable Progressive Web App when served over HTTPS. The manifest provides standard and Android maskable icons, standalone display mode, launcher shortcuts, theme metadata, Apple touch icon support and favicons. A root-scoped service worker caches static assets only; authenticated application pages remain network-first and fall back to a dedicated unreachable page instead of presenting stale customer/billing data. Reverse-proxy HTTPS is required for normal production PWA installation.
+
+
+## v0.7.1 — Mobile quick navigation
+- Added a persistent mobile bottom navigation bar for Dashboard, Customers, and Payments.
+- Added current-page highlighting to both the bottom navigation and sidebar drawer.
+- Added safe-area-aware bottom spacing so navigation does not cover page controls on installed PWAs or gesture-navigation devices.
+- Kept all secondary areas in the existing hamburger drawer.
+- Bumped the PWA service-worker cache version so updated navigation/CSS replaces the 0.7.0 shell cleanly.

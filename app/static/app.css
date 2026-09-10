@@ -287,3 +287,56 @@ a.button-link, .button-link{white-space:nowrap}
   @media(max-width:900px){main{padding-top:calc(74px + env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom))}}
   @media(max-width:520px){.mobile-topbar{padding-top:max(7px,env(safe-area-inset-top));height:calc(56px + env(safe-area-inset-top));}main{padding-top:calc(70px + env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}}
 }
+
+
+/* v0.7.1 mobile quick navigation. */
+.mobile-bottom-nav{display:none}
+@media(min-width:901px){
+  #site-sidebar nav a.active{background:var(--panel2);color:#fff;box-shadow:inset 3px 0 0 var(--accent)}
+}
+@media(max-width:900px){
+  .mobile-bottom-nav{
+    display:grid;
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    z-index:60;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    min-height:64px;
+    padding:6px 10px max(6px,env(safe-area-inset-bottom));
+    background:rgba(15,20,28,.96);
+    border-top:1px solid var(--line);
+    box-shadow:0 -8px 24px rgba(0,0,0,.28);
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+  }
+  .mobile-bottom-nav a{
+    min-height:52px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:3px;
+    color:#8490a2;
+    text-decoration:none;
+    border-radius:10px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .mobile-bottom-nav a svg{width:22px;height:22px;fill:currentColor;transition:transform .12s ease,color .12s ease}
+  .mobile-bottom-nav a span{font-size:10px;font-weight:700;line-height:1}
+  .mobile-bottom-nav a.active{color:var(--accent);background:rgba(229,160,13,.08)}
+  .mobile-bottom-nav a.active svg{transform:translateY(-1px)}
+  #site-sidebar nav a.active{background:var(--panel2);color:#fff;box-shadow:inset 3px 0 0 var(--accent)}
+  main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+  .customer-bulk-bar{bottom:calc(72px + env(safe-area-inset-bottom))}
+}
+@media(max-width:520px){
+  .mobile-bottom-nav{min-height:62px;padding-left:8px;padding-right:8px}
+  .mobile-bottom-nav a{min-height:50px}
+  .mobile-bottom-nav a svg{width:21px;height:21px}
+  main{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+}
+@media(display-mode:standalone) and (max-width:900px){
+  main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+}

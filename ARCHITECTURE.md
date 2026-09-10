@@ -207,3 +207,11 @@ Bulk customer changes are handled by `/customers/bulk`. Selected customer IDs ar
 
 ## v0.7.0 — PWA shell
 The web UI exposes `/manifest.webmanifest` and a root-scoped `/service-worker.js`. The service worker intentionally does not cache authenticated HTML/API responses; only static assets are cached. Navigation is network-first with `/static/offline.html` as the offline fallback. PWA cache names are release-versioned so new releases discard older static caches. Standard and maskable Android icons plus Apple touch/favicons live under `app/static/icons/`.
+
+
+## v0.7.1 — Mobile quick navigation
+- Added a persistent mobile bottom navigation bar for Dashboard, Customers, and Payments.
+- Added current-page highlighting to both the bottom navigation and sidebar drawer.
+- Added safe-area-aware bottom spacing so navigation does not cover page controls on installed PWAs or gesture-navigation devices.
+- Kept all secondary areas in the existing hamburger drawer.
+- Bumped the PWA service-worker cache version so updated navigation/CSS replaces the 0.7.0 shell cleanly.
