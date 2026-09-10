@@ -19,6 +19,15 @@ def add_column_if_missing(table: str, column: str, ddl: str):
 
 add_column_if_missing("customers", "archived", "BOOLEAN NOT NULL DEFAULT FALSE")
 add_column_if_missing("customers", "archived_at", "TIMESTAMP NULL")
+add_column_if_missing("customers", "portal_enabled", "BOOLEAN NOT NULL DEFAULT FALSE")
+add_column_if_missing("customers", "portal_username", "VARCHAR(120) NULL")
+add_column_if_missing("customers", "portal_password_hash", "TEXT NULL")
+add_column_if_missing("customers", "portal_session_version", "INTEGER NOT NULL DEFAULT 1")
+add_column_if_missing("customers", "portal_enabled_at", "TIMESTAMP NULL")
+add_column_if_missing("customers", "portal_disabled_at", "TIMESTAMP NULL")
+add_column_if_missing("customers", "portal_last_login_at", "TIMESTAMP NULL")
+with engine.begin() as conn:
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_portal_username_lower ON customers (lower(portal_username)) WHERE portal_username IS NOT NULL"))
 add_column_if_missing("billing_tiers", "grace_period_days", "INTEGER NOT NULL DEFAULT 3")
 add_column_if_missing("billing_tiers", "stream_limit", "INTEGER NOT NULL DEFAULT 1")
 add_column_if_missing("tautulli_settings", "admin_user_ids", "TEXT NULL")

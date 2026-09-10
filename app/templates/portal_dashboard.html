@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><title>My account · Share Manager</title><link rel="icon" href="/static/icons/favicon.ico"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
+<body class="portal-body">
+<div class="portal-shell">
+<header class="portal-topbar"><div><strong>Share Manager</strong><span>Customer Portal</span></div><form method="post" action="/portal/logout"><button class="ghost">Sign out</button></form></header>
+<main class="portal-main">
+  <section class="portal-welcome"><div><span class="muted">Welcome back</span><h1>{{ customer.name }}</h1></div><span class="badge {{ effective_status }}">{{ effective_status }}</span></section>
+  <section class="portal-account-hero">
+    {% if subscription %}
+      <div class="portal-package-name"><span>Your package</span><strong>{{ subscription.billing_tier.package.name }}</strong><small>{{ subscription.billing_tier.name }} · £{{ '%.2f'|format(subscription.billing_tier.price) }} / {{ subscription.billing_tier.interval_count if subscription.billing_tier.interval_count != 1 else '' }}{{ subscription.billing_tier.interval_unit }}</small></div>
+      <div class="portal-account-grid">
+        <div><span>Access status</span><strong>{{ effective_status|capitalize }}</strong></div>
+        <div><span>Concurrent streams</span><strong>{{ 'Unlimited' if subscription.billing_tier.stream_limit == 0 else subscription.billing_tier.stream_limit }}</strong></div>
+        <div><span>Paid through</span><strong>{{ subscription.current_period_end.strftime('%d %b %Y') if subscription.current_period_end else 'Not initialised' }}</strong></div>
+        <div><span>Grace until</span><strong>{{ subscription.grace_until.strftime('%d %b %Y') if subscription.grace_until else '—' }}</strong></div>
+      </div>
+      {% if subscription.manual_access_end %}<div class="portal-notice">Manual access is active until <strong>{{ subscription.manual_access_end.strftime('%d %b %Y') }}</strong>.</div>{% endif %}
+    {% else %}
+      <div class="portal-empty"><strong>No subscription is currently recorded.</strong><span>Contact your administrator if you believe this is incorrect.</span></div>
+    {% endif %}
+  </section>
+  <section class="portal-info-section"><h2>Account</h2><div class="portal-account-grid compact"><div><span>Plex account</span><strong>{{ customer.plex_username or 'Not linked' }}</strong></div><div><span>Contact email</span><strong>{{ customer.email or 'Not set' }}</strong></div></div></section>
+  <section class="portal-coming-soon"><strong>More portal features are coming in 0.8.x</strong><span>Viewing activity, stream-limit history and payment/subscription history will be added next.</span></section>
+</main>
+</div>
+</body></html>

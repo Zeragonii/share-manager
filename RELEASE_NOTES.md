@@ -130,3 +130,6 @@ Customers mobile UX polish: compact filter sheet, improved selection/bulk contro
 
 ## v0.7.6
 - Phone-first Backups and Integrations pass: compact DR status/settings, mobile backup cards, touch-friendly restore controls, denser Plex/Tautulli/notification integration cards, and mobile notification-delivery cards without horizontal scrolling. Desktop behavior remains unchanged.
+
+## v0.8.0
+Customer portal foundation: opt-in per-customer credentials, one-time temporary-password display, bcrypt hashing, separate timed portal sessions, login throttling, cancellation/session revocation, and a read-only subscription/account dashboard.

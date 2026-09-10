@@ -221,6 +221,36 @@
     <div class="modal-help muted"><strong>Plex identity:</strong> changing the Plex username/email does not alter billing history, but it does change which Plex account future reconcile/invite operations target. Share Manager will clear the previously cached Plex user ID so the new identity is resolved safely.</div>
     <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Save customer</button></div>
   </form>
+  <div class="portal-admin-panel">
+    <div class="portal-admin-heading"><div><strong>Customer portal</strong><span class="muted">Optional read-only self-service access for this customer.</span></div><span class="badge {{ 'active' if c.portal_enabled else 'suspended' }}">{{ 'enabled' if c.portal_enabled else 'disabled' }}</span></div>
+    {% if c.portal_enabled %}
+      <div class="portal-admin-details">
+        <div><span>Username</span><strong>{{ c.portal_username }}</strong></div>
+        <div><span>Password</span><strong>Hidden after creation</strong></div>
+        <div><span>Last login</span><strong>{{ c.portal_last_login_at.strftime('%Y-%m-%d %H:%M') if c.portal_last_login_at else 'Never' }}</strong></div>
+      </div>
+      <div class="portal-admin-actions">
+        <form method="post" action="/customers/{{ c.id }}/portal/reset" onsubmit="return confirm('Reset this customer portal password? Existing portal sessions will be signed out.');"><button type="submit" class="secondary">Reset password</button></form>
+        <form method="post" action="/customers/{{ c.id }}/portal/disable" onsubmit="return confirm('Disable portal access for {{ c.name|e }}? Existing portal sessions will be revoked.');"><button type="submit" class="danger">Disable portal</button></form>
+      </div>
+    {% else %}
+      {% if c.archived or c.status == 'cancelled' %}
+        <div class="modal-help muted">Portal access cannot be enabled while this customer is {{ 'archived' if c.archived else 'Cancelled' }}.</div>
+      {% else %}
+        <details class="portal-enable-details">
+          <summary>Enable customer portal</summary>
+          <form method="post" action="/customers/{{ c.id }}/portal/enable" class="portal-enable-form">
+            <label>Portal username<input name="username" value="{{ c.portal_username_suggestion }}" minlength="3" maxlength="120" pattern="[A-Za-z0-9._-]+" required autocomplete="off"></label>
+            <label>Temporary password
+              <div class="portal-password-row"><input id="portal-password-{{ c.id }}" name="password" value="" minlength="12" required autocomplete="new-password" data-portal-password><button type="button" class="secondary portal-generate-password" data-target="portal-password-{{ c.id }}">Generate</button></div>
+            </label>
+            <div class="modal-help muted">The password is stored only as a secure hash. It will be shown once after enabling the portal, then cannot be retrieved — only reset.</div>
+            <button type="submit">Enable portal</button>
+          </form>
+        </details>
+      {% endif %}
+    {% endif %}
+  </div>
 </dialog>
 
 {% if sub %}
@@ -501,6 +531,26 @@ document.querySelectorAll('.customer-mobile-summary').forEach(button => {
     const card = button.closest('.customer-card');
     const expanded = card.classList.toggle('mobile-expanded');
     button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  });
+});
+
+function generatePortalPassword(target) {
+  if (!target) return;
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const values = new Uint32Array(12);
+  crypto.getRandomValues(values);
+  target.value = Array.from(values, value => chars[value % chars.length]).join('');
+}
+
+document.querySelectorAll('.portal-generate-password').forEach(button => {
+  button.addEventListener('click', () => generatePortalPassword(document.getElementById(button.dataset.target)));
+});
+
+document.querySelectorAll('.portal-enable-details').forEach(details => {
+  details.addEventListener('toggle', () => {
+    if (!details.open) return;
+    const target = details.querySelector('[data-portal-password]');
+    if (target && !target.value) generatePortalPassword(target);
   });
 });
 

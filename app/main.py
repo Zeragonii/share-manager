@@ -3,6 +3,9 @@ import logging
 import os
 import subprocess
 import tempfile
+import re
+import secrets
+import string
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -43,7 +46,10 @@ from .models import (
 )
 from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
-from .security import logged_in, make_session, valid_credentials
+from .security import (
+    logged_in, make_session, valid_credentials,
+    hash_portal_password, verify_portal_password, make_portal_session, read_portal_session,
+)
 from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
 from .services.reconcile import enqueue_reconciliation, reconcile_customer, retry_pending_reconciliations
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
@@ -55,6 +61,61 @@ from .version import APP_VERSION
 
 
 logger = logging.getLogger("share-manager")
+
+PORTAL_LOGIN_ATTEMPTS: dict[str, list[datetime]] = {}
+PORTAL_LOGIN_LIMIT = 5
+PORTAL_LOGIN_WINDOW = timedelta(minutes=15)
+PORTAL_ALPHABET = string.ascii_letters + string.digits
+
+
+def generate_portal_password(length: int = 12) -> str:
+    return "".join(secrets.choice(PORTAL_ALPHABET) for _ in range(length))
+
+
+def _portal_username_base(customer: Customer) -> str:
+    raw = (customer.plex_username or customer.email or customer.name or f"customer{customer.id}").strip().lower()
+    if "@" in raw:
+        raw = raw.split("@", 1)[0]
+    base = re.sub(r"[^a-z0-9._-]+", "", raw)
+    return base[:100] or f"customer{customer.id}"
+
+
+def _portal_username_suggestion(db: Session, customer: Customer) -> str:
+    base = _portal_username_base(customer)
+    candidate = base
+    suffix = 2
+    while db.query(Customer).filter(Customer.id != customer.id, func.lower(Customer.portal_username) == candidate.lower()).first():
+        candidate = f"{base[:95]}{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _disable_customer_portal(customer: Customer, now: datetime | None = None) -> None:
+    now = now or datetime.utcnow()
+    if customer.portal_enabled or customer.portal_password_hash:
+        customer.portal_enabled = False
+        customer.portal_password_hash = None
+        customer.portal_session_version = int(customer.portal_session_version or 1) + 1
+        customer.portal_disabled_at = now
+
+
+def _portal_customer(request: Request, db: Session) -> Customer | None:
+    payload = read_portal_session(request)
+    if not payload:
+        return None
+    try:
+        customer_id = int(payload.get("customer_id"))
+        version = int(payload.get("version"))
+    except (TypeError, ValueError):
+        return None
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return None
+    if (not customer.portal_enabled or customer.archived or customer.status == "cancelled" or
+            version != int(customer.portal_session_version or 1)):
+        return None
+    return customer
+
 
 RESTORE_IN_PROGRESS = Event()
 DB_WORK_LOCK = Lock()
@@ -392,6 +453,61 @@ def logout():
     return response
 
 
+@app.get("/portal/login", response_class=HTMLResponse)
+def portal_login_page(request: Request, db: Session = Depends(get_db)):
+    if _portal_customer(request, db):
+        return RedirectResponse("/portal", status_code=303)
+    return render(request, "portal_login.html", error=None)
+
+
+@app.post("/portal/login", response_class=HTMLResponse)
+def portal_login(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    clean_username = username.strip().lower()
+    host = request.client.host if request.client else "unknown"
+    key = f"{host}:{clean_username}"
+    now = datetime.utcnow()
+    recent = [ts for ts in PORTAL_LOGIN_ATTEMPTS.get(key, []) if now - ts < PORTAL_LOGIN_WINDOW]
+    if len(recent) >= PORTAL_LOGIN_LIMIT:
+        PORTAL_LOGIN_ATTEMPTS[key] = recent
+        return render(request, "portal_login.html", error="Too many sign-in attempts. Try again in a few minutes." )
+    customer = db.query(Customer).filter(func.lower(Customer.portal_username) == clean_username).first() if clean_username else None
+    valid = bool(customer and customer.portal_enabled and not customer.archived and customer.status != "cancelled" and verify_portal_password(password, customer.portal_password_hash))
+    if not valid:
+        recent.append(now)
+        PORTAL_LOGIN_ATTEMPTS[key] = recent
+        return render(request, "portal_login.html", error="Invalid username or password")
+    PORTAL_LOGIN_ATTEMPTS.pop(key, None)
+    customer.portal_last_login_at = now
+    db.commit()
+    response = RedirectResponse("/portal", status_code=303)
+    response.set_cookie("sm_portal_session", make_portal_session(customer.id, int(customer.portal_session_version or 1)), httponly=True, samesite="lax", secure=settings.session_cookie_secure, max_age=settings.session_max_age_seconds, path="/portal")
+    return response
+
+
+@app.post("/portal/logout")
+def portal_logout():
+    response = RedirectResponse("/portal/login", status_code=303)
+    response.delete_cookie("sm_portal_session", path="/portal")
+    return response
+
+
+@app.get("/portal", response_class=HTMLResponse)
+def portal_dashboard(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        response = RedirectResponse("/portal/login", status_code=303)
+        response.delete_cookie("sm_portal_session", path="/portal")
+        return response
+    sub = db.query(Subscription).options(joinedload(Subscription.billing_tier).joinedload(BillingTier.package)).filter(
+        Subscription.customer_id == customer.id,
+        Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES),
+    ).order_by(Subscription.id.desc()).first()
+    if not sub:
+        sub = db.query(Subscription).options(joinedload(Subscription.billing_tier).joinedload(BillingTier.package)).filter(Subscription.customer_id == customer.id).order_by(Subscription.id.desc()).first()
+    effective_status = "exempt" if customer.exempt else customer.status
+    return render(request, "portal_dashboard.html", customer=customer, subscription=sub, effective_status=effective_status, now=datetime.utcnow())
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
     gate = auth(request)
@@ -505,6 +621,7 @@ def customers(request: Request, error: str | None = None, notice: str | None = N
             ordered[0] if ordered else None,
         )
         customer.tautulli_activity = activities.get(customer.id)
+        customer.portal_username_suggestion = customer.portal_username or _portal_username_suggestion(db, customer)
     tiers = db.query(BillingTier).options(
         joinedload(BillingTier.package).joinedload(Package.entitlements).joinedload(PackageEntitlement.integration)
     ).filter(
@@ -713,6 +830,71 @@ def edit_customer(
     return RedirectResponse("/customers?notice=Customer+updated", status_code=303)
 
 
+@app.post("/customers/{customer_id}/portal/enable", response_class=HTMLResponse)
+def enable_customer_portal(
+    request: Request,
+    customer_id: int,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return RedirectResponse("/customers?error=Customer+not+found", status_code=303)
+    if customer.archived or customer.status == "cancelled":
+        return RedirectResponse("/customers?error=Cancelled+or+archived+customers+cannot+have+portal+access", status_code=303)
+    clean_username = username.strip().lower()
+    if len(clean_username) < 3 or len(clean_username) > 120 or not re.fullmatch(r"[a-z0-9._-]+", clean_username):
+        return RedirectResponse("/customers?error=Portal+username+must+use+3-120+letters%2C+numbers%2C+dots%2C+dashes+or+underscores", status_code=303)
+    duplicate = db.query(Customer).filter(Customer.id != customer.id, func.lower(Customer.portal_username) == clean_username).first()
+    if duplicate:
+        return RedirectResponse("/customers?error=That+portal+username+is+already+in+use", status_code=303)
+    if len(password) < 12:
+        return RedirectResponse("/customers?error=Portal+password+must+be+at+least+12+characters", status_code=303)
+    customer.portal_username = clean_username
+    customer.portal_password_hash = hash_portal_password(password)
+    customer.portal_enabled = True
+    customer.portal_enabled_at = datetime.utcnow()
+    customer.portal_disabled_at = None
+    customer.portal_session_version = int(customer.portal_session_version or 1) + 1
+    db.add(AuditLog(actor=settings.admin_username, action="customer.portal.enable", target_type="customer", target_id=str(customer.id), detail=f"Portal enabled for {clean_username}"))
+    db.commit()
+    return render(request, "portal_credentials.html", customer=customer, portal_username=clean_username, portal_password=password, action="enabled")
+
+
+@app.post("/customers/{customer_id}/portal/reset", response_class=HTMLResponse)
+def reset_customer_portal_password(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    customer = db.get(Customer, customer_id)
+    if not customer or not customer.portal_enabled or not customer.portal_username:
+        return RedirectResponse("/customers?error=Customer+portal+is+not+enabled", status_code=303)
+    password = generate_portal_password()
+    customer.portal_password_hash = hash_portal_password(password)
+    customer.portal_session_version = int(customer.portal_session_version or 1) + 1
+    db.add(AuditLog(actor=settings.admin_username, action="customer.portal.password_reset", target_type="customer", target_id=str(customer.id), detail="Customer portal password reset; sessions revoked"))
+    db.commit()
+    return render(request, "portal_credentials.html", customer=customer, portal_username=customer.portal_username, portal_password=password, action="reset")
+
+
+@app.post("/customers/{customer_id}/portal/disable")
+def disable_customer_portal(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return RedirectResponse("/customers?error=Customer+not+found", status_code=303)
+    _disable_customer_portal(customer)
+    db.add(AuditLog(actor=settings.admin_username, action="customer.portal.disable", target_type="customer", target_id=str(customer.id), detail="Customer portal disabled; sessions revoked"))
+    db.commit()
+    return RedirectResponse("/customers?notice=Customer+portal+disabled", status_code=303)
+
+
 @app.post("/customers/{customer_id}/archive")
 def archive_customer(request: Request, customer_id: int, db: Session = Depends(get_db)):
     gate = auth(request)
@@ -879,6 +1061,8 @@ def bulk_customers(
                         current.cancelled_at = now
                     elif status in ASSIGNED_SUBSCRIPTION_STATES:
                         current.status = status
+                if status == "cancelled":
+                    _disable_customer_portal(customer, now)
             db.add(AuditLog(actor=settings.admin_username, action="customer.status", target_type="customer", target_id=str(customer.id), detail=f"{detail} (bulk)"))
             if not customer.exempt:
                 if customer.status == "grace" and previous_status != "grace":
@@ -1026,6 +1210,8 @@ def customer_status(request: Request, customer_id: int, status: str = Form(...),
                 current.cancelled_at = datetime.utcnow()
             elif status in ASSIGNED_SUBSCRIPTION_STATES:
                 current.status = status
+        if status == "cancelled":
+            _disable_customer_portal(c)
 
     db.add(AuditLog(actor=settings.admin_username, action="customer.status", target_type="customer", target_id=str(c.id), detail=detail))
     db.commit()

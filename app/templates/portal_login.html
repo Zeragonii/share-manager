@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f141c"><title>Customer Portal · Share Manager</title><link rel="icon" href="/static/icons/favicon.ico"><link rel="stylesheet" href="/static/app.css?v={{ app_version }}"></head>
+<body class="portal-body">
+<main class="portal-login-shell">
+  <section class="portal-login-card">
+    <div class="portal-login-brand"><div class="portal-brand-mark">SM</div><div><strong>Share Manager</strong><span>Customer Portal</span></div></div>
+    <div><h1>Sign in</h1><p>Use the portal credentials provided by your administrator.</p></div>
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+    <form method="post" action="/portal/login" class="portal-login-form">
+      <label>Username<input name="username" autocomplete="username" autocapitalize="none" required></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign in</button>
+    </form>
+  </section>
+</main>
+</body></html>

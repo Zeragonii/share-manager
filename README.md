@@ -337,3 +337,13 @@ The installed PWA Dashboard uses a denser phone-first presentation: compact prim
 
 ## v0.7.6
 - Phone-first Backups and Integrations pass: compact DR status/settings, mobile backup cards, touch-friendly restore controls, denser Plex/Tautulli/notification integration cards, and mobile notification-delivery cards without horizontal scrolling. Desktop behavior remains unchanged.
+
+## v0.8.0 — Customer portal foundation
+- Customer portal access is opt-in per customer from Edit customer.
+- Portal usernames default from Plex identity and can be edited before enablement.
+- A cryptographically generated 12-character alphanumeric temporary password is supplied by default and stored only as a bcrypt hash.
+- Temporary passwords are shown only once after enable/reset; admins can reset but cannot retrieve existing passwords.
+- Portal sessions are separate from administrator sessions and are invalidated on password reset, portal disable, and customer cancellation.
+- Customer portal login is rate-limited and uses the same Secure/HttpOnly session policy as the administrator UI.
+- The initial read-only portal dashboard shows package, tier, price, access state, paid-through/grace dates, stream allowance, Plex identity, and contact email.
+- Activity, enforcement history, and payment/subscription history are intentionally reserved for later 0.8.x releases.
