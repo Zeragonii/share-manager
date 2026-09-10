@@ -373,3 +373,11 @@ The customer portal uses a left navigation rail on desktop and a bottom navigati
 - Customer Activity now exposes title, watched date/time, library, device/player, platform, media type and playback duration.
 - Added customer-scoped filters for title search, device, library, media type and date range.
 - Portal queries always derive customer ownership from the authenticated portal session; watch history cannot be queried for another customer.
+
+
+## v0.8.5 — Full asynchronous Tautulli history backfill
+- Replaces the 500-row initial watch-history cap with a resumable full-history backfill for every matched, non-archived customer.
+- Backfill runs independently of normal Tautulli analytics sync in 500-row pages, so Sync Now and portal requests remain responsive.
+- History is imported oldest-first to keep pagination stable while new plays continue to arrive; normal syncs continue refreshing the newest 100 rows.
+- Backfill checkpoints and totals are persisted per customer, allowing imports to resume after container restarts or temporary Tautulli failures.
+- Integrations now shows live backfill progress, cached row counts, customer completion counts, and the latest backfill error.

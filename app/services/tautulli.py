@@ -62,10 +62,9 @@ def _client(settings_row: TautulliSettings) -> TautulliIntegration:
     return TautulliIntegration(integration.base_url or "", integration.secret or "")
 
 
-def _sync_watch_history(db: Session, client: TautulliIntegration, customer: Customer, user_id: str, *, now: datetime) -> int:
-    """Upsert detailed viewing history. First sync backfills more rows; later syncs stay lightweight."""
-    existing_count = db.query(func.count(TautulliWatchHistory.id)).filter(TautulliWatchHistory.customer_id == customer.id).scalar() or 0
-    rows = client.history(user_id, length=500 if existing_count == 0 else 100)
+def _upsert_watch_history_rows(
+    db: Session, customer: Customer, user_id: str, rows: list[dict[str, Any]], *, now: datetime
+) -> int:
     if not rows:
         return 0
     source_ids = [row["source_row_id"] for row in rows]
@@ -95,6 +94,99 @@ def _sync_watch_history(db: Session, client: TautulliIntegration, customer: Cust
         item.watched_status = row["watched_status"]
         item.synced_at = now
     return changed
+
+
+def _sync_watch_history(db: Session, client: TautulliIntegration, customer: Customer, user_id: str, *, now: datetime) -> int:
+    """Refresh the newest rows; full historical import is handled asynchronously."""
+    rows = client.history(user_id, length=100)
+    return _upsert_watch_history_rows(db, customer, user_id, rows, now=now)
+
+
+def backfill_watch_history_page(db: Session, *, page_size: int = 500, now: datetime | None = None) -> dict[str, Any] | None:
+    """Import one oldest-first page for one customer, then persist a resumable checkpoint."""
+    now = now or datetime.utcnow()
+    settings_row = get_tautulli_settings(db)
+    client = _client(settings_row)
+    activity = (
+        db.query(TautulliActivity)
+        .join(Customer, Customer.id == TautulliActivity.customer_id)
+        .filter(Customer.archived.is_(False), TautulliActivity.history_backfill_complete.is_(False))
+        .order_by(TautulliActivity.history_backfill_updated_at.asc().nullsfirst(), TautulliActivity.id.asc())
+        .first()
+    )
+    if activity is None:
+        return None
+    customer = db.get(Customer, activity.customer_id)
+    if customer is None:
+        activity.history_backfill_complete = True
+        activity.history_backfill_updated_at = now
+        db.commit()
+        return None
+    if activity.history_backfill_started_at is None:
+        activity.history_backfill_started_at = now
+    try:
+        page = client.history_page(
+            activity.tautulli_user_id,
+            length=max(50, min(1000, int(page_size))),
+            start=max(0, int(activity.history_backfill_offset or 0)),
+            order_dir="asc",
+        )
+        _upsert_watch_history_rows(db, customer, activity.tautulli_user_id, page["rows"], now=now)
+        raw_count = int(page.get("raw_count") or 0)
+        total = max(0, int(page.get("total") or 0))
+        activity.history_backfill_total = max(total, int(activity.history_backfill_total or 0))
+        activity.history_backfill_offset = max(0, int(activity.history_backfill_offset or 0)) + raw_count
+        activity.history_backfill_updated_at = now
+        activity.history_backfill_error = None
+        if raw_count == 0 or activity.history_backfill_offset >= activity.history_backfill_total:
+            activity.history_backfill_complete = True
+            activity.history_backfill_offset = max(activity.history_backfill_offset, activity.history_backfill_total)
+        db.commit()
+        return {
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "fetched": raw_count,
+            "offset": activity.history_backfill_offset,
+            "total": activity.history_backfill_total or 0,
+            "complete": bool(activity.history_backfill_complete),
+        }
+    except Exception as exc:
+        activity.history_backfill_updated_at = now
+        activity.history_backfill_error = f"{type(exc).__name__}: {exc}"[:1000]
+        db.commit()
+        raise
+
+
+def watch_history_backfill_status(db: Session) -> dict[str, Any]:
+    rows = (
+        db.query(TautulliActivity)
+        .join(Customer, Customer.id == TautulliActivity.customer_id)
+        .filter(Customer.archived.is_(False))
+        .all()
+    )
+    cached_rows = (
+        db.query(func.count(TautulliWatchHistory.id))
+        .join(Customer, Customer.id == TautulliWatchHistory.customer_id)
+        .filter(Customer.archived.is_(False))
+        .scalar() or 0
+    )
+    known_total = sum(max(0, int(row.history_backfill_total or 0)) for row in rows)
+    progress_rows = sum(min(max(0, int(row.history_backfill_offset or 0)), max(0, int(row.history_backfill_total or 0))) for row in rows if row.history_backfill_total is not None)
+    complete = sum(1 for row in rows if row.history_backfill_complete)
+    errors = [row.history_backfill_error for row in rows if row.history_backfill_error]
+    active = next((row for row in rows if not row.history_backfill_complete), None)
+    return {
+        "customers_total": len(rows),
+        "customers_complete": complete,
+        "cached_rows": int(cached_rows),
+        "known_total": known_total,
+        "progress_rows": progress_rows,
+        "complete": complete == len(rows),
+        "active_customer_id": active.customer_id if active else None,
+        "active_offset": int(active.history_backfill_offset or 0) if active else 0,
+        "active_total": int(active.history_backfill_total or 0) if active else 0,
+        "last_error": errors[0] if errors else None,
+    }
 
 
 def sync_tautulli(db: Session, *, now: datetime | None = None) -> TautulliSyncResult:
@@ -135,6 +227,15 @@ def sync_tautulli(db: Session, *, now: datetime | None = None) -> TautulliSyncRe
             if not activity:
                 activity = TautulliActivity(customer_id=customer.id, tautulli_user_id=user.user_id)
                 db.add(activity)
+            elif activity.tautulli_user_id != user.user_id:
+                # A changed Plex/Tautulli identity represents a different history stream.
+                # Restart the resumable full backfill for the newly matched identity.
+                activity.history_backfill_complete = False
+                activity.history_backfill_offset = 0
+                activity.history_backfill_total = None
+                activity.history_backfill_started_at = None
+                activity.history_backfill_updated_at = None
+                activity.history_backfill_error = None
             activity.tautulli_user_id = user.user_id
             activity.tautulli_username = user.friendly_name or user.username
             activity.last_streamed_at = last_streamed

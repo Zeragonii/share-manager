@@ -226,6 +226,12 @@ class TautulliActivity(Base):
     watch_time_lifetime: Mapped[int] = mapped_column(Integer, default=0)
     plays_lifetime: Mapped[int] = mapped_column(Integer, default=0)
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    history_backfill_complete: Mapped[bool] = mapped_column(Boolean, default=False)
+    history_backfill_offset: Mapped[int] = mapped_column(Integer, default=0)
+    history_backfill_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    history_backfill_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    history_backfill_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    history_backfill_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     customer: Mapped[Customer] = relationship()
 
 

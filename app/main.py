@@ -56,7 +56,11 @@ from .services.reconcile import enqueue_reconciliation, reconcile_customer, retr
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import EVENT_DEFINITIONS, format_due_reminder_days, notify_due_reminders, notify_event, send_test
 from .services.backups import create_backup, list_backups, apply_retention, scheduled_backup_due, safe_backup_path, validate_backup, restore_backup, get_backup_policy, validate_application_schema, BackupStorageError
-from .services.tautulli import get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage, enforce_stream_limits, customer_live_sessions, terminate_customer_session
+from .services.tautulli import (
+    get_tautulli_settings, sync_tautulli, sync_due, get_live_activity, dashboard_usage,
+    enforce_stream_limits, customer_live_sessions, terminate_customer_session,
+    backfill_watch_history_page, watch_history_backfill_status,
+)
 from .version import APP_VERSION
 
 
@@ -285,6 +289,24 @@ def run_tautulli_cycle() -> bool:
 
 
 @serialized_db_worker
+def run_tautulli_backfill_cycle() -> bool:
+    if RESTORE_IN_PROGRESS.is_set():
+        return False
+    db = SessionLocal()
+    try:
+        row = get_tautulli_settings(db)
+        if not row.integration or not row.integration.enabled:
+            return False
+        result = backfill_watch_history_page(db, page_size=500)
+        return result is not None
+    except Exception:
+        logger.exception("Tautulli watch-history backfill cycle failed")
+        return False
+    finally:
+        db.close()
+
+
+@serialized_db_worker
 def run_stream_limit_cycle() -> bool:
     if RESTORE_IN_PROGRESS.is_set():
         return False
@@ -349,6 +371,17 @@ async def lifespan(_app: FastAPI):
                 logger.exception("Tautulli worker cycle failed")
             await asyncio.sleep(60)
 
+    async def tautulli_backfill_loop():
+        # Full history is imported separately from the normal analytics sync so
+        # Sync Now and page loads remain quick even for very large Tautulli histories.
+        await asyncio.sleep(20)
+        while True:
+            try:
+                await asyncio.to_thread(run_tautulli_backfill_cycle)
+            except Exception:
+                logger.exception("Tautulli watch-history backfill worker cycle failed")
+            await asyncio.sleep(5)
+
     async def stream_limit_loop():
         await asyncio.sleep(8)
         while True:
@@ -368,6 +401,7 @@ async def lifespan(_app: FastAPI):
     backup_task = asyncio.create_task(backup_loop())
     reconcile_task = asyncio.create_task(reconcile_queue_loop())
     tautulli_task = asyncio.create_task(tautulli_loop())
+    tautulli_backfill_task = asyncio.create_task(tautulli_backfill_loop())
     stream_limit_task = asyncio.create_task(stream_limit_loop())
     try:
         yield
@@ -376,6 +410,7 @@ async def lifespan(_app: FastAPI):
         backup_task.cancel()
         reconcile_task.cancel()
         tautulli_task.cancel()
+        tautulli_backfill_task.cancel()
         stream_limit_task.cancel()
         with suppress(asyncio.CancelledError):
             await billing_task
@@ -385,6 +420,8 @@ async def lifespan(_app: FastAPI):
             await reconcile_task
         with suppress(asyncio.CancelledError):
             await tautulli_task
+        with suppress(asyncio.CancelledError):
+            await tautulli_backfill_task
         with suppress(asyncio.CancelledError):
             await stream_limit_task
 
@@ -1820,6 +1857,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         notification_events=EVENT_DEFINITIONS,
         notification_default_due_days=max(0, int(settings.notification_due_soon_days)),
         tautulli_settings=get_tautulli_settings(db),
+        tautulli_backfill=watch_history_backfill_status(db),
         error=error,
         notice=notice,
     )
@@ -1946,6 +1984,14 @@ def tautulli_live(request: Request, db: Session = Depends(get_db)):
         "error": live.get("error"),
         "refresh_seconds": row.live_refresh_seconds,
     }
+
+
+@app.get("/api/tautulli/backfill")
+def tautulli_backfill_status_api(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return watch_history_backfill_status(db)
 
 
 @app.post("/notifications")

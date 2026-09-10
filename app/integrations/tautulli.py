@@ -117,26 +117,29 @@ class TautulliIntegration:
             "plays_lifetime": parsed[0]["plays"],
         }
 
-    def history(self, user_id: str, *, length: int = 250, start: int = 0) -> list[dict[str, Any]]:
-        """Return normalized viewing-history rows for one Plex/Tautulli user."""
+    def history_page(
+        self, user_id: str, *, length: int = 250, start: int = 0, order_dir: str = "desc"
+    ) -> dict[str, Any]:
+        """Return one normalized page of viewing history plus pagination metadata."""
+        if order_dir not in {"asc", "desc"}:
+            raise ValueError("order_dir must be 'asc' or 'desc'")
         data = self._call(
             "get_history",
             user_id=user_id,
-            grouping=1,
+            grouping=0,
             order_column="date",
-            order_dir="desc",
+            order_dir=order_dir,
             start=max(0, int(start)),
             length=max(1, min(1000, int(length))),
         ) or {}
-        rows = data.get("data", []) if isinstance(data, dict) else []
-        result: list[dict[str, Any]] = []
-        for row in rows if isinstance(rows, list) else []:
+        raw_rows = data.get("data", []) if isinstance(data, dict) else []
+        rows: list[dict[str, Any]] = []
+        for row in raw_rows if isinstance(raw_rows, list) else []:
             watched_at = self._dt(row.get("date") or row.get("stopped") or row.get("started"))
             if not watched_at:
                 continue
             source_row_id = str(row.get("row_id") or row.get("reference_id") or row.get("history_id") or "").strip()
             if not source_row_id:
-                # Stable-enough fallback for older Tautulli versions lacking row_id.
                 source_row_id = ":".join([
                     str(row.get("rating_key") or ""),
                     str(row.get("started") or row.get("date") or ""),
@@ -150,7 +153,7 @@ class TautulliIntegration:
                 watched_status = int(row.get("watched_status")) if row.get("watched_status") is not None else None
             except (TypeError, ValueError):
                 watched_status = None
-            result.append({
+            rows.append({
                 "source_row_id": source_row_id[:64],
                 "watched_at": watched_at,
                 "title": row.get("full_title") or row.get("title") or "Unknown title",
@@ -162,7 +165,25 @@ class TautulliIntegration:
                 "duration_seconds": max(0, duration),
                 "watched_status": watched_status,
             })
-        return result
+        total = len(raw_rows)
+        if isinstance(data, dict):
+            for key in ("recordsFiltered", "recordsTotal"):
+                if key in data:
+                    try:
+                        total = max(0, int(data[key]))
+                        break
+                    except (TypeError, ValueError):
+                        pass
+        return {
+            "rows": rows,
+            "total": total,
+            "raw_count": len(raw_rows) if isinstance(raw_rows, list) else 0,
+            "start": max(0, int(start)),
+        }
+
+    def history(self, user_id: str, *, length: int = 250, start: int = 0) -> list[dict[str, Any]]:
+        """Return normalized viewing-history rows for one Plex/Tautulli user."""
+        return self.history_page(user_id, length=length, start=start, order_dir="desc")["rows"]
 
     def latest_history(self, user_id: str) -> dict[str, Any] | None:
         data = self._call(
