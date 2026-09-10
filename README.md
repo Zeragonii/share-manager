@@ -314,3 +314,6 @@ Share Manager now ships as an installable Progressive Web App when served over H
 - Added safe-area-aware bottom spacing so navigation does not cover page controls on installed PWAs or gesture-navigation devices.
 - Kept all secondary areas in the existing hamburger drawer.
 - Bumped the PWA service-worker cache version so updated navigation/CSS replaces the 0.7.0 shell cleanly.
+
+### v0.7.2 mobile Dashboard
+The installed PWA Dashboard uses a denser phone-first presentation: compact primary stats, collapsible package distribution and secondary Plex analytics, portrait-friendly live session rows, and collapsible recent activity. Desktop presentation remains unchanged.

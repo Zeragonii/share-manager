@@ -105,3 +105,12 @@ The repository contains 58 tests after this release (53 from v0.5.2 plus five ad
 - Added safe-area-aware bottom spacing so navigation does not cover page controls on installed PWAs or gesture-navigation devices.
 - Kept all secondary areas in the existing hamburger drawer.
 - Bumped the PWA service-worker cache version so updated navigation/CSS replaces the 0.7.0 shell cleanly.
+
+## v0.7.2 — Phone-first Dashboard
+- Tightened the mobile Dashboard header and primary billing/customer stat cards.
+- Reworked forecast totals into a compact two-up mobile layout with annualised revenue spanning the row.
+- Moved mobile package distribution behind an expandable section to reduce default scroll length.
+- Prioritised live Plex activity with a dedicated compact Watching now/7-day/30-day strip.
+- Moved secondary Tautulli usage metrics behind an expandable mobile section.
+- Converted Recent Activity into an expandable mobile card feed while preserving the desktop table.
+- Preserved desktop Dashboard behaviour and live Tautulli heartbeat semantics.

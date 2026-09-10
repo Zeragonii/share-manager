@@ -1,7 +1,7 @@
 {% extends 'base.html' %}{% block content %}
-<header class="row between"><div><h1>Dashboard</h1><p>Subscription, billing and entitlement overview.</p></div><form method="post" action="/billing/run"><button class="secondary">Run billing check</button></form></header>
+<header class="row between dashboard-header"><div><h1>Dashboard</h1><p>Subscription, billing and entitlement overview.</p></div><form method="post" action="/billing/run"><button class="secondary dashboard-billing-check">Run billing check</button></form></header>
 {% if request.query_params.get('notice') %}<div class="alert success">{{ request.query_params.get('notice') }}</div>{% endif %}
-<div class="stats billing-stats">
+<div class="stats billing-stats dashboard-primary-stats">
 {% for label,value in [('Customers',stats.customers),('Active',stats.active),('In grace',stats.grace),('Suspended',stats.suspended),('Due in 7 days',stats.due_soon)] %}<div class="stat"><strong>{{ value }}</strong><span>{{ label }}</span></div>{% endfor %}
 <div class="stat"><strong>£{{ '%.2f'|format(stats.revenue) }}</strong><span>Revenue this month</span></div>
 </div>
@@ -15,23 +15,26 @@
   <div class="forecast-desktop-table table-wrap"><table class="forecast-table"><thead><tr><th>Package</th><th>Live customers</th><th>Monthly</th><th>Yearly</th></tr></thead><tbody>
     {% for row in revenue_forecast.packages %}<tr><td><strong>{{ row.name }}</strong></td><td>{{ row.customers }}</td><td>£{{ '%.2f'|format(row.monthly) }} <span class="muted">/mo · {{ row.monthly_customers }} customer{{ '' if row.monthly_customers == 1 else 's' }}</span></td><td>£{{ '%.2f'|format(row.yearly) }} <span class="muted">/yr · {{ row.yearly_customers }} customer{{ '' if row.yearly_customers == 1 else 's' }}</span></td></tr>{% else %}<tr><td colspan="4" class="muted">No revenue-bearing subscriptions yet.</td></tr>{% endfor %}
   </tbody></table></div>
-  <div class="forecast-mobile-list">
-    {% for row in revenue_forecast.packages %}
-    <article class="forecast-package-card">
-      <div class="row between"><strong>{{ row.name }}</strong><span class="muted">{{ row.customers }} live</span></div>
-      <div class="forecast-package-values">
-        <div><span>Monthly</span><strong>£{{ '%.2f'|format(row.monthly) }}</strong><small>{{ row.monthly_customers }} customer{{ '' if row.monthly_customers == 1 else 's' }}</small></div>
-        <div><span>Yearly</span><strong>£{{ '%.2f'|format(row.yearly) }}</strong><small>{{ row.yearly_customers }} customer{{ '' if row.yearly_customers == 1 else 's' }}</small></div>
-      </div>
-    </article>
-    {% else %}<p class="muted">No revenue-bearing subscriptions yet.</p>{% endfor %}
-  </div>
+  <details class="forecast-mobile-details dashboard-mobile-details">
+    <summary><span>Package distribution</span><small>{{ revenue_forecast.packages|length }} package{{ '' if revenue_forecast.packages|length == 1 else 's' }}</small></summary>
+    <div class="forecast-mobile-list">
+      {% for row in revenue_forecast.packages %}
+      <article class="forecast-package-card">
+        <div class="row between"><strong>{{ row.name }}</strong><span class="muted">{{ row.customers }} live</span></div>
+        <div class="forecast-package-values">
+          <div><span>Monthly</span><strong>£{{ '%.2f'|format(row.monthly) }}</strong><small>{{ row.monthly_customers }} customer{{ '' if row.monthly_customers == 1 else 's' }}</small></div>
+          <div><span>Yearly</span><strong>£{{ '%.2f'|format(row.yearly) }}</strong><small>{{ row.yearly_customers }} customer{{ '' if row.yearly_customers == 1 else 's' }}</small></div>
+        </div>
+      </article>
+      {% else %}<p class="muted">No revenue-bearing subscriptions yet.</p>{% endfor %}
+    </div>
+  </details>
 </section>
 {% if tautulli_usage %}
 <section class="tautulli-dashboard" data-live-refresh="{{ tautulli_settings.live_refresh_seconds }}">
   <div class="row between tautulli-heading"><div><h2>Plex activity</h2><p class="muted">Customer usage from Tautulli. Historical metrics update every {{ tautulli_settings.sync_interval_minutes }} minutes; live sessions refresh asynchronously.</p></div><span id="tautulli-live-age" class="muted"></span></div>
-  <div class="tautulli-dashboard-stats">
-    <div class="tautulli-stat live"><strong id="tautulli-live-count">—</strong><span>Watching now</span></div>
+  <div class="tautulli-dashboard-stats tautulli-dashboard-stats-desktop">
+    <div class="tautulli-stat live"><strong id="tautulli-live-count-desktop">—</strong><span>Watching now</span></div>
     <div class="tautulli-stat"><strong>{{ tautulli_usage.active_7d }}</strong><span>Active last 7 days</span></div>
     <div class="tautulli-stat"><strong>{{ tautulli_usage.active_30d }}</strong><span>Active last 30 days</span></div>
     <div class="tautulli-stat"><strong>{{ tautulli_usage.inactive_90d }}</strong><span>Inactive 90+ days</span></div>
@@ -39,13 +42,29 @@
     <div class="tautulli-stat"><strong>{{ format_duration(tautulli_usage.watch_time_30d) }}</strong><span>Watch time · 30d</span></div>
     <div class="tautulli-stat"><strong>{{ format_duration(tautulli_usage.average_30d) }}</strong><span>Avg / active user · 30d</span></div>
   </div>
+  <div class="tautulli-dashboard-mobile">
+    <div class="tautulli-mobile-primary">
+      <div class="tautulli-stat live tautulli-watching-now"><strong id="tautulli-live-count">—</strong><span>Watching now</span></div>
+      <div class="tautulli-stat"><strong>{{ tautulli_usage.active_7d }}</strong><span>Active · 7d</span></div>
+      <div class="tautulli-stat"><strong>{{ tautulli_usage.active_30d }}</strong><span>Active · 30d</span></div>
+    </div>
+    <details class="dashboard-mobile-details tautulli-more-details">
+      <summary><span>More usage stats</span><small>30-day &amp; lifetime signals</small></summary>
+      <div class="tautulli-mobile-secondary">
+        <div class="tautulli-stat"><strong>{{ tautulli_usage.inactive_90d }}</strong><span>Inactive 90+ days</span></div>
+        <div class="tautulli-stat"><strong>{{ tautulli_usage.never }}</strong><span>Never streamed</span></div>
+        <div class="tautulli-stat"><strong>{{ format_duration(tautulli_usage.watch_time_30d) }}</strong><span>Watch time · 30d</span></div>
+        <div class="tautulli-stat"><strong>{{ format_duration(tautulli_usage.average_30d) }}</strong><span>Avg / active user</span></div>
+      </div>
+    </details>
+  </div>
   <div id="tautulli-live-sessions" class="tautulli-live-sessions"><p class="muted">Loading live sessions…</p></div>
 </section>
 <script>
 (() => {
   const section = document.querySelector('.tautulli-dashboard');
   if (!section) return;
-  const count = document.getElementById('tautulli-live-count');
+  const counts = [document.getElementById('tautulli-live-count'), document.getElementById('tautulli-live-count-desktop')].filter(Boolean);
   const list = document.getElementById('tautulli-live-sessions');
   const age = document.getElementById('tautulli-live-age');
   const refreshMs = Math.max(10000, Number(section.dataset.liveRefresh || 10) * 1000);
@@ -56,7 +75,7 @@
       if (!response.ok) throw new Error('live request failed');
       const data = await response.json();
       const sessions = data.sessions || [];
-      count.textContent = sessions.length;
+      counts.forEach(node => { node.textContent = sessions.length; });
       if (data.error) age.textContent = 'Live activity unavailable · showing last known state';
       else age.textContent = data.sampled_at ? 'Live sample updated' : '';
       if (!sessions.length) { list.innerHTML = '<p class="muted">Nobody is streaming right now.</p>'; return; }
@@ -70,5 +89,13 @@
 })();
 </script>
 {% endif %}
-<section><h2>Recent activity</h2><div class="table-wrap"><table><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>{% for a in recent %}<tr><td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td><code>{{ a.action }}</code></td><td>{{ a.detail or '' }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No activity yet.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="dashboard-recent-activity">
+  <div class="dashboard-recent-desktop"><h2>Recent activity</h2><div class="table-wrap"><table><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>{% for a in recent %}<tr><td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td><code>{{ a.action }}</code></td><td>{{ a.detail or '' }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No activity yet.</td></tr>{% endfor %}</tbody></table></div></div>
+  <details class="dashboard-mobile-details dashboard-recent-mobile">
+    <summary><span>Recent activity</span><small>{{ recent|length }} recent event{{ '' if recent|length == 1 else 's' }}</small></summary>
+    <div class="dashboard-activity-list">
+      {% for a in recent %}<article class="dashboard-activity-card"><div class="row between"><code>{{ a.action }}</code><time>{{ a.created_at.strftime('%d %b · %H:%M') }}</time></div>{% if a.detail %}<p>{{ a.detail }}</p>{% endif %}</article>{% else %}<p class="muted">No activity yet.</p>{% endfor %}
+    </div>
+  </details>
+</section>
 {% endblock %}

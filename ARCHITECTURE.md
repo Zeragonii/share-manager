@@ -215,3 +215,6 @@ The web UI exposes `/manifest.webmanifest` and a root-scoped `/service-worker.js
 - Added safe-area-aware bottom spacing so navigation does not cover page controls on installed PWAs or gesture-navigation devices.
 - Kept all secondary areas in the existing hamburger drawer.
 - Bumped the PWA service-worker cache version so updated navigation/CSS replaces the 0.7.0 shell cleanly.
+
+### v0.7.2 Dashboard presentation
+Dashboard mobile rendering remains server-rendered Jinja with progressive disclosure through native `<details>` elements. Historical and live data sources are unchanged; the Tautulli live count updates both desktop and mobile presentation nodes from the same asynchronous heartbeat.
