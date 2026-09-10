@@ -44,8 +44,8 @@ jobs:
           set -euo pipefail
 
           FILE_VERSION="$(tr -d '[:space:]' < VERSION)"
-          if [[ ! "$FILE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "VERSION must contain a semantic version such as 0.1.0" >&2
+          if [[ ! "$FILE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([A-Za-z][0-9A-Za-z.-]*|[.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "VERSION must contain a release version such as 0.1.0 or 0.7.5a" >&2
             exit 1
           fi
 
@@ -57,8 +57,8 @@ jobs:
             TAG="v$FILE_VERSION"
           fi
 
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Release tag must look like v0.1.0" >&2
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z][0-9A-Za-z.-]*|[.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must look like v0.1.0 or v0.7.5a" >&2
             exit 1
           fi
 
