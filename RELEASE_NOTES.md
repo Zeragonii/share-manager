@@ -1,3 +1,7 @@
+## 0.10.4b
+
+- Removed scheduled banner expiry/end-time text from the customer portal. Admin scheduling and timing remain unchanged.
+
 # 0.10.4a
 
 - Customer news visibility now follows severity: Info, Advisory, and Warning banners display on Account only; Critical banners remain global across the customer portal.
