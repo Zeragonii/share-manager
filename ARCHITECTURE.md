@@ -395,3 +395,8 @@ The customer portal intentionally does not expose referred-customer identities, 
 
 ### Referral redemption semantics (0.11.0a)
 Referral earning and spending are independent Billing Tier properties. `referral_credits` snapshots how many credits a qualifying referred payment awards; `referral_redeem_cost` determines how many credits a customer on that tier must spend for exactly one calendar month of access. Redemption directly advances `Subscription.current_period_end` by one calendar month (or starts from the current time when fully lapsed), refreshes grace/status, and records an append-only referral ledger debit with the exact coverage change. It never interprets a yearly tier as a yearly referral reward.
+
+
+## Unified account credits (v0.11.1)
+
+`ReferralCreditEntry` is the canonical spendable account-credit ledger despite its legacy model name. Referral payment rewards (`earn`), payment reversals (`reversal`), administrator grants (`admin_grant`) and redemptions (`redeem`) are append-only entries. Administrator grants affect available balance but not lifetime referral-earned metrics. New `SubscriptionCredit` grants are retired; existing rows remain read-only historical data and retain their already-applied coverage semantics. Redemption is independent of the referral-programme enabled switch and uses the customer's current Billing Tier `referral_redeem_cost` to purchase exactly one calendar month.

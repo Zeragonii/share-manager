@@ -72,3 +72,20 @@ def test_redeem_uses_tier_cost_and_extends_exactly_one_calendar_month():
     assert reward_sub.current_period_end == datetime(2027, 1, 20)
     assert entry.credits == -100
     assert credit_balance(db, referrer.id) == 20
+
+
+def test_admin_grant_adds_spendable_balance_without_being_referral_earn():
+    from sqlalchemy import func
+    from app.models import ReferralCreditEntry
+    from app.services.referrals import grant_account_credits
+    db, referrer, referred, sub = make_db()
+    row = grant_account_credits(db, referrer, credits=25, reason="Goodwill", actor="admin")
+    db.commit()
+    assert row.kind == "admin_grant"
+    assert credit_balance(db, referrer.id) == 25
+    referral_earned = int(db.query(func.coalesce(func.sum(ReferralCreditEntry.credits), 0)).filter(
+        ReferralCreditEntry.customer_id == referrer.id,
+        ReferralCreditEntry.kind == "earn",
+        ReferralCreditEntry.credits > 0,
+    ).scalar() or 0)
+    assert referral_earned == 0

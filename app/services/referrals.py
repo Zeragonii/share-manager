@@ -144,10 +144,28 @@ def redemption_quote(db: Session, customer: Customer, *, now: datetime | None = 
     return sub, tier, cost, coverage_start, coverage_end
 
 
+
+def grant_account_credits(db: Session, customer: Customer, *, credits: int, reason: str, actor: str) -> ReferralCreditEntry:
+    """Append an administrator account-credit grant to the shared credit ledger."""
+    amount = int(credits)
+    clean_reason = (reason or "").strip()
+    if amount <= 0:
+        raise ValueError("Credit grant must be greater than zero")
+    if not clean_reason:
+        raise ValueError("A reason is required for an account credit grant")
+    row = ReferralCreditEntry(
+        customer_id=customer.id,
+        kind="admin_grant",
+        credits=amount,
+        description=f"Admin account credit grant · {clean_reason}",
+    )
+    db.add(row)
+    db.flush()
+    return row
+
 def redeem_credits(db: Session, customer: Customer, *, actor: str):
     settings = ensure_referral_settings(db)
-    if not settings.enabled:
-        raise ValueError("The referral programme is currently disabled")
+    # Account-credit redemption remains available even when referral earning is disabled.
     # Lock the customer row so two simultaneous redemptions cannot overspend.
     locked = db.query(Customer).filter(Customer.id == customer.id).with_for_update().one()
     sub, tier, cost, coverage_start, coverage_end = redemption_quote(db, locked)

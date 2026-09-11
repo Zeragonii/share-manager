@@ -1,3 +1,12 @@
+# 0.11.1 — Unified Account Credits
+
+- Retired new complimentary-access grants from the admin UI; historical SubscriptionCredit records remain read-only for audit/history.
+- Added admin **Grant credits** on customer cards, with required positive amount and reason.
+- Admin grants append `admin_grant` entries to the existing credit ledger and affect spendable balance without inflating referral-earned statistics.
+- Account-credit redemption now remains available even when automatic referral earning is disabled.
+- Existing tier-specific `credits -> +1 calendar month` redemption is the sole modern mechanism for converting non-cash value into access.
+- Customer/admin history labels old complimentary records as **Legacy complimentary access**.
+
 ## 0.11.0a — Tier-specific one-month referral redemption
 
 - Added a per-Billing-Tier **Redeem 1 month** credit cost alongside referral credits earned per payment.

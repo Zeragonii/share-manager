@@ -1,4 +1,4 @@
-const CACHE_NAME = "share-manager-portal-v0.11.0a";
+const CACHE_NAME = "share-manager-portal-v0.11.1";
 const STATIC_ASSETS = [
   "/static/offline.html",
   "/static/icons/icon-192.png",

@@ -1,11 +1,11 @@
 {% extends 'base.html' %}{% block content %}
-<header><h1>Referrals</h1><p>Manage referral relationships, credit rewards and redemption policy.</p></header>
+<header><h1>Referrals & account credits</h1><p>Manage referral relationships, account-credit balances and tier-based redemption.</p></header>
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
 <section>
-  <div class="row between"><div><h2>Programme settings</h2><p class="muted">Payments use the referral reward configured on the referred customer's billing tier.</p></div><span class="badge {{ 'active' if referral_settings.enabled else 'suspended' }}">{{ 'Enabled' if referral_settings.enabled else 'Disabled' }}</span></div>
+  <div class="row between"><div><h2>Referral earning</h2><p class="muted">Controls automatic referral earning only. Account-credit grants and redemption remain available independently.</p></div><span class="badge {{ 'active' if referral_settings.enabled else 'suspended' }}">{{ 'Enabled' if referral_settings.enabled else 'Disabled' }}</span></div>
   <form method="post" action="/referrals/settings" class="grid-form compact">
     <label>Programme<select name="enabled"><option value="true" {% if referral_settings.enabled %}selected{% endif %}>Enabled</option><option value="false" {% if not referral_settings.enabled %}selected{% endif %}>Disabled</option></select></label>
-    <div class="muted">Earning and one-month redemption costs are configured independently on each Billing Tier.</div>
+    <div class="muted">Referral rewards and one-month redemption costs are configured independently on each Billing Tier.</div>
     <button>Save settings</button>
   </form>
 </section>
@@ -18,13 +18,13 @@
 <section>
   <h2>Credit balances</h2>
   <div class="table-wrap"><table><thead><tr><th>Customer</th><th>Code</th><th>Referrals</th><th>Available</th><th>Lifetime earned</th><th></th></tr></thead><tbody>
-  {% for row in balances %}<tr><td>{{ row.customer.name }}</td><td><code>{{ row.customer.referral_code }}</code></td><td>{{ row.referrals }}</td><td><strong>{{ row.balance }}</strong></td><td>{{ row.earned }}</td><td>{% if referral_settings.enabled and row.redeem_cost and row.balance >= row.redeem_cost %}<form method="post" action="/referrals/{{ row.customer.id }}/redeem" onsubmit="return confirm('Spend {{ row.redeem_cost }} credits to extend {{ row.customer.name|e }} from {{ row.redeem_from.strftime('%d %b %Y') }} to {{ row.redeem_to.strftime('%d %b %Y') }}?');"><button class="secondary small-action">Redeem {{ row.redeem_cost }}</button></form>{% elif row.redeem_tier and not row.redeem_cost %}<span class="muted">Disabled</span>{% elif row.redeem_cost %}<span class="muted">Needs {{ row.redeem_cost }}</span>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="muted">No customers.</td></tr>{% endfor %}
+  {% for row in balances %}<tr><td>{{ row.customer.name }}</td><td><code>{{ row.customer.referral_code }}</code></td><td>{{ row.referrals }}</td><td><strong>{{ row.balance }}</strong></td><td>{{ row.earned }}</td><td>{% if row.redeem_cost and row.balance >= row.redeem_cost %}<form method="post" action="/referrals/{{ row.customer.id }}/redeem" onsubmit="return confirm('Spend {{ row.redeem_cost }} credits to extend {{ row.customer.name|e }} from {{ row.redeem_from.strftime('%d %b %Y') }} to {{ row.redeem_to.strftime('%d %b %Y') }}?');"><button class="secondary small-action">Redeem {{ row.redeem_cost }}</button></form>{% elif row.redeem_tier and not row.redeem_cost %}<span class="muted">Disabled</span>{% elif row.redeem_cost %}<span class="muted">Needs {{ row.redeem_cost }}</span>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="muted">No customers.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 <section>
-  <h2>Recent credit ledger</h2>
+  <h2>Recent account-credit ledger</h2>
   <div class="table-wrap"><table><thead><tr><th>When</th><th>Customer</th><th>Change</th><th>Type</th><th>Detail</th></tr></thead><tbody>
-  {% for row in ledger %}<tr><td>{{ row.created_at.strftime('%d %b %Y %H:%M') }}</td><td>{{ row.customer.name }}</td><td><strong>{{ '+' if row.credits > 0 else '' }}{{ row.credits }}</strong></td><td>{{ row.kind|title }}</td><td>{{ row.description or '—' }}</td></tr>{% else %}<tr><td colspan="5" class="muted">No referral credits have been recorded.</td></tr>{% endfor %}
+  {% for row in ledger %}<tr><td>{{ row.created_at.strftime('%d %b %Y %H:%M') }}</td><td>{{ row.customer.name }}</td><td><strong>{{ '+' if row.credits > 0 else '' }}{{ row.credits }}</strong></td><td>{{ row.kind|title }}</td><td>{{ row.description or '—' }}</td></tr>{% else %}<tr><td colspan="5" class="muted">No account credits have been recorded.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 {% endblock %}

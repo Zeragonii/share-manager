@@ -1,5 +1,5 @@
 {% extends 'base.html' %}{% block content %}
-<header class="row between"><div><h1>{{ customer.name }}</h1><p>Combined subscription, payment, complimentary-credit and access history.</p></div><a class="button-link secondary" href="{{ '/customers?archived=1' if customer.archived else '/customers' }}">Back to {{ 'archived customers' if customer.archived else 'customers' }}</a></header>
+<header class="row between"><div><h1>{{ customer.name }}</h1><p>Combined subscription, payment, account-credit and access history.</p></div><a class="button-link secondary" href="{{ '/customers?archived=1' if customer.archived else '/customers' }}">Back to {{ 'archived customers' if customer.archived else 'customers' }}</a></header>
 <section>
   <div class="history-summary">
     <div><span class="muted">Email</span><strong>{{ customer.email or '—' }}</strong></div>

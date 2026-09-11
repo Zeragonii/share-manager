@@ -13,7 +13,7 @@
     <div class="portal-history-summary">
       <div><span>Payments</span><strong>{{ payment_count }}</strong><small>Completed</small></div>
       <div><span>Lifetime paid</span><strong>£{{ '%.2f'|format(total_paid) }}</strong><small>Excludes reversed payments</small></div>
-      <div><span>Complimentary</span><strong>{{ complimentary_periods }}</strong><small>Billing period{{ '' if complimentary_periods == 1 else 's' }}</small></div>
+      <div><span>Legacy complimentary</span><strong>{{ complimentary_periods }}</strong><small>Historical period{{ '' if complimentary_periods == 1 else 's' }}</small></div>
     </div>
   </section>
 
@@ -39,7 +39,7 @@
   </section>
 
   <section class="portal-info-section">
-    <div class="portal-section-heading"><div><h2>Complimentary access</h2><span class="muted">Free access periods granted to your account</span></div></div>
+    <div class="portal-section-heading"><div><h2>Legacy complimentary access</h2><span class="muted">Historical grants from the retired complimentary-access system</span></div></div>
     <div class="portal-history-list">
       {% for credit in credits %}
       <article class="portal-history-card">
@@ -47,7 +47,7 @@
         <div class="portal-history-coverage"><span>Coverage</span><strong>{{ credit.coverage_start.strftime('%d %b %Y') }} → {{ credit.coverage_end.strftime('%d %b %Y') }}</strong></div>
         {% if credit.reason %}<div class="portal-history-reason"><span>Reason</span><strong>{{ credit.reason }}</strong></div>{% endif %}
       </article>
-      {% else %}<div class="portal-empty-live">No complimentary access has been recorded for your account.</div>{% endfor %}
+      {% else %}<div class="portal-empty-live">No legacy complimentary access is recorded for your account.</div>{% endfor %}
     </div>
   </section>
 

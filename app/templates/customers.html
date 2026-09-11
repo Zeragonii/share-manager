@@ -179,13 +179,9 @@
   </div>
   <div class="row compact-card-actions">
     <button type="button" class="secondary small-action" onclick="document.getElementById('billing-modal-{{ sub.id }}').showModal()">Edit billing</button>
-    <button type="button" class="secondary small-action" onclick="document.getElementById('credit-modal-{{ sub.id }}').showModal()">Grant complimentary access</button>
+    <button type="button" class="secondary small-action" onclick="document.getElementById('credit-modal-{{ c.id }}').showModal()">Grant credits</button>
   </div>
-  {% set credits = c.credits|sort(attribute='granted_at', reverse=true) %}
-  {% if credits %}
-  <div class="credit-summary muted">Latest complimentary credit: +{{ credits[0].billing_periods }} period{{ '' if credits[0].billing_periods == 1 else 's' }} · through {{ credits[0].coverage_end.strftime('%Y-%m-%d') }}{% if credits[0].reason %} · {{ credits[0].reason }}{% endif %}</div>
-  {% endif %}
-  {% else %}<div class="subtle">No subscription history yet — assign a package/tier before granting complimentary access.</div>{% endif %}
+  {% else %}<div class="subtle">No subscription history yet — account credits can still be granted and redeemed once a billing tier is assigned.</div><div class="row compact-card-actions"><button type="button" class="secondary small-action" onclick="document.getElementById('credit-modal-{{ c.id }}').showModal()">Grant credits</button></div>{% endif %}
   {% if c.exempt %}<div class="exempt-note">Automation is disabled for this customer. Billing records can still be maintained, but automatic status/Plex changes will leave them alone.</div>{% endif %}
   </div>
 
@@ -267,17 +263,18 @@
   </form>
 </dialog>
 
-<dialog id="credit-modal-{{ sub.id }}" class="customer-modal">
-  <div class="modal-heading"><div><h3>Grant complimentary access · {{ c.name }}</h3><span class="muted">{{ sub.billing_tier.package.name }} · {{ sub.billing_tier.name }}</span></div><button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
+
+{% endif %}
+
+<dialog id="credit-modal-{{ c.id }}" class="customer-modal">
+  <div class="modal-heading"><div><h3>Grant account credits · {{ c.name }}</h3><span class="muted">Credits use the same tier-specific monthly redemption engine as referral rewards.</span></div><button type="button" class="ghost modal-close" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
   <form method="post" action="/customers/{{ c.id }}/credits" class="modal-form">
-    <label>Billing periods<input type="number" name="billing_periods" min="1" step="1" value="1" required></label>
-    <label>Grant date<input type="date" name="granted_date" value="{{ today }}"></label>
-    <label>Reason<input name="reason" placeholder="e.g. Grandfathered donor"></label>
-    <div class="modal-help muted">Uses the current tier interval: {{ sub.billing_tier.interval_count }} {{ sub.billing_tier.interval_unit }}{{ 's' if sub.billing_tier.interval_count != 1 else '' }} per period. Complimentary access is tracked separately from payments.</div>
-    <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Grant access</button></div>
+    <label>Credits<input type="number" name="credits" min="1" step="1" value="100" required></label>
+    <label>Reason<input name="reason" maxlength="500" placeholder="e.g. Goodwill credit" required></label>
+    <div class="modal-help muted">This adds spendable account credits only. It does not directly alter Paid through. The customer can redeem them at the cost configured on their current Billing Tier.</div>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Grant credits</button></div>
   </form>
 </dialog>
-{% endif %}
 {% else %}<p class="muted">{{ 'No archived customers.' if archived_mode else 'No customers yet.' }}</p>{% endfor %}</div></section>
 <script>
 (() => {

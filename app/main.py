@@ -64,7 +64,7 @@ from .security import (
     logged_in, make_session, valid_credentials,
     hash_portal_password, verify_portal_password, make_portal_session, read_portal_session,
 )
-from .services.billing import apply_payment, apply_subscription_credit, desired_billing_status, initialize_subscription_period, process_billing
+from .services.billing import apply_payment, desired_billing_status, initialize_subscription_period, process_billing
 from .services.reconcile import enqueue_reconciliation, reconcile_customer, retry_pending_reconciliations
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import (
@@ -86,7 +86,7 @@ from .services.tickets import (
 )
 from .services.referrals import (
     ensure_customer_referral_code, assign_referrer, award_for_payment, reverse_for_payment,
-    credit_balance, ensure_referral_settings, redeem_credits, redemption_quote,
+    credit_balance, ensure_referral_settings, redeem_credits, redemption_quote, grant_account_credits,
 )
 from .services.attachments import (
     save_pending_upload, attachment_path, attachment_root, cleanup_pending, CUSTOMER_TICKET_ATTACHMENT_LIMIT,
@@ -1532,7 +1532,7 @@ def customers(request: Request, error: str | None = None, notice: str | None = N
     # Resolve the subscription shown/acted on by the customer card in Python,
     # rather than duplicating lifecycle rules in Jinja. Prefer a currently
     # assigned row, but retain the most recent historical tier as a fallback
-    # so complimentary access can reactivate a former subscriber.
+    # so manual billing-date edits can reactivate a former subscriber.
     activities = {row.customer_id: row for row in db.query(TautulliActivity).all()}
     for customer in rows:
         ordered = sorted(customer.subscriptions, key=lambda sub: sub.id, reverse=True)
@@ -2261,12 +2261,11 @@ def edit_subscription_dates(
 
 
 @app.post("/customers/{customer_id}/credits")
-def grant_subscription_credit(
+def grant_customer_account_credits(
     request: Request,
     customer_id: int,
-    billing_periods: int = Form(...),
-    granted_date: str = Form(""),
-    reason: str = Form(""),
+    credits: int = Form(...),
+    reason: str = Form(...),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -2275,44 +2274,17 @@ def grant_subscription_credit(
     customer = db.get(Customer, customer_id)
     if not customer:
         return RedirectResponse("/customers?error=Customer+not+found", status_code=303)
-    granted_at = _parse_date(granted_date, datetime.utcnow())
-    previous_status = customer.status
     try:
-        credit = apply_subscription_credit(
-            db,
-            customer=customer,
-            periods=billing_periods,
-            granted_at=granted_at,
-            reason=reason,
-            granted_by=settings.admin_username,
-        )
-    except ValueError as exc:
+        entry = grant_account_credits(db, customer, credits=credits, reason=reason, actor=settings.admin_username)
+        db.add(AuditLog(
+            actor=settings.admin_username, action="account_credit.grant", target_type="customer",
+            target_id=str(customer.id), detail=f"+{entry.credits} credits · {entry.description}",
+        ))
+        db.commit()
+    except (ValueError, TypeError) as exc:
         db.rollback()
         return RedirectResponse(f"/customers?error={quote_plus(str(exc))}", status_code=303)
-
-    tier = credit.subscription.billing_tier
-    db.add(AuditLog(
-        actor=settings.admin_username,
-        action="subscription.credit",
-        target_type="subscription_credit",
-        target_id=str(credit.id),
-        detail=(
-            f"{credit.billing_periods} complimentary {tier.name} period(s); "
-            f"coverage {credit.coverage_start:%Y-%m-%d} -> {credit.coverage_end:%Y-%m-%d}; "
-            f"reason: {credit.reason or 'not specified'}"
-        ),
-    ))
-    db.commit()
-    if previous_status == "suspended" and customer.status == "active":
-        notify_event(db, event="customer.reactivated", title="Customer reactivated", message=f"{customer.name} is active again after complimentary access was granted.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
-
-
-    if settings.reconcile_on_assign and customer.plex_username and not customer.exempt:
-        try:
-            reconcile_customer(db, customer)
-        except Exception as exc:
-            _notify_reconcile_failure(db, customer, exc)
-    return RedirectResponse("/customers?notice=Complimentary+access+granted", status_code=303)
+    return RedirectResponse("/customers?notice=Account+credits+granted", status_code=303)
 
 
 @app.post("/customers/{customer_id}/reconcile")
@@ -3436,7 +3408,7 @@ def customer_history(request: Request, customer_id: int, db: Session = Depends(g
     for payment in customer.payments:
         events.append({"when": payment.paid_at, "kind": "Payment" if not payment.voided_at else "Payment (deleted)", "detail": f"£{payment.amount:.2f} via {payment.source}" + (f" · {payment.billing_periods} period(s) · {payment.coverage_start:%Y-%m-%d} → {payment.coverage_end:%Y-%m-%d}" if payment.coverage_end else " · ledger only") + (f" · {payment.note}" if payment.note else ""), "voided": bool(payment.voided_at)})
     for credit in customer.credits:
-        events.append({"when": credit.granted_at, "kind": "Complimentary access", "detail": f"+{credit.billing_periods} period(s) · {credit.coverage_start:%Y-%m-%d} → {credit.coverage_end:%Y-%m-%d}" + (f" · {credit.reason}" if credit.reason else ""), "voided": False})
+        events.append({"when": credit.granted_at, "kind": "Legacy complimentary access", "detail": f"+{credit.billing_periods} period(s) · {credit.coverage_start:%Y-%m-%d} → {credit.coverage_end:%Y-%m-%d}" + (f" · {credit.reason}" if credit.reason else ""), "voided": False})
     for sub in customer.subscriptions:
         events.append({"when": sub.started_at, "kind": "Subscription", "detail": f"{sub.billing_tier.package.name} / {sub.billing_tier.name} · {sub.status}", "voided": False})
     subscription_ids = [str(sub.id) for sub in customer.subscriptions]
@@ -3479,7 +3451,7 @@ def referrals_page(request: Request, error: str | None = None, notice: str | Non
     relationships = [c for c in customers if c.referrer_customer_id and c.referrer]
     balances = []
     for c in customers:
-        earned = int(db.query(func.coalesce(func.sum(ReferralCreditEntry.credits), 0)).filter(ReferralCreditEntry.customer_id == c.id, ReferralCreditEntry.credits > 0).scalar() or 0)
+        earned = int(db.query(func.coalesce(func.sum(ReferralCreditEntry.credits), 0)).filter(ReferralCreditEntry.customer_id == c.id, ReferralCreditEntry.kind == "earn", ReferralCreditEntry.credits > 0).scalar() or 0)
         
         try:
             _sub, redeem_tier, redeem_cost, redeem_from, redeem_to = redemption_quote(db, c)
