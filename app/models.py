@@ -24,11 +24,15 @@ class Customer(Base):
     portal_disabled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     portal_last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     portal_last_activity_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    referral_code: Mapped[str | None] = mapped_column(String(5), nullable=True, index=True)
+    referrer_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    referral_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     payments: Mapped[list["Payment"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     credits: Mapped[list["SubscriptionCredit"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     support_tickets: Mapped[list["SupportTicket"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    referrer: Mapped["Customer"] = relationship(remote_side="Customer.id", foreign_keys=[referrer_customer_id], uselist=False)
 
 
 class PortalDailyMetric(Base):
@@ -76,6 +80,7 @@ class BillingTier(Base):
     interval_count: Mapped[int] = mapped_column(Integer, default=1)
     grace_period_days: Mapped[int] = mapped_column(Integer, default=3)
     stream_limit: Mapped[int] = mapped_column(Integer, default=1)
+    referral_credits: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     package: Mapped[Package] = relationship(back_populates="billing_tiers")
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="billing_tier")
@@ -155,6 +160,32 @@ class SubscriptionCredit(Base):
     granted_by: Mapped[str] = mapped_column(String(120), default="admin")
     customer: Mapped[Customer] = relationship(back_populates="credits")
     subscription: Mapped[Subscription] = relationship(back_populates="credits")
+
+
+class ReferralSettings(Base):
+    __tablename__ = "referral_settings"
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    credits_per_reward: Mapped[int] = mapped_column(Integer, default=10)
+    reward_periods: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class ReferralCreditEntry(Base):
+    __tablename__ = "referral_credit_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    referred_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    payment_id: Mapped[int | None] = mapped_column(ForeignKey("payments.id", ondelete="SET NULL"), nullable=True, index=True)
+    billing_tier_id: Mapped[int | None] = mapped_column(ForeignKey("billing_tiers.id", ondelete="SET NULL"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(24), default="earn")
+    credits: Mapped[int] = mapped_column(Integer)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    customer: Mapped["Customer"] = relationship(foreign_keys=[customer_id])
+    referred_customer: Mapped["Customer"] = relationship(foreign_keys=[referred_customer_id])
+    payment: Mapped["Payment"] = relationship("Payment")
+    billing_tier: Mapped["BillingTier"] = relationship("BillingTier")
+    __table_args__ = (UniqueConstraint("payment_id", "kind", name="uq_referral_payment_kind"),)
 
 
 class PaymentSource(Base):

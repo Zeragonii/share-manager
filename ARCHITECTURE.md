@@ -381,3 +381,13 @@ On desktop widths above 900px, the admin `<main>` rail is horizontally centred i
 
 ### Portal analytics (v0.10.7)
 Portal analytics are deliberately coarse and first-party. `portal_daily_metrics` stores per-customer/day counters rather than individual navigation events. A portal session is counted when an authenticated page view occurs after at least 30 minutes of inactivity. High-resolution clickstream, IP-history, mouse/scroll and third-party advertising telemetry are explicitly out of scope.
+
+## Referral credits (0.11)
+
+Referral identity is stored on `customers`: an immutable random five-digit `referral_code`, an optional self-referencing `referrer_customer_id`, and `referral_started_at`. A referred customer has at most one current referrer; a referrer may have many referred customers. Admin assignment/removal is explicit and prospective.
+
+`billing_tiers.referral_credits` snapshots the number of credits earned by a referrer when a qualifying payment is recorded. Referral accounting uses `referral_credit_entries` as an append-only ledger. Earn and reversal rows are unique per payment/kind, making retries idempotent. Voiding a payment appends the inverse of the original snapshotted award; tier edits never rewrite historical entries.
+
+`referral_settings` controls whether new rewards are earned and the redemption policy. Redemption locks the customer row, checks the live ledger balance, appends a negative `redeem` entry and invokes the existing complimentary subscription-credit engine. Referral credits therefore remain distinct from money and from payment records.
+
+The customer portal intentionally does not expose referred-customer identities, payment amounts, or payment dates. It exposes only the referrer's own code, aggregate referral count, balance and generic credit-ledger reasons.

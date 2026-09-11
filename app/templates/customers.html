@@ -9,7 +9,7 @@
   </div>
   <details class="manual-customer-add">
     <summary>Add local customer without sending a Plex invitation</summary>
-    <form method="post" class="grid-form manual-customer-form"><label>Name<input name="name" required></label><label>Email<input name="email" type="email"></label><label>Plex username/email<input name="plex_username"></label><label>Notes<input name="notes"></label><button>Add customer</button></form>
+    <form method="post" class="grid-form manual-customer-form"><label>Name<input name="name" required></label><label>Email<input name="email" type="email"></label><label>Plex username/email<input name="plex_username"></label><label>Notes<input name="notes"></label><label>Referral code <span class="muted">(optional)</span><input name="referral_code" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" placeholder="58317"></label><button>Add customer</button></form>
   </details>
 </section>
 
@@ -26,6 +26,7 @@
     </label>
     <label>Subscription start date<input type="date" name="start_date" value="{{ today }}" required></label>
     <label>Notes<input name="notes"></label>
+    <label>Referral code <span class="muted">(optional)</span><input name="referral_code" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" placeholder="58317"></label>
     <div class="modal-help muted">The selected package must already have Plex libraries mapped. The first billing period starts on this date; the Plex invite is sent with those libraries attached.</div>
     <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Create &amp; invite</button></div>
   </form>
@@ -218,6 +219,7 @@
     <label>Contact email<input name="email" type="email" value="{{ c.email or '' }}"></label>
     <label>Plex username or email<input name="plex_username" value="{{ c.plex_username or '' }}"></label>
     <label>Notes<textarea name="notes" rows="4">{{ c.notes or '' }}</textarea></label>
+    <div class="portal-admin-panel"><div class="portal-admin-heading"><div><strong>Referral</strong><span class="muted">Codes only affect future payments.</span></div></div><div class="portal-admin-details"><div><span>Customer code</span><strong>{{ c.referral_code or '—' }}</strong></div><div><span>Referred by</span><strong>{{ c.referrer.name if c.referrer else 'None' }}</strong></div></div><label>Referrer code<input name="referral_code" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" value="{{ c.referrer.referral_code if c.referrer else '' }}" placeholder="e.g. 58317"><span class="muted">Clear this field to remove the relationship. Changing it starts a new prospective referral relationship.</span></label></div>
     <div class="modal-help muted"><strong>Plex identity:</strong> changing the Plex username/email does not alter billing history, but it does change which Plex account future reconcile/invite operations target. Share Manager will clear the previously cached Plex user ID so the new identity is resolved safely.</div>
     <div class="modal-actions"><button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button><button>Save customer</button></div>
   </form>

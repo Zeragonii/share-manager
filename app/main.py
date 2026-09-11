@@ -55,6 +55,8 @@ from .models import (
     SupportTicketMessage,
     SupportTicketAttachment,
     PortalDailyMetric,
+    ReferralCreditEntry,
+    ReferralSettings,
 )
 from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
@@ -81,6 +83,10 @@ from .services.tautulli import (
 from .services.tickets import (
     TICKET_CATEGORIES, TICKET_STATUSES, TICKET_PRIORITIES,
     create_ticket, add_customer_reply, add_admin_reply, add_internal_note, change_status, change_priority,
+)
+from .services.referrals import (
+    ensure_customer_referral_code, assign_referrer, award_for_payment, reverse_for_payment,
+    credit_balance, ensure_referral_settings, redeem_credits,
 )
 from .services.attachments import (
     save_pending_upload, attachment_path, attachment_root, cleanup_pending, CUSTOMER_TICKET_ATTACHMENT_LIMIT,
@@ -1586,6 +1592,7 @@ def onboard_customer(
     billing_tier_id: int = Form(...),
     start_date: str = Form(""),
     notes: str = Form(""),
+    referral_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -1642,6 +1649,13 @@ def onboard_customer(
     )
     db.add(customer)
     db.flush()
+    ensure_customer_referral_code(db, customer)
+    if referral_code.strip():
+        try:
+            assign_referrer(db, customer, referral_code, actor=settings.admin_username)
+        except ValueError as exc:
+            db.rollback()
+            return RedirectResponse(f"/customers?error={quote_plus(str(exc))}", status_code=303)
     subscription = Subscription(customer=customer, billing_tier=tier, status="active")
     initialize_subscription_period(subscription, start)
     db.add(subscription)
@@ -1669,13 +1683,19 @@ def onboard_customer(
 
 
 @app.post("/customers")
-def create_customer(request: Request, name: str = Form(...), email: str = Form(""), plex_username: str = Form(""), notes: str = Form(""), db: Session = Depends(get_db)):
+def create_customer(request: Request, name: str = Form(...), email: str = Form(""), plex_username: str = Form(""), notes: str = Form(""), referral_code: str = Form(""), db: Session = Depends(get_db)):
     gate = auth(request)
     if gate:
         return gate
     c = Customer(name=name.strip(), email=email.strip() or None, plex_username=plex_username.strip() or None, notes=notes.strip() or None)
     db.add(c)
     db.flush()
+    ensure_customer_referral_code(db, c)
+    if referral_code.strip():
+        try:
+            assign_referrer(db, c, referral_code, actor=settings.admin_username)
+        except ValueError as exc:
+            db.rollback(); return RedirectResponse(f"/customers?error={quote_plus(str(exc))}", status_code=303)
     db.add(AuditLog(actor=settings.admin_username, action="customer.create", target_type="customer", target_id=str(c.id), detail=c.name))
     db.commit()
     return RedirectResponse("/customers", status_code=303)
@@ -1689,6 +1709,7 @@ def edit_customer(
     email: str = Form(""),
     plex_username: str = Form(""),
     notes: str = Form(""),
+    referral_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -1722,6 +1743,13 @@ def edit_customer(
     customer.email = clean_email
     customer.plex_username = clean_plex
     customer.notes = notes.strip() or None
+    try:
+        existing_referral_code = customer.referrer.referral_code if customer.referrer else ""
+        if (referral_code or "").strip() != (existing_referral_code or ""):
+            assign_referrer(db, customer, referral_code, actor=settings.admin_username)
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/customers?error={quote_plus(str(exc))}", status_code=303)
 
     # The stored numeric Plex ID belongs to the old Plex identity. If the
     # operator changes that identity, force future reconciliation to resolve
@@ -2395,14 +2423,15 @@ def add_tier(
     interval_count: int = Form(1),
     grace_period_days: int = Form(3),
     stream_limit: int = Form(1),
+    referral_credits: int = Form(0),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
     if gate:
         return gate
-    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or price < 0:
+    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or referral_credits < 0 or price < 0:
         return RedirectResponse("/packages?error=Invalid+billing+tier+values", status_code=303)
-    t = BillingTier(package_id=package_id, name=name.strip(), price=price, interval_unit=interval_unit, interval_count=interval_count, grace_period_days=grace_period_days, stream_limit=stream_limit)
+    t = BillingTier(package_id=package_id, name=name.strip(), price=price, interval_unit=interval_unit, interval_count=interval_count, grace_period_days=grace_period_days, stream_limit=stream_limit, referral_credits=referral_credits)
     db.add(t)
     db.commit()
     return RedirectResponse("/packages", status_code=303)
@@ -2419,6 +2448,7 @@ def edit_tier(
     interval_count: int = Form(1),
     grace_period_days: int = Form(3),
     stream_limit: int = Form(1),
+    referral_credits: int = Form(0),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -2427,7 +2457,7 @@ def edit_tier(
     t = db.query(BillingTier).filter(BillingTier.id == tier_id, BillingTier.package_id == package_id).first()
     if not t:
         return RedirectResponse("/packages?error=Billing+tier+not+found", status_code=303)
-    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or price < 0:
+    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or referral_credits < 0 or price < 0:
         return RedirectResponse("/packages?error=Invalid+billing+tier+values", status_code=303)
     t.name = name.strip()
     t.price = price
@@ -2435,7 +2465,8 @@ def edit_tier(
     t.interval_count = interval_count
     t.grace_period_days = grace_period_days
     t.stream_limit = stream_limit
-    db.add(AuditLog(actor=settings.admin_username, action="billing_tier.update", target_type="billing_tier", target_id=str(t.id), detail=f"{t.name}: £{price} / {interval_count} {interval_unit}; {grace_period_days}d grace; stream limit {stream_limit}"))
+    t.referral_credits = referral_credits
+    db.add(AuditLog(actor=settings.admin_username, action="billing_tier.update", target_type="billing_tier", target_id=str(t.id), detail=f"{t.name}: £{price} / {interval_count} {interval_unit}; {grace_period_days}d grace; stream limit {stream_limit}; referral reward {referral_credits} credits"))
     db.commit()
     return RedirectResponse("/packages?notice=Billing+tier+updated", status_code=303)
 
@@ -2703,7 +2734,10 @@ def import_plex_users(request: Request, integration_id: int, db: Session = Depen
         existing = db.query(Customer).filter(Customer.plex_username == identifier).first()
         if existing:
             continue
-        db.add(Customer(name=user["username"] or user["email"], email=user["email"], plex_username=identifier, plex_user_id=user["id"] or None))
+        new_customer = Customer(name=user["username"] or user["email"], email=user["email"], plex_username=identifier, plex_user_id=user["id"] or None)
+        db.add(new_customer)
+        db.flush()
+        ensure_customer_referral_code(db, new_customer)
         created += 1
     db.add(AuditLog(actor=settings.admin_username, action="plex.import_users", target_type="integration", target_id=str(integration.id), detail=f"Imported {created} users"))
     db.commit()
@@ -3229,6 +3263,9 @@ def add_payment(
     if payment.subscription_id:
         detail += f"; {payment.billing_periods or 1} billing period(s); coverage {payment.coverage_start:%Y-%m-%d} -> {payment.coverage_end:%Y-%m-%d}"
     db.add(AuditLog(actor=settings.admin_username, action="payment.record", target_type="payment", target_id=str(payment.id), detail=detail))
+    referral_award = award_for_payment(db, payment)
+    if referral_award:
+        db.add(AuditLog(actor="system", action="referral.credit.earned", target_type="customer", target_id=str(referral_award.customer_id), detail=f"+{referral_award.credits} credits from payment {payment.id}"))
     db.commit()
     notify_event(
         db, event="payment.received", title="Payment received",
@@ -3320,6 +3357,9 @@ def delete_payment(request: Request, payment_id: int, db: Session = Depends(get_
             return RedirectResponse(f"/payments?error={quote_plus(str(exc))}", status_code=303)
     payment.voided_at = datetime.utcnow()
     payment.voided_by = settings.admin_username
+    reversal = reverse_for_payment(db, payment)
+    if reversal:
+        db.add(AuditLog(actor="system", action="referral.credit.reversed", target_type="customer", target_id=str(reversal.customer_id), detail=f"{reversal.credits} credits from voided payment {payment.id}"))
     db.add(AuditLog(actor=settings.admin_username, action="payment.delete", target_type="payment", target_id=str(payment.id), detail=f"Voided £{payment.amount} via {payment.source} received {payment.paid_at:%Y-%m-%d}"))
     db.commit()
     if payment.subscription_id:
@@ -3424,6 +3464,82 @@ def customer_history(request: Request, customer_id: int, db: Session = Depends(g
         },
     }
     return render(request, "customer_history.html", customer=customer, events=events, tautulli_activity=tautulli_activity, stream_limit_events=stream_limit_events, portal_usage=portal_usage)
+
+
+@app.get("/referrals", response_class=HTMLResponse)
+def referrals_page(request: Request, error: str | None = None, notice: str | None = None, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    referral_settings = ensure_referral_settings(db)
+    customers = db.query(Customer).filter(Customer.archived.is_(False)).order_by(Customer.name.asc()).all()
+    relationships = [c for c in customers if c.referrer_customer_id and c.referrer]
+    balances = []
+    for c in customers:
+        earned = int(db.query(func.coalesce(func.sum(ReferralCreditEntry.credits), 0)).filter(ReferralCreditEntry.customer_id == c.id, ReferralCreditEntry.credits > 0).scalar() or 0)
+        balances.append({"customer": c, "balance": credit_balance(db, c.id), "earned": earned, "referrals": db.query(func.count(Customer.id)).filter(Customer.referrer_customer_id == c.id).scalar() or 0})
+    ledger = db.query(ReferralCreditEntry).options(joinedload(ReferralCreditEntry.customer)).order_by(ReferralCreditEntry.created_at.desc()).limit(250).all()
+    return render(request, "referrals.html", referral_settings=referral_settings, relationships=relationships, balances=balances, ledger=ledger, error=error, notice=notice)
+
+@app.post("/referrals/settings")
+def save_referral_settings(request: Request, enabled: str = Form("true"), credits_per_reward: int = Form(10), reward_periods: int = Form(1), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    if credits_per_reward < 1 or reward_periods < 1:
+        return RedirectResponse("/referrals?error=Referral+reward+values+must+be+at+least+1", status_code=303)
+    row = ensure_referral_settings(db); row.enabled = enabled == "true"; row.credits_per_reward = credits_per_reward; row.reward_periods = reward_periods
+    db.add(AuditLog(actor=settings.admin_username, action="referral.settings.update", target_type="referral_settings", target_id="1", detail=f"enabled={row.enabled}; {credits_per_reward} credits -> {reward_periods} period(s)")); db.commit()
+    return RedirectResponse("/referrals?notice=Referral+settings+updated", status_code=303)
+
+@app.post("/referrals/{customer_id}/redeem")
+def admin_redeem_referral_credits(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return RedirectResponse("/referrals?error=Customer+not+found", status_code=303)
+    try:
+        reward, entry = redeem_credits(db, customer, actor=settings.admin_username)
+        db.add(AuditLog(actor=settings.admin_username, action="referral.credit.redeem", target_type="customer", target_id=str(customer.id), detail=entry.description)); db.commit()
+        process_billing(db, customer_id=customer.id)
+        if customer.plex_username and not customer.exempt:
+            try: reconcile_customer(db, customer)
+            except Exception as exc: _notify_reconcile_failure(db, customer, exc)
+        return RedirectResponse("/referrals?notice=Referral+credits+redeemed", status_code=303)
+    except (ValueError, TypeError) as exc:
+        db.rollback(); return RedirectResponse(f"/referrals?error={quote_plus(str(exc))}", status_code=303)
+
+
+@app.get("/portal/referrals", response_class=HTMLResponse)
+def portal_referrals(request: Request, error: str | None = None, notice: str | None = None, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        response = RedirectResponse("/portal/login", status_code=303); response.delete_cookie("sm_portal_session", path="/portal"); return response
+    ensure_customer_referral_code(db, customer); db.commit()
+    referral_settings = ensure_referral_settings(db)
+    ledger = db.query(ReferralCreditEntry).filter(ReferralCreditEntry.customer_id == customer.id).order_by(ReferralCreditEntry.created_at.desc()).limit(100).all()
+    balance = credit_balance(db, customer.id)
+    lifetime_earned = int(db.query(func.coalesce(func.sum(ReferralCreditEntry.credits), 0)).filter(ReferralCreditEntry.customer_id == customer.id, ReferralCreditEntry.kind == "earn", ReferralCreditEntry.credits > 0).scalar() or 0)
+    referral_count = db.query(func.count(Customer.id)).filter(Customer.referrer_customer_id == customer.id, Customer.archived.is_(False)).scalar() or 0
+    return render(request, "portal_referrals.html", customer=customer, referral_settings=referral_settings, ledger=ledger, balance=balance, lifetime_earned=lifetime_earned, referral_count=referral_count, error=error, notice=notice)
+
+@app.post("/portal/referrals/redeem")
+def portal_redeem_referral_credits(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    try:
+        reward, entry = redeem_credits(db, customer, actor=f"portal:{customer.id}")
+        db.add(AuditLog(actor=f"portal:{customer.id}", action="referral.credit.redeem", target_type="customer", target_id=str(customer.id), detail=entry.description)); db.commit()
+        process_billing(db, customer_id=customer.id)
+        if customer.plex_username and not customer.exempt:
+            try: reconcile_customer(db, customer)
+            except Exception as exc: _notify_reconcile_failure(db, customer, exc)
+        return RedirectResponse("/portal/referrals?notice=Referral+credits+redeemed", status_code=303)
+    except (ValueError, TypeError) as exc:
+        db.rollback(); return RedirectResponse(f"/portal/referrals?error={quote_plus(str(exc))}", status_code=303)
 
 
 @app.get("/backups", response_class=HTMLResponse)

@@ -1,3 +1,14 @@
+## 0.11.0 — Referral Credits
+
+- Every customer now receives an immutable random five-digit referral code.
+- Admins can link a customer to one referrer from the customer editor or during onboarding; referral relationships are prospective and never back-award historic payments.
+- Billing tiers now define a `Referral reward` credit value per qualifying payment (`0` disables earning for that tier).
+- Qualifying payments create an idempotent referral-credit ledger entry; voiding a payment creates the exact inverse entry rather than rewriting history.
+- Tier reward values are snapshotted at payment time, so later tier edits do not alter historical credit earnings.
+- New admin Referrals view shows relationships, balances, lifetime earnings and the recent credit ledger, plus configurable redemption policy.
+- Customer portal gains a Referrals page with referral code copy action, balance, lifetime earnings, referral count, privacy-safe credit history and self-service redemption.
+- Credits redeem through the existing complimentary-access engine; the default policy is 10 credits for 1 complimentary billing period and is admin-configurable.
+
 # 0.10.6b — Admin Desktop Alignment Hotfix
 
 - Centres the admin desktop content rail within the workspace to the right of the fixed sidebar.

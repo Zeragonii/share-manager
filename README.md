@@ -1,8 +1,7 @@
 # Share Manager
 
-> Current release: **0.10.6b** — customer portal navigation/news hub and live Support unread indicators.
+> Current release: **0.11.0 — Referral Credits**
 
-> **Current version: 0.10.3** — mobile UI consistency and touch-target polish across admin and customer PWAs.
 
 
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
@@ -523,3 +522,9 @@ The admin desktop content rail is centred within the workspace remaining to the 
 
 ### Portal analytics
 v0.10.7 adds privacy-light portal adoption metrics: successful logins, 30-minute sessions, coarse page views and Requests-platform clicks. Metrics are aggregated per customer/day; Share Manager does not keep a detailed clickstream or third-party analytics profile.
+
+### Referral credits (0.11.0)
+
+Share Manager can run a simple referral-credit programme without requiring public signup or payment automation. Every customer gets a random five-digit code. Admins may assign that code as another customer's referrer, after which future qualifying payments award the configured number of credits from that customer's billing tier.
+
+Credits are ledger-backed and auditable. Payment voids reverse the original award, historical rewards do not change when tier settings change, and old payments are never rewarded retroactively when a referral relationship is added. Customers can see their code/balance in Portal → Referrals and redeem the configured number of credits for complimentary billing periods. Admins can review balances and redeem on a customer's behalf from the Referrals page.

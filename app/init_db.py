@@ -27,10 +27,15 @@ add_column_if_missing("customers", "portal_enabled_at", "TIMESTAMP NULL")
 add_column_if_missing("customers", "portal_disabled_at", "TIMESTAMP NULL")
 add_column_if_missing("customers", "portal_last_login_at", "TIMESTAMP NULL")
 add_column_if_missing("customers", "portal_last_activity_at", "TIMESTAMP NULL")
+add_column_if_missing("customers", "referral_code", "VARCHAR(5) NULL")
+add_column_if_missing("customers", "referrer_customer_id", "INTEGER NULL REFERENCES customers(id) ON DELETE SET NULL")
+add_column_if_missing("customers", "referral_started_at", "TIMESTAMP NULL")
 with engine.begin() as conn:
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_referral_code ON customers (referral_code) WHERE referral_code IS NOT NULL"))
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_portal_username_lower ON customers (lower(portal_username)) WHERE portal_username IS NOT NULL"))
 add_column_if_missing("billing_tiers", "grace_period_days", "INTEGER NOT NULL DEFAULT 3")
 add_column_if_missing("billing_tiers", "stream_limit", "INTEGER NOT NULL DEFAULT 1")
+add_column_if_missing("billing_tiers", "referral_credits", "INTEGER NOT NULL DEFAULT 0")
 add_column_if_missing("tautulli_settings", "admin_user_ids", "TEXT NULL")
 add_column_if_missing("tautulli_activity", "history_backfill_complete", "BOOLEAN NOT NULL DEFAULT FALSE")
 add_column_if_missing("tautulli_activity", "history_backfill_offset", "INTEGER NOT NULL DEFAULT 0")
@@ -100,7 +105,8 @@ print("Database schema ready")
 # Seed editable payment-source choices. Payments keep their source text so historical
 # ledger entries remain unchanged if a source is later renamed or archived.
 from .db import SessionLocal
-from .models import BackupSettings, Payment, PaymentSource, RequestsPlatformSettings
+from .models import BackupSettings, Customer, Payment, PaymentSource, RequestsPlatformSettings, ReferralSettings
+from .services.referrals import ensure_customer_referral_code
 
 db = SessionLocal()
 try:
@@ -122,6 +128,14 @@ try:
             base_url=None,
             button_label="Request Content",
         ))
+
+
+    if db.get(ReferralSettings, 1) is None:
+        db.add(ReferralSettings(id=1, enabled=True, credits_per_reward=10, reward_periods=1))
+        db.flush()
+    # Allocate immutable random five-digit codes to existing customers on upgrade.
+    for customer in db.query(Customer).filter(Customer.referral_code.is_(None)).all():
+        ensure_customer_referral_code(db, customer)
 
     if db.get(BackupSettings, 1) is None:
         db.add(BackupSettings(

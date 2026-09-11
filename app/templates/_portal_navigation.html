@@ -3,6 +3,7 @@
 {% macro icon_tickets() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v13H7l-3 3V4Zm3 4v2h10V8H7Zm0 4v2h7v-2H7Z"/></svg>{%- endmacro %}
 {% macro icon_history() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 1-7.45 5H2l3.5-3.5L9 9H6.6A6 6 0 1 0 12 6V4Zm-1 3h2v5.4l3.6 2.1-1 1.73L11 13.5V7Z"/></svg>{%- endmacro %}
 {% macro icon_request() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-2.05-4.95L14 10h7V3l-2.63 2.63A8.96 8.96 0 0 0 12 3Zm-1 5h2v5h-2V8Zm0 7h2v2h-2v-2Z"/></svg>{%- endmacro %}
+{% macro icon_referrals() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM8 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8 1c-3.33 0-6 1.67-6 4v3h6v-3c0-1.54-.83-2.8-2.1-3.68A8.3 8.3 0 0 0 16 13ZM8 14c-3.11 0-6 1.57-6 4v2h6v-3c0-1.08.42-2.06 1.15-2.89A8.4 8.4 0 0 0 8 14Zm10-3V9h-2V7h2V5h2v2h2v2h-2v2h-2Z"/></svg>{%- endmacro %}
 {% macro icon_news() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a4 4 0 0 1-4-4V5a2 2 0 0 1 2-2Zm2 2v12a2 2 0 0 0 2 2h10V5H6Zm2 2h8v2H8V7Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"/></svg>{%- endmacro %}
 {% macro portal_sidebar(active, customer, requests_platform=None) -%}
 <aside class="portal-sidebar" aria-label="Customer portal navigation">
@@ -12,6 +13,7 @@
     <a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>
     <a href="/portal/tickets" class="portal-support-link {{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
     <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>History</span></a>
+    <a href="/portal/referrals" class="{{ 'active' if active == 'referrals' else '' }}" {% if active == 'referrals' %}aria-current="page"{% endif %}>{{ icon_referrals() }}<span>Referrals</span></a>
     <a href="/portal/news" class="{{ 'active' if active == 'news' else '' }}" {% if active == 'news' %}aria-current="page"{% endif %}>{{ icon_news() }}<span>News</span></a>
     {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<a href="/portal/request" target="_blank" rel="noopener noreferrer" class="portal-request-nav">{{ icon_request() }}<span>Request</span></a>{% endif %}
   </nav>
@@ -29,6 +31,7 @@
     <a href="/portal/activity">{{ icon_activity() }}<span>Activity</span></a>
     <a href="/portal/tickets" class="portal-support-link">{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
     <a href="/portal/history">{{ icon_history() }}<span>History</span></a>
+    <a href="/portal/referrals">{{ icon_referrals() }}<span>Referrals</span></a>
     <a href="/portal/news">{{ icon_news() }}<span>News</span></a>
     {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<a href="/portal/request" target="_blank" rel="noopener noreferrer">{{ icon_request() }}<span>Request</span><span class="portal-external-mark">↗</span></a>{% endif %}
   </nav>
