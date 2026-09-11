@@ -89,6 +89,18 @@
 })();
 </script>
 {% endif %}
+<section class="portal-analytics-dashboard">
+  <div class="row between"><div><h2>Customer portal</h2><p class="muted">Privacy-light usage aggregates. No clickstream, IP history or interaction recording.</p></div></div>
+  <div class="portal-analytics-stats">
+    <div><strong>{{ portal_analytics.enabled }}</strong><span>Portal enabled</span></div>
+    <div><strong>{{ portal_analytics[30].active_users }}</strong><span>Active users · 30d</span></div>
+    <div><strong>{{ portal_analytics[30].sessions }}</strong><span>Sessions · 30d</span></div>
+    <div><strong>{{ portal_analytics.never_logged_in }}</strong><span>Never logged in</span></div>
+  </div>
+  <div class="portal-analytics-range table-wrap"><table><thead><tr><th>Window</th><th>Active users</th><th>Sessions</th><th>Page views</th><th>Support views</th><th>Request clicks</th></tr></thead><tbody>
+  {% for days in [7,30,90] %}<tr><td>Last {{ days }} days</td><td>{{ portal_analytics[days].active_users }}</td><td>{{ portal_analytics[days].sessions }}</td><td>{{ portal_analytics[days].page_views }}</td><td>{{ portal_analytics[days].support_views }}</td><td>{{ portal_analytics[days].request_clicks }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
 <section class="dashboard-recent-activity">
   <div class="dashboard-recent-desktop"><h2>Recent activity</h2><div class="table-wrap"><table><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>{% for a in recent %}<tr><td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td><code>{{ a.action }}</code></td><td>{{ a.detail or '' }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No activity yet.</td></tr>{% endfor %}</tbody></table></div></div>
   <details class="dashboard-mobile-details dashboard-recent-mobile">

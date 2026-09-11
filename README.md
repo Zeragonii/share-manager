@@ -1,6 +1,6 @@
 # Share Manager
 
-> Current release: **0.10.6a** — customer portal navigation/news hub and live Support unread indicators.
+> Current release: **0.10.6b** — customer portal navigation/news hub and live Support unread indicators.
 
 > **Current version: 0.10.3** — mobile UI consistency and touch-target polish across admin and customer PWAs.
 
@@ -515,3 +515,11 @@ volumes:
 ```
 
 If Nginx Proxy Manager sets a restrictive request-body limit, allow at least 20 MB for Share Manager. Attachments upload individually, so the proxy never needs to accept a combined 75 MB request.
+
+
+## v0.10.6b — Admin desktop alignment hotfix
+
+The admin desktop content rail is centred within the workspace remaining to the right of the fixed navigation sidebar. The existing 1400px maximum width is retained, so wide displays gain balanced whitespace without stretching admin cards and forms. Mobile/responsive layouts are unchanged.
+
+### Portal analytics
+v0.10.7 adds privacy-light portal adoption metrics: successful logins, 30-minute sessions, coarse page views and Requests-platform clicks. Metrics are aggregated per customer/day; Share Manager does not keep a detailed clickstream or third-party analytics profile.

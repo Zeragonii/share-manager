@@ -54,6 +54,7 @@ from .models import (
     SupportTicket,
     SupportTicketMessage,
     SupportTicketAttachment,
+    PortalDailyMetric,
 )
 from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
@@ -495,6 +496,43 @@ async def lifespan(_app: FastAPI):
             await stream_limit_task
 
 
+PORTAL_ANALYTICS_PAGE_FIELDS = {
+    "/portal": "account_views",
+    "/portal/activity": "activity_views",
+    "/portal/tickets": "support_views",
+    "/portal/history": "history_views",
+    "/portal/news": "news_views",
+}
+
+def _portal_metric_row(db: Session, customer_id: int, when: datetime | None = None):
+    when = when or datetime.utcnow()
+    day = when.date()
+    row = db.query(PortalDailyMetric).filter(PortalDailyMetric.customer_id == customer_id, PortalDailyMetric.metric_date == day).first()
+    if row is None:
+        row = PortalDailyMetric(customer_id=customer_id, metric_date=day)
+        db.add(row)
+        db.flush()
+    return row
+
+def _portal_analytics_increment(customer_id: int, field: str, *, count_session_if_idle: bool = False):
+    db = SessionLocal()
+    try:
+        customer = db.get(Customer, customer_id)
+        if not customer or not customer.portal_enabled or customer.archived:
+            return
+        now = datetime.utcnow()
+        row = _portal_metric_row(db, customer_id, now)
+        setattr(row, field, int(getattr(row, field, 0) or 0) + 1)
+        if count_session_if_idle and (not customer.portal_last_activity_at or now - customer.portal_last_activity_at >= timedelta(minutes=30)):
+            row.session_count = int(row.session_count or 0) + 1
+        customer.portal_last_activity_at = now
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.debug("Portal analytics update failed", exc_info=True)
+    finally:
+        db.close()
+
 app = FastAPI(title="Share Manager", version=APP_VERSION, lifespan=lifespan)
 
 @app.middleware("http")
@@ -502,6 +540,17 @@ async def restore_maintenance_mode(request: Request, call_next):
     if RESTORE_IN_PROGRESS.is_set() and request.url.path not in {"/health"}:
         return JSONResponse({"error": "Database restore in progress"}, status_code=503, headers={"Retry-After": "10"})
     return await call_next(request)
+
+@app.middleware("http")
+async def portal_analytics_middleware(request: Request, call_next):
+    response = await call_next(request)
+    if request.method == "GET" and response.status_code < 400:
+        field = PORTAL_ANALYTICS_PAGE_FIELDS.get(request.url.path)
+        if field:
+            payload = read_portal_session(request)
+            if payload and payload.get("customer_id"):
+                _portal_analytics_increment(int(payload["customer_id"]), field, count_session_if_idle=True)
+    return response
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["format_duration"] = _format_duration
@@ -643,6 +692,8 @@ def portal_login(request: Request, username: str = Form(...), password: str = Fo
         return render(request, "portal_login.html", error="Invalid username or password")
     PORTAL_LOGIN_ATTEMPTS.pop(key, None)
     customer.portal_last_login_at = now
+    metric = _portal_metric_row(db, customer.id, now)
+    metric.login_count = int(metric.login_count or 0) + 1
     db.commit()
     response = RedirectResponse("/portal", status_code=303)
     response.set_cookie("sm_portal_session", make_portal_session(customer.id, int(customer.portal_session_version or 1)), httponly=True, samesite="lax", secure=settings.session_cookie_secure, max_age=settings.session_max_age_seconds, path="/portal")
@@ -1435,7 +1486,22 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     tautulli_settings = get_tautulli_settings(db)
     tautulli_enabled = bool(tautulli_settings.integration and tautulli_settings.integration.enabled)
     tautulli_usage = dashboard_usage(db, now=now) if tautulli_enabled else None
-    return render(request, "dashboard.html", stats=stats, recent=recent, revenue_forecast=revenue_forecast, tautulli_usage=tautulli_usage, tautulli_settings=tautulli_settings if tautulli_enabled else None)
+    portal_analytics = {}
+    for days in (7, 30, 90):
+        since = (now - timedelta(days=days - 1)).date()
+        rows = db.query(PortalDailyMetric).filter(PortalDailyMetric.metric_date >= since).all()
+        portal_analytics[days] = {
+            "active_users": len({r.customer_id for r in rows if (r.session_count or r.login_count or r.account_views or r.activity_views or r.support_views or r.history_views or r.news_views or r.request_clicks)}),
+            "sessions": sum(r.session_count or 0 for r in rows),
+            "page_views": sum((r.account_views or 0)+(r.activity_views or 0)+(r.support_views or 0)+(r.history_views or 0)+(r.news_views or 0) for r in rows),
+            "request_clicks": sum(r.request_clicks or 0 for r in rows),
+            "support_views": sum(r.support_views or 0 for r in rows),
+        }
+    enabled_portals = db.query(Customer).filter(Customer.portal_enabled.is_(True), Customer.archived.is_(False), Customer.status != "cancelled").count()
+    never_logged_in = db.query(Customer).filter(Customer.portal_enabled.is_(True), Customer.archived.is_(False), Customer.portal_last_login_at.is_(None)).count()
+    portal_analytics["enabled"] = enabled_portals
+    portal_analytics["never_logged_in"] = never_logged_in
+    return render(request, "dashboard.html", stats=stats, recent=recent, revenue_forecast=revenue_forecast, tautulli_usage=tautulli_usage, tautulli_settings=tautulli_settings if tautulli_enabled else None, portal_analytics=portal_analytics)
 
 
 @app.post("/billing/run")
@@ -2498,6 +2564,17 @@ def cancel_news_banner(request: Request, banner_id: int, db: Session = Depends(g
     return RedirectResponse("/news?notice=Banner+cancelled", status_code=303)
 
 
+@app.get("/portal/request")
+def portal_request_platform(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    platform = db.get(RequestsPlatformSettings, 1)
+    if not platform or not platform.enabled or not platform.base_url:
+        return RedirectResponse("/portal", status_code=303)
+    _portal_analytics_increment(customer.id, "request_clicks", count_session_if_idle=True)
+    return RedirectResponse(platform.base_url, status_code=303)
+
 @app.get("/portal/news", response_class=HTMLResponse)
 def portal_news(request: Request, db: Session = Depends(get_db)):
     customer = _portal_customer(request, db)
@@ -3334,7 +3411,19 @@ def customer_history(request: Request, customer_id: int, db: Session = Depends(g
     events.sort(key=lambda item: item["when"], reverse=True)
     tautulli_activity = db.query(TautulliActivity).filter(TautulliActivity.customer_id == customer.id).first()
     stream_limit_events = (db.query(StreamLimitEvent).options(joinedload(StreamLimitEvent.billing_tier)).filter(StreamLimitEvent.customer_id == customer.id).order_by(StreamLimitEvent.created_at.desc()).limit(100).all())
-    return render(request, "customer_history.html", customer=customer, events=events, tautulli_activity=tautulli_activity, stream_limit_events=stream_limit_events)
+    since30 = (datetime.utcnow() - timedelta(days=29)).date()
+    metric_rows = db.query(PortalDailyMetric).filter(PortalDailyMetric.customer_id == customer.id, PortalDailyMetric.metric_date >= since30).all()
+    portal_usage = {
+        "logins_30d": sum(r.login_count or 0 for r in metric_rows),
+        "sessions_30d": sum(r.session_count or 0 for r in metric_rows),
+        "views_30d": sum((r.account_views or 0)+(r.activity_views or 0)+(r.support_views or 0)+(r.history_views or 0)+(r.news_views or 0) for r in metric_rows),
+        "request_clicks_30d": sum(r.request_clicks or 0 for r in metric_rows),
+        "pages": {
+            "Account": sum(r.account_views or 0 for r in metric_rows), "Activity": sum(r.activity_views or 0 for r in metric_rows),
+            "Support": sum(r.support_views or 0 for r in metric_rows), "History": sum(r.history_views or 0 for r in metric_rows), "News": sum(r.news_views or 0 for r in metric_rows),
+        },
+    }
+    return render(request, "customer_history.html", customer=customer, events=events, tautulli_activity=tautulli_activity, stream_limit_events=stream_limit_events, portal_usage=portal_usage)
 
 
 @app.get("/backups", response_class=HTMLResponse)

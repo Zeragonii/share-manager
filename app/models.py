@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -23,11 +23,29 @@ class Customer(Base):
     portal_enabled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     portal_disabled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     portal_last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    portal_last_activity_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     payments: Mapped[list["Payment"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     credits: Mapped[list["SubscriptionCredit"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     support_tickets: Mapped[list["SupportTicket"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+
+
+class PortalDailyMetric(Base):
+    __tablename__ = "portal_daily_metrics"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    metric_date: Mapped[datetime] = mapped_column(Date, index=True)
+    login_count: Mapped[int] = mapped_column(Integer, default=0)
+    session_count: Mapped[int] = mapped_column(Integer, default=0)
+    account_views: Mapped[int] = mapped_column(Integer, default=0)
+    activity_views: Mapped[int] = mapped_column(Integer, default=0)
+    support_views: Mapped[int] = mapped_column(Integer, default=0)
+    history_views: Mapped[int] = mapped_column(Integer, default=0)
+    news_views: Mapped[int] = mapped_column(Integer, default=0)
+    request_clicks: Mapped[int] = mapped_column(Integer, default=0)
+    customer: Mapped["Customer"] = relationship()
+    __table_args__ = (UniqueConstraint("customer_id", "metric_date", name="uq_portal_daily_customer_date"),)
 
 
 class Package(Base):

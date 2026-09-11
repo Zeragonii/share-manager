@@ -26,6 +26,7 @@ add_column_if_missing("customers", "portal_session_version", "INTEGER NOT NULL D
 add_column_if_missing("customers", "portal_enabled_at", "TIMESTAMP NULL")
 add_column_if_missing("customers", "portal_disabled_at", "TIMESTAMP NULL")
 add_column_if_missing("customers", "portal_last_login_at", "TIMESTAMP NULL")
+add_column_if_missing("customers", "portal_last_activity_at", "TIMESTAMP NULL")
 with engine.begin() as conn:
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_portal_username_lower ON customers (lower(portal_username)) WHERE portal_username IS NOT NULL"))
 add_column_if_missing("billing_tiers", "grace_period_days", "INTEGER NOT NULL DEFAULT 3")

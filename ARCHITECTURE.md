@@ -373,3 +373,11 @@ The mobile customer portal keeps the four primary destinations in the fixed bott
 ## Ticket attachment storage (0.10.6)
 
 Persistent app-owned files share one root: `/share-manager/backups` for PostgreSQL dumps and `/share-manager/attachments` for support uploads. Attachment bytes are never stored in PostgreSQL; `support_ticket_attachments` stores authorization, ownership, message/ticket linkage, original filename, generated storage filename, MIME type, size and SHA-256 metadata. New files are staged in `attachments/_pending` and are atomically moved into `attachments/TKT-NNNNNN/` when a message is committed. Unattached files older than 24 hours are garbage-collected. Downloads are only served through authenticated application routes; the attachments directory must not be published directly by the reverse proxy. Customers are limited to five uploads across a ticket, while admin uploads do not consume that quota.
+
+
+## Admin desktop content rail (v0.10.6b)
+
+On desktop widths above 900px, the admin `<main>` rail is horizontally centred inside the grid workspace to the right of `#site-sidebar`. The existing 1400px maximum width remains authoritative; mobile navigation and layout behavior are unchanged.
+
+### Portal analytics (v0.10.7)
+Portal analytics are deliberately coarse and first-party. `portal_daily_metrics` stores per-customer/day counters rather than individual navigation events. A portal session is counted when an authenticated page view occurs after at least 30 minutes of inactivity. High-resolution clickstream, IP-history, mouse/scroll and third-party advertising telemetry are explicitly out of scope.

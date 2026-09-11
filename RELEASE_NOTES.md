@@ -1,3 +1,10 @@
+# 0.10.6b — Admin Desktop Alignment Hotfix
+
+- Centres the admin desktop content rail within the workspace to the right of the fixed sidebar.
+- Preserves the existing 1400px admin maximum width and page-specific layouts.
+- Leaves the responsive/mobile admin layout unchanged.
+- No functional, database, ticket-attachment, backup, or storage changes.
+
 # 0.10.6a — Desktop Portal Alignment Hotfix
 
 - Centre the customer portal content rail within the post-sidebar desktop workspace.
@@ -373,3 +380,11 @@ Detailed Tautulli watch history now resolves library names by syncing history pe
 - Extended the notification delivery ledger with channel/recipient metadata.
 - Preserved Home Assistant, Discord and generic webhook behavior.
 - During Tautulli history discovery, the progress bar now uses measured library histories as the best available progress analogue until the final row denominator is known.
+
+## 0.10.7 — Portal Analytics
+- Adds privacy-light, first-party customer portal analytics aggregated per customer/day.
+- Tracks successful logins, sessions, coarse portal page views, and Requests-platform clicks.
+- Admin Dashboard shows 7/30/90-day adoption summaries.
+- Customer History shows restrained 30-day portal usage and last-active information.
+- Customer Account includes a transparency note explaining what is and is not collected.
+- Explicitly does not retain clickstream navigation, IP histories, mouse/scroll telemetry, or advertising analytics.

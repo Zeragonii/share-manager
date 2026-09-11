@@ -13,7 +13,7 @@
     <a href="/portal/tickets" class="portal-support-link {{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
     <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>History</span></a>
     <a href="/portal/news" class="{{ 'active' if active == 'news' else '' }}" {% if active == 'news' %}aria-current="page"{% endif %}>{{ icon_news() }}<span>News</span></a>
-    {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<a href="{{ requests_platform.base_url }}" target="_blank" rel="noopener noreferrer" class="portal-request-nav">{{ icon_request() }}<span>Request</span></a>{% endif %}
+    {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<a href="/portal/request" target="_blank" rel="noopener noreferrer" class="portal-request-nav">{{ icon_request() }}<span>Request</span></a>{% endif %}
   </nav>
   <div class="portal-sidebar-account"><span>Signed in as</span><strong>{{ customer.name }}</strong><small>{{ customer.portal_username }}</small></div>
   <form method="post" action="/portal/logout" class="portal-sidebar-signout"><button class="ghost">Sign out</button></form>
@@ -30,7 +30,7 @@
     <a href="/portal/tickets" class="portal-support-link">{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
     <a href="/portal/history">{{ icon_history() }}<span>History</span></a>
     <a href="/portal/news">{{ icon_news() }}<span>News</span></a>
-    {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<a href="{{ requests_platform.base_url }}" target="_blank" rel="noopener noreferrer">{{ icon_request() }}<span>Request</span><span class="portal-external-mark">↗</span></a>{% endif %}
+    {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<a href="/portal/request" target="_blank" rel="noopener noreferrer">{{ icon_request() }}<span>Request</span><span class="portal-external-mark">↗</span></a>{% endif %}
   </nav>
   <form method="post" action="/portal/logout"><button class="ghost">Sign out</button></form>
 </aside>

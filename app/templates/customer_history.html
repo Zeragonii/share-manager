@@ -7,6 +7,16 @@
     <div><span class="muted">Status</span><strong>{{ ('archived · ' ~ customer.status) if customer.archived else ('exempt' if customer.exempt else customer.status) }}</strong></div>
   </div>
 </section>
+<section class="portal-customer-usage">
+  <div><h2>Portal activity</h2><p class="muted">Coarse first-party usage totals for the last 30 days.</p></div>
+  <div class="portal-usage-grid">
+    <div><span>Last login</span><strong>{{ relative_time(customer.portal_last_login_at) }}</strong></div>
+    <div><span>Last active</span><strong>{{ relative_time(customer.portal_last_activity_at) }}</strong></div>
+    <div><span>Sessions · 30d</span><strong>{{ portal_usage.sessions_30d }}</strong></div>
+    <div><span>Page views · 30d</span><strong>{{ portal_usage.views_30d }}</strong></div>
+  </div>
+  <div class="portal-page-usage">{% for name,count in portal_usage.pages.items() %}<span>{{ name }} · {{ count }}</span>{% endfor %}<span>Requests · {{ portal_usage.request_clicks_30d }}</span></div>
+</section>
 {% if tautulli_activity %}
 <section class="tautulli-customer-history">
   <div class="row between"><div><h2>Plex activity</h2><p class="muted">Cached Tautulli usage analytics.</p></div><span class="muted">Synced {{ relative_time(tautulli_activity.synced_at) }}</span></div>
