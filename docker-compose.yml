@@ -14,12 +14,14 @@ services:
       RECONCILE_ON_ASSIGN: ${RECONCILE_ON_ASSIGN:-true}
       BILLING_CHECK_INTERVAL_MINUTES: ${BILLING_CHECK_INTERVAL_MINUTES:-15}
       NOTIFICATION_DUE_SOON_DAYS: ${NOTIFICATION_DUE_SOON_DAYS:-3}
-      BACKUP_DIR: /backups
+      STORAGE_ROOT: /share-manager
+      BACKUP_DIR: /share-manager/backups
+      ATTACHMENT_DIR: /share-manager/attachments
     ports:
       - "8080:8080"
     volumes:
       - app_data:/data
-      - ${BACKUP_HOST_PATH:-./backups}:/backups
+      - ${SHARE_MANAGER_HOST_PATH:-./share-manager}:/share-manager
 
   postgres:
     image: postgres:17-alpine

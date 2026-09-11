@@ -19,6 +19,11 @@
     <strong>{{ retention_daily }} / {{ retention_weekly }} / {{ retention_monthly }}</strong>
     <small>Daily / weekly / monthly automatic restore points.</small>
   </section>
+  <section class="backup-status-card">
+    <span>Ticket attachment storage</span>
+    <strong>{{ 'Unavailable' if attachment_storage_error else 'Available' }}</strong>
+    <small>{% if attachment_storage_error %}{{ attachment_storage_error }}{% else %}{{ attachment_count }} files · {{ '%.2f'|format(attachment_bytes / 1048576) }} MB · <code>{{ attachment_dir }}</code>{% endif %}</small>
+  </section>
 </div>
 
 <section class="backup-settings-panel">
@@ -49,7 +54,7 @@
 
 <section class="backup-list-section">
   <div class="row between backup-heading">
-    <div><h2>Stored backups</h2><p>Backups are stored in <code>{{ backup_dir }}</code> inside the container. Map this to storage outside the PostgreSQL disk.</p></div>
+    <div><h2>Stored backups</h2><p>Backups are stored in <code>{{ backup_dir }}</code> beneath the shared <code>/share-manager</code> storage root alongside ticket attachments.</p></div>
     <form method="post" action="/backups/run"><button>Create backup now</button></form>
   </div>
   {% if backups %}
@@ -99,7 +104,7 @@
 
 <section class="backup-note">
   <h2>Storage warning</h2>
-  <p><strong>A backup on the same failed disk is not a disaster-recovery backup.</strong> In Portainer, set <code>BACKUP_HOST_PATH</code> to a path on your Unraid/NFS/other independent storage before relying on the schedule.</p>
+  <p><strong>A backup on the same failed disk is not a disaster-recovery backup.</strong> In Portainer, set <code>SHARE_MANAGER_HOST_PATH</code> to a path on independent storage (for example your Unraid SMB mount) before relying on the schedule.</p>
   <p class="muted">Automatic retention keeps the newest {{ retention_daily }} backups, plus one representative restore point from each of the newest {{ retention_weekly }} ISO weeks and {{ retention_monthly }} calendar months. Manual and pre-restore safety backups are never automatically pruned. Schedule and retention are configured above; the old BACKUP_* automation environment variables are now only first-run defaults.</p>
   <p class="muted">The database dump contains Share Manager data, but not your Portainer stack environment variables/secrets. Back those up separately.</p>
 </section>

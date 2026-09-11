@@ -443,6 +443,7 @@ class SupportTicket(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     customer: Mapped[Customer] = relationship(back_populates="support_tickets")
     messages: Mapped[list["SupportTicketMessage"]] = relationship(back_populates="ticket", cascade="all, delete-orphan", order_by="SupportTicketMessage.created_at")
+    attachments: Mapped[list["SupportTicketAttachment"]] = relationship(back_populates="ticket", cascade="all, delete-orphan")
 
 
 class SupportTicketMessage(Base):
@@ -455,6 +456,26 @@ class SupportTicketMessage(Base):
     visible_to_customer: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     ticket: Mapped[SupportTicket] = relationship(back_populates="messages")
+    attachments: Mapped[list["SupportTicketAttachment"]] = relationship(back_populates="message", order_by="SupportTicketAttachment.id")
+
+
+class SupportTicketAttachment(Base):
+    __tablename__ = "support_ticket_attachments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int | None] = mapped_column(ForeignKey("support_tickets.id", ondelete="CASCADE"), nullable=True, index=True)
+    message_id: Mapped[int | None] = mapped_column(ForeignKey("support_ticket_messages.id", ondelete="CASCADE"), nullable=True, index=True)
+    draft_token: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    uploader_type: Mapped[str] = mapped_column(String(20), index=True)
+    uploader_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), nullable=True, index=True)
+    original_filename: Mapped[str] = mapped_column(String(255))
+    storage_filename: Mapped[str] = mapped_column(String(100), unique=True)
+    mime_type: Mapped[str] = mapped_column(String(120))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    attached_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ticket: Mapped[SupportTicket | None] = relationship(back_populates="attachments")
+    message: Mapped[SupportTicketMessage | None] = relationship(back_populates="attachments")
 
 
 class NotificationPlatformSettings(Base):

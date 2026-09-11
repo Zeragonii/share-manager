@@ -1,0 +1,15 @@
+{% macro attachment_list(message, portal=False, ticket=None) -%}
+{% if message.attachments %}<div class="ticket-attachments">{% for a in message.attachments %}
+<a class="ticket-attachment{% if a.mime_type.startswith('image/') %} image{% endif %}" href="{{ '/portal/tickets/' ~ ticket.reference ~ '/attachments/' ~ a.id if portal else '/tickets/' ~ ticket.reference ~ '/attachments/' ~ a.id }}" target="_blank" rel="noopener">
+{% if a.mime_type.startswith('image/') %}<img src="{{ '/portal/tickets/' ~ ticket.reference ~ '/attachments/' ~ a.id if portal else '/tickets/' ~ ticket.reference ~ '/attachments/' ~ a.id }}" alt="{{ a.original_filename }}" loading="lazy">{% else %}<span class="ticket-attachment-icon">📎</span>{% endif %}
+<span><strong>{{ a.original_filename }}</strong><small>{{ (a.size_bytes / 1024)|round(1) }} KB</small></span></a>
+{% endfor %}</div>{% endif %}
+{%- endmacro %}
+
+{% macro uploader(endpoint, quota=None, draft_token=None, label='Add attachment') -%}
+<div class="ticket-uploader" data-ticket-uploader data-upload-endpoint="{{ endpoint }}"{% if quota is not none %} data-quota="{{ quota }}"{% endif %}{% if draft_token %} data-draft-token="{{ draft_token }}"{% endif %}>
+  <div class="ticket-upload-row"><label class="button-link secondary ticket-file-button">📎 {{ label }}<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.txt,.log" data-ticket-file-input></label><span class="muted" data-ticket-upload-help>15 MB max per file{% if quota is not none %} · {{ quota }} customer slot{{ '' if quota == 1 else 's' }} remaining{% endif %}</span></div>
+  <div class="ticket-upload-list" data-ticket-upload-list></div>
+  <div class="ticket-upload-error" data-ticket-upload-error hidden></div>
+</div>
+{%- endmacro %}

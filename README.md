@@ -1,6 +1,6 @@
 # Share Manager
 
-> Current release: **0.10.5** — customer portal navigation/news hub and live Support unread indicators.
+> Current release: **0.10.6** — customer portal navigation/news hub and live Support unread indicators.
 
 > **Current version: 0.10.3** — mobile UI consistency and touch-target polish across admin and customer PWAs.
 
@@ -241,10 +241,10 @@ The app checks for a missing daily automatic backup and creates one after the co
 Portainer/environment settings:
 
 ```env
-BACKUP_HOST_PATH=/path/on/independent/storage/share-manager
+SHARE_MANAGER_HOST_PATH=/path/on/independent/storage/share-manager
 ```
 
-`BACKUP_HOST_PATH` is mounted at `/backups` inside the app container. For genuine disaster recovery, put this on storage independent from the PostgreSQL volume (for example an Unraid/NFS location or another physical disk/server). The backup schedule and retention policy are configured from **Disaster Recovery → Backup automation** in the web UI.
+`SHARE_MANAGER_HOST_PATH` is mounted at `/share-manager` inside the app container; backups live in `/share-manager/backups` and ticket uploads in `/share-manager/attachments`. For genuine disaster recovery, put this on storage independent from the PostgreSQL volume (for example an Unraid SMB/CIFS location or another physical disk/server). The backup schedule and retention policy are configured from **Disaster Recovery → Backup automation** in the web UI.
 
 Automatic retention uses one set of dump files and keeps the union of:
 - the newest N daily restore points;
@@ -265,7 +265,7 @@ The database backup does **not** contain Portainer environment variables, passwo
 ## v0.4.1 — in-app backup automation settings
 - Backup schedule, scheduler check interval, scheduled-backup enable/disable, and daily/weekly/monthly retention are now stored in PostgreSQL and editable on the Disaster Recovery page.
 - Existing `BACKUP_SCHEDULE_HOUR`, `BACKUP_CHECK_INTERVAL_MINUTES`, and retention environment variables are retained only as first-run defaults for compatibility.
-- `BACKUP_HOST_PATH` remains a deployment/Compose setting because Docker must mount the host/NAS path before the application starts.
+- `SHARE_MANAGER_HOST_PATH` remains a deployment/Compose setting because Docker must mount the host/NAS path before the application starts.
 - Scheduler settings are re-read at runtime; changing the policy does not require an app restart (the check interval itself updates after the current sleep finishes).
 
 
@@ -298,7 +298,7 @@ Matching prefers the stored Plex numeric user ID and falls back to Plex username
 
 v0.5.3 hardens the v0.5.2 review changes. Backup storage errors (including stale NFS/CIFS file handles) are shown cleanly in the Disaster Recovery UI; PostgreSQL restores are transactional and run in maintenance mode with post-restore schema verification; payment voids restore captured pre-payment state; pending Plex invitations follow current entitlement state; admin sessions expire server-side and are invalidated when credentials change; and release CI runs pytest before publishing.
 
-For HTTPS deployments, set `SESSION_COOKIE_SECURE=true`. The backup mount itself is still controlled by Docker/Portainer through `BACKUP_HOST_PATH`; if `/backups` reports a stale file handle, repair/remount the host storage and recreate/restart the app container before relying on backups again.
+For HTTPS deployments, set `SESSION_COOKIE_SECURE=true`. The backup mount itself is still controlled by Docker/Portainer through `SHARE_MANAGER_HOST_PATH`; if `/share-manager` reports a stale file handle, repair/remount the host storage and recreate/restart the app container before relying on backups again.
 
 
 ## v0.5.4 — PostgreSQL-only hardening
@@ -493,3 +493,18 @@ Admins have an active ticket queue plus a dedicated Closed view, filters for sta
 
 ## Scheduled customer news banners (0.10.4)
 Admins can queue non-overlapping customer portal announcements from the News page. Each banner has a severity and UTC-backed start/end window entered in the browser's local time. Active banners are displayed prominently throughout the customer PWA and update on a lightweight one-minute poll.
+
+
+## v0.10.6 — Ticket attachments
+
+Support ticket conversations now accept authenticated attachments. Customer uploads are limited to five attachments per ticket and 15 MB per file; admin replies/internal notes do not consume the customer five-file quota but retain the 15 MB per-file safety limit. Allowed formats are JPG/JPEG, PNG, WebP, GIF, PDF, TXT and LOG. Images render as previews while every download remains authorization-gated through Share Manager.
+
+Persistent files now use one storage root. Map a durable host path to `/share-manager`; Share Manager creates `/share-manager/backups` and `/share-manager/attachments` itself. Pending asynchronous uploads are cleaned after 24 hours. When upgrading from the old direct `/backups` mapping, point the same host backup directory at `/share-manager`; startup moves root-level `share-manager-*.dump` files into `backups/` automatically.
+
+Example:
+```yaml
+volumes:
+  - /mnt/unraid-smb/Nextcloud/sharemanager:/share-manager
+```
+
+If Nginx Proxy Manager sets a restrictive request-body limit, allow at least 20 MB for Share Manager. Attachments upload individually, so the proxy never needs to accept a combined 75 MB request.

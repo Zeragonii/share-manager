@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     reconcile_on_assign: bool = True
     billing_check_interval_minutes: int = 15
     notification_due_soon_days: int = 3
-    backup_dir: str = "/backups"
+    storage_root: str = "/share-manager"
+    backup_dir: str = "/share-manager/backups"
+    attachment_dir: str = "/share-manager/attachments"
     backup_schedule_hour: int = 3
     backup_check_interval_minutes: int = 5
     backup_retention_daily: int = 7

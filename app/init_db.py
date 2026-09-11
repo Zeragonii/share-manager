@@ -135,3 +135,19 @@ try:
     db.commit()
 finally:
     db.close()
+
+# v0.10.6: storage consolidation. When the old backup host directory is remapped
+# as /share-manager, legacy dumps may be sitting at the root. Move them into the
+# new backups/ child automatically so existing restore points remain visible.
+from pathlib import Path
+try:
+    storage_root = Path(settings.storage_root)
+    new_backup_root = Path(settings.backup_dir)
+    storage_root.mkdir(parents=True, exist_ok=True)
+    new_backup_root.mkdir(parents=True, exist_ok=True)
+    for legacy_dump in storage_root.glob("share-manager-*.dump"):
+        destination = new_backup_root / legacy_dump.name
+        if not destination.exists():
+            legacy_dump.replace(destination)
+except OSError as exc:
+    print(f"Storage-root migration warning: {exc}")

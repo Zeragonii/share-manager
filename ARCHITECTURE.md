@@ -130,7 +130,7 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 
 - `app/services/backups.py` owns database dump creation, validation, restore, filesystem discovery, schedule-due checks, and grandfather/father/son-style retention selection.
 - PostgreSQL backups use `pg_dump --format=custom`; validation uses `pg_restore --list`; restores use `pg_restore --clean --if-exists --exit-on-error`.
-- `/backups` is a bind-mounted persistence boundary. The host-side path is selected by `BACKUP_HOST_PATH` in Compose.
+- `/share-manager` is the single bind-mounted persistence boundary. The host-side path is selected by `SHARE_MANAGER_HOST_PATH` in Compose; the app owns `backups/` and `attachments/` beneath it.
 - The FastAPI lifespan starts a backup scheduler alongside the billing scheduler. It catches up if the configured daily backup is absent after the scheduled UTC hour.
 - Automatic retention operates only on `share-manager-auto-*` dumps. Manual and pre-restore safety dumps are intentionally preserved.
 - Restore is deliberately two-stage from an operator perspective: validate source, create safety backup, then destructive restore. The UI requires the explicit confirmation token `RESTORE`.
@@ -140,7 +140,7 @@ Brand-new Plex users can be created directly from the Customers page. Onboarding
 ## v0.4.1 — in-app backup automation settings
 - Backup schedule, scheduler check interval, scheduled-backup enable/disable, and daily/weekly/monthly retention are now stored in PostgreSQL and editable on the Disaster Recovery page.
 - Existing `BACKUP_SCHEDULE_HOUR`, `BACKUP_CHECK_INTERVAL_MINUTES`, and retention environment variables are retained only as first-run defaults for compatibility.
-- `BACKUP_HOST_PATH` remains a deployment/Compose setting because Docker must mount the host/NAS path before the application starts.
+- `SHARE_MANAGER_HOST_PATH` remains a deployment/Compose setting because Docker must mount the host/NAS path before the application starts.
 - Scheduler settings are re-read at runtime; changing the policy does not require an app restart (the check interval itself updates after the current sleep finishes).
 
 
@@ -368,3 +368,8 @@ Scheduled news banners remain mutually exclusive by active time window. The cust
 ## Portal navigation and news (0.10.5)
 
 The mobile customer portal keeps the four primary destinations in the fixed bottom navigation and exposes secondary destinations through a slide-in menu. News is a first-class customer route at `/portal/news`; Requests Platform remains an external destination and is only rendered when enabled. Customer ticket unread counts come from a session-scoped summary endpoint and are polled only while the document is visible.
+
+
+## Ticket attachment storage (0.10.6)
+
+Persistent app-owned files share one root: `/share-manager/backups` for PostgreSQL dumps and `/share-manager/attachments` for support uploads. Attachment bytes are never stored in PostgreSQL; `support_ticket_attachments` stores authorization, ownership, message/ticket linkage, original filename, generated storage filename, MIME type, size and SHA-256 metadata. New files are staged in `attachments/_pending` and are atomically moved into `attachments/TKT-NNNNNN/` when a message is committed. Unattached files older than 24 hours are garbage-collected. Downloads are only served through authenticated application routes; the attachments directory must not be published directly by the reverse proxy. Customers are limited to five uploads across a ticket, while admin uploads do not consume that quota.

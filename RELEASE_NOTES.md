@@ -1,3 +1,16 @@
+# 0.10.6 — Ticket Attachments
+
+- Added customer/admin ticket attachments with asynchronous one-file-at-a-time uploads.
+- Customer quota: 5 attachments per ticket total; admin uploads do not consume that quota.
+- 15 MB maximum per file for all uploaders.
+- Allowlist/content validation for JPG/JPEG, PNG, WebP, GIF, PDF, TXT and LOG.
+- Added authenticated attachment download routes; customer authorization also blocks private internal-note attachments.
+- Added image thumbnails/previews in ticket threads and live-polled messages.
+- Pending uploads expire after 24 hours; files use UUID storage names and SHA-256 metadata.
+- Consolidated persistent storage beneath `/share-manager`, with `backups/` and `attachments/` children.
+- Added upgrade migration for root-level legacy Share Manager `.dump` files after remapping the old backup host path to `/share-manager`.
+- Added attachment storage health/usage to Disaster Recovery.
+
 # 0.10.5 — Portal Navigation & News
 
 - Adds a mobile customer hamburger menu while retaining Account, Activity, Support and History in the bottom navigation.

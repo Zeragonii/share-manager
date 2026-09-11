@@ -53,6 +53,7 @@ from .models import (
     StreamLimitEvent,
     SupportTicket,
     SupportTicketMessage,
+    SupportTicketAttachment,
 )
 from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
@@ -79,6 +80,9 @@ from .services.tautulli import (
 from .services.tickets import (
     TICKET_CATEGORIES, TICKET_STATUSES, TICKET_PRIORITIES,
     create_ticket, add_customer_reply, add_admin_reply, add_internal_note, change_status, change_priority,
+)
+from .services.attachments import (
+    save_pending_upload, attachment_path, attachment_root, cleanup_pending, CUSTOMER_TICKET_ATTACHMENT_LIMIT,
 )
 from .version import APP_VERSION
 
@@ -354,6 +358,15 @@ def run_notification_cycle() -> tuple[int, int]:
         db.close()
 
 
+
+@serialized_db_worker
+def run_attachment_cleanup_cycle() -> int:
+    db=SessionLocal()
+    try:
+        return cleanup_pending(db, settings.attachment_dir)
+    finally:
+        db.close()
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     async def billing_loop():
@@ -424,6 +437,16 @@ async def lifespan(_app: FastAPI):
                 logger.exception("Notification scheduler/retry worker cycle failed")
             await asyncio.sleep(30)
 
+
+    async def attachment_cleanup_loop():
+        await asyncio.sleep(60)
+        while True:
+            try:
+                await asyncio.to_thread(run_attachment_cleanup_cycle)
+            except Exception:
+                logger.exception("Pending ticket attachment cleanup failed")
+            await asyncio.sleep(3600)
+
     async def stream_limit_loop():
         await asyncio.sleep(8)
         while True:
@@ -446,6 +469,7 @@ async def lifespan(_app: FastAPI):
     tautulli_backfill_task = asyncio.create_task(tautulli_backfill_loop())
     stream_limit_task = asyncio.create_task(stream_limit_loop())
     notification_task = asyncio.create_task(notification_loop())
+    attachment_cleanup_task = asyncio.create_task(attachment_cleanup_loop())
     try:
         yield
     finally:
@@ -456,6 +480,7 @@ async def lifespan(_app: FastAPI):
         tautulli_backfill_task.cancel()
         stream_limit_task.cancel()
         notification_task.cancel()
+        attachment_cleanup_task.cancel()
         with suppress(asyncio.CancelledError):
             await billing_task
         with suppress(asyncio.CancelledError):
@@ -858,6 +883,7 @@ def _ticket_message_json(msg: SupportTicketMessage, *, customer_view: bool = Fal
         "body": msg.body,
         "created_at": msg.created_at.isoformat() if msg.created_at else None,
         "created_label": msg.created_at.strftime("%d %b %Y · %H:%M") if msg.created_at else "",
+        "attachments": [{"id": a.id, "name": a.original_filename, "size": a.size_bytes, "mime": a.mime_type, "url": (f"/portal/tickets/{msg.ticket.reference}/attachments/{a.id}" if customer_view else f"/tickets/{msg.ticket.reference}/attachments/{a.id}")} for a in msg.attachments],
         "internal": msg.author_type == "internal",
     }
 
@@ -874,6 +900,67 @@ def _ticket_state_json(ticket: SupportTicket) -> dict:
     }
 
 
+
+def _attachment_json(row: SupportTicketAttachment) -> dict:
+    return {"id": row.id, "name": row.original_filename, "size": row.size_bytes, "mime": row.mime_type}
+
+@app.post("/portal/api/ticket-attachments")
+async def portal_draft_attachment_upload(request: Request, file: UploadFile = File(...), draft_token: str = Form(...), db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer: return JSONResponse({"error":"unauthorized"}, status_code=401)
+    try:
+        row = await save_pending_upload(db, file, storage_dir=settings.attachment_dir, uploader_type="customer", uploader_customer_id=customer.id, draft_token=draft_token, actor=f"portal:{customer.portal_username}")
+        return _attachment_json(row)
+    except (ValueError, OSError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400 if isinstance(exc, ValueError) else 503)
+
+@app.post("/portal/api/tickets/{reference}/attachments")
+async def portal_ticket_attachment_upload(reference: str, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer: return JSONResponse({"error":"unauthorized"}, status_code=401)
+    ticket = db.query(SupportTicket).filter(SupportTicket.reference==reference, SupportTicket.customer_id==customer.id).first()
+    if not ticket or ticket.status == "closed": return JSONResponse({"error":"Ticket not available for uploads"}, status_code=404)
+    try:
+        row = await save_pending_upload(db, file, storage_dir=settings.attachment_dir, uploader_type="customer", uploader_customer_id=customer.id, ticket=ticket, actor=f"portal:{customer.portal_username}")
+        return _attachment_json(row)
+    except (ValueError, OSError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400 if isinstance(exc, ValueError) else 503)
+
+@app.delete("/portal/api/ticket-attachments/{attachment_id}")
+@app.delete("/portal/api/tickets/{reference}/attachments/{attachment_id}")
+def portal_pending_attachment_delete(attachment_id: int, request: Request, reference: str | None = None, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer: return JSONResponse({"error":"unauthorized"}, status_code=401)
+    row=db.query(SupportTicketAttachment).filter(SupportTicketAttachment.id==attachment_id, SupportTicketAttachment.uploader_type=="customer", SupportTicketAttachment.uploader_customer_id==customer.id, SupportTicketAttachment.message_id.is_(None)).first()
+    if not row: return JSONResponse({"error":"not found"},status_code=404)
+    try: attachment_path(row,settings.attachment_dir).unlink(missing_ok=True)
+    except OSError: pass
+    db.delete(row); db.commit(); return {"ok":True}
+
+@app.post("/api/admin/tickets/{reference}/attachments")
+async def admin_ticket_attachment_upload(reference: str, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    gate=auth(request)
+    if gate: return JSONResponse({"error":"unauthorized"},status_code=401)
+    ticket=db.query(SupportTicket).filter(SupportTicket.reference==reference).first()
+    if not ticket: return JSONResponse({"error":"Ticket not found"},status_code=404)
+    try:
+        row=await save_pending_upload(db,file,storage_dir=settings.attachment_dir,uploader_type="admin",uploader_customer_id=None,ticket=ticket,actor=settings.admin_username)
+        return _attachment_json(row)
+    except (ValueError,OSError) as exc:
+        return JSONResponse({"error":str(exc)},status_code=400 if isinstance(exc,ValueError) else 503)
+
+@app.delete("/api/admin/tickets/{reference}/attachments/{attachment_id}")
+def admin_pending_attachment_delete(reference: str, attachment_id: int, request: Request, db: Session=Depends(get_db)):
+    gate=auth(request)
+    if gate: return JSONResponse({"error":"unauthorized"},status_code=401)
+    ticket=db.query(SupportTicket).filter(SupportTicket.reference==reference).first()
+    if not ticket: return JSONResponse({"error":"not found"},status_code=404)
+    row=db.query(SupportTicketAttachment).filter(SupportTicketAttachment.id==attachment_id,SupportTicketAttachment.ticket_id==ticket.id,SupportTicketAttachment.uploader_type=="admin",SupportTicketAttachment.message_id.is_(None)).first()
+    if not row:return JSONResponse({"error":"not found"},status_code=404)
+    try:attachment_path(row,settings.attachment_dir).unlink(missing_ok=True)
+    except OSError:pass
+    db.delete(row);db.commit();return {"ok":True}
+
 @app.get("/portal/tickets", response_class=HTMLResponse)
 def portal_tickets(request: Request, db: Session = Depends(get_db)):
     customer = _portal_customer(request, db)
@@ -886,16 +973,17 @@ def portal_tickets(request: Request, db: Session = Depends(get_db)):
     return render(request, "portal_tickets.html", customer=customer, active_tickets=active, closed_tickets=closed,
                   categories=TICKET_CATEGORIES, statuses=TICKET_STATUSES, priorities=TICKET_PRIORITIES,
                   ticket_notify_default=(pref.ticket_notifications_default if pref else True),
+                  attachment_draft_token=secrets.token_urlsafe(24),
                   notice=request.query_params.get("notice"), error=request.query_params.get("error"))
 
 
 @app.post("/portal/tickets/new")
-def portal_ticket_create(request: Request, category: str = Form(...), subject: str = Form(...), description: str = Form(...), notifications_enabled: str | None = Form(None), db: Session = Depends(get_db)):
+def portal_ticket_create(request: Request, category: str = Form(...), subject: str = Form(...), description: str = Form(...), notifications_enabled: str | None = Form(None), draft_token: str | None = Form(None), attachment_ids: list[int] = Form(default=[]), db: Session = Depends(get_db)):
     customer = _portal_customer(request, db)
     if not customer:
         return RedirectResponse("/portal/login", status_code=303)
     try:
-        ticket = create_ticket(db, customer, category=category, subject=subject, description=description, notifications_enabled=bool(notifications_enabled))
+        ticket = create_ticket(db, customer, category=category, subject=subject, description=description, notifications_enabled=bool(notifications_enabled), attachment_ids=attachment_ids, draft_token=draft_token, attachment_dir=settings.attachment_dir)
         return RedirectResponse(f"/portal/tickets/{ticket.reference}?notice=" + quote_plus("Support ticket created"), status_code=303)
     except ValueError as exc:
         return RedirectResponse("/portal/tickets?error=" + quote_plus(str(exc)), status_code=303)
@@ -916,13 +1004,14 @@ def portal_ticket_detail(reference: str, request: Request, db: Session = Depends
     if ticket.customer_unread:
         ticket.customer_unread = False; db.commit()
     messages = [m for m in ticket.messages if m.visible_to_customer]
-    return render(request, "portal_ticket_detail.html", customer=customer, ticket=ticket, messages=messages,
+    customer_attachment_count = db.query(SupportTicketAttachment).filter(SupportTicketAttachment.ticket_id == ticket.id, SupportTicketAttachment.uploader_type == "customer").count()
+    return render(request, "portal_ticket_detail.html", customer=customer, ticket=ticket, messages=messages, customer_attachment_remaining=max(0, CUSTOMER_TICKET_ATTACHMENT_LIMIT-customer_attachment_count),
                   categories=TICKET_CATEGORIES, statuses=TICKET_STATUSES, priorities=TICKET_PRIORITIES,
                   notice=request.query_params.get("notice"), error=request.query_params.get("error"))
 
 
 @app.post("/portal/tickets/{reference}/reply")
-def portal_ticket_reply(reference: str, request: Request, body: str = Form(...), db: Session = Depends(get_db)):
+def portal_ticket_reply(reference: str, request: Request, body: str = Form(""), attachment_ids: list[int] = Form(default=[]), db: Session = Depends(get_db)):
     customer = _portal_customer(request, db)
     if not customer:
         return RedirectResponse("/portal/login", status_code=303)
@@ -930,7 +1019,7 @@ def portal_ticket_reply(reference: str, request: Request, body: str = Form(...),
     if not ticket:
         return RedirectResponse("/portal/tickets?error=Ticket+not+found", status_code=303)
     try:
-        add_customer_reply(db, ticket, customer, body)
+        add_customer_reply(db, ticket, customer, body, attachment_ids=attachment_ids, attachment_dir=settings.attachment_dir)
         return RedirectResponse(f"/portal/tickets/{reference}?notice=" + quote_plus("Reply sent"), status_code=303)
     except ValueError as exc:
         return RedirectResponse(f"/portal/tickets/{reference}?error=" + quote_plus(str(exc)), status_code=303)
@@ -1134,6 +1223,29 @@ def portal_stop_stream(request: Request, session_key: str = Form(...), db: Sessi
         return RedirectResponse("/portal/activity?error=" + quote_plus("Could not stop that stream. Please try again."), status_code=303)
 
 
+
+@app.get("/portal/tickets/{reference}/attachments/{attachment_id}")
+def portal_ticket_attachment_download(reference: str, attachment_id: int, request: Request, db: Session=Depends(get_db)):
+    customer=_portal_customer(request,db)
+    if not customer:return RedirectResponse('/portal/login',status_code=303)
+    row=db.query(SupportTicketAttachment).join(SupportTicket).join(SupportTicketMessage, SupportTicketAttachment.message_id==SupportTicketMessage.id).filter(SupportTicketAttachment.id==attachment_id,SupportTicket.reference==reference,SupportTicket.customer_id==customer.id,SupportTicketAttachment.message_id.is_not(None),SupportTicketMessage.visible_to_customer.is_(True)).first()
+    if not row:return JSONResponse({"error":"not found"},status_code=404)
+    path=attachment_path(row,settings.attachment_dir)
+    if not path.is_file():return JSONResponse({"error":"Attachment storage unavailable or file missing"},status_code=503)
+    disposition='inline' if row.mime_type.startswith('image/') else 'attachment'
+    return FileResponse(path,media_type=row.mime_type,filename=row.original_filename,content_disposition_type=disposition)
+
+@app.get("/tickets/{reference}/attachments/{attachment_id}")
+def admin_ticket_attachment_download(reference:str,attachment_id:int,request:Request,db:Session=Depends(get_db)):
+    gate=auth(request)
+    if gate:return gate
+    row=db.query(SupportTicketAttachment).join(SupportTicket).filter(SupportTicketAttachment.id==attachment_id,SupportTicket.reference==reference,SupportTicketAttachment.message_id.is_not(None)).first()
+    if not row:return JSONResponse({"error":"not found"},status_code=404)
+    path=attachment_path(row,settings.attachment_dir)
+    if not path.is_file():return JSONResponse({"error":"Attachment storage unavailable or file missing"},status_code=503)
+    disposition='inline' if row.mime_type.startswith('image/') else 'attachment'
+    return FileResponse(path,media_type=row.mime_type,filename=row.original_filename,content_disposition_type=disposition)
+
 @app.get("/tickets", response_class=HTMLResponse)
 def admin_tickets(request: Request, status: str | None = None, category: str | None = None, priority: str | None = None, q: str | None = None, db: Session = Depends(get_db)):
     gate = auth(request)
@@ -1173,22 +1285,22 @@ def admin_ticket_detail(reference: str, request: Request, db: Session = Depends(
 
 
 @app.post("/tickets/{reference}/reply")
-def admin_ticket_reply(reference: str, request: Request, body: str = Form(...), db: Session = Depends(get_db)):
+def admin_ticket_reply(reference: str, request: Request, body: str = Form(""), attachment_ids: list[int] = Form(default=[]), db: Session = Depends(get_db)):
     gate=auth(request)
     if gate: return gate
     ticket=db.query(SupportTicket).filter(SupportTicket.reference==reference).first()
     if not ticket: return RedirectResponse("/tickets?error=Ticket+not+found",status_code=303)
-    try: add_admin_reply(db,ticket,body,settings.admin_username); return RedirectResponse(f"/tickets/{reference}?notice="+quote_plus("Reply sent"),status_code=303)
+    try: add_admin_reply(db,ticket,body,settings.admin_username,attachment_ids=attachment_ids,attachment_dir=settings.attachment_dir); return RedirectResponse(f"/tickets/{reference}?notice="+quote_plus("Reply sent"),status_code=303)
     except ValueError as exc: return RedirectResponse(f"/tickets/{reference}?error="+quote_plus(str(exc)),status_code=303)
 
 
 @app.post("/tickets/{reference}/note")
-def admin_ticket_note(reference: str, request: Request, body: str = Form(...), db: Session = Depends(get_db)):
+def admin_ticket_note(reference: str, request: Request, body: str = Form(""), attachment_ids: list[int] = Form(default=[]), db: Session = Depends(get_db)):
     gate=auth(request)
     if gate: return gate
     ticket=db.query(SupportTicket).filter(SupportTicket.reference==reference).first()
     if not ticket: return RedirectResponse("/tickets?error=Ticket+not+found",status_code=303)
-    try: add_internal_note(db,ticket,body,settings.admin_username); return RedirectResponse(f"/tickets/{reference}?notice="+quote_plus("Internal note added"),status_code=303)
+    try: add_internal_note(db,ticket,body,settings.admin_username,attachment_ids=attachment_ids,attachment_dir=settings.attachment_dir); return RedirectResponse(f"/tickets/{reference}?notice="+quote_plus("Internal note added"),status_code=303)
     except ValueError as exc: return RedirectResponse(f"/tickets/{reference}?error="+quote_plus(str(exc)),status_code=303)
 
 
@@ -3241,8 +3353,16 @@ def backups_page(request: Request, error: str | None = None, notice: str | None 
     db = SessionLocal()
     try:
         policy = get_backup_policy(db, settings)
+        attachment_count = db.query(SupportTicketAttachment).filter(SupportTicketAttachment.message_id.is_not(None)).count()
+        attachment_bytes = db.query(func.coalesce(func.sum(SupportTicketAttachment.size_bytes), 0)).filter(SupportTicketAttachment.message_id.is_not(None)).scalar() or 0
     finally:
         db.close()
+    attachment_storage_error = None
+    try:
+        attachment_root(settings.attachment_dir)
+        os.stat(settings.attachment_dir)
+    except OSError as exc:
+        attachment_storage_error = str(exc)
     return render(
         request,
         "backups.html",
@@ -3258,6 +3378,10 @@ def backups_page(request: Request, error: str | None = None, notice: str | None 
         retention_weekly=policy.retention_weekly,
         retention_monthly=policy.retention_monthly,
         storage_error=storage_error,
+        attachment_dir=settings.attachment_dir,
+        attachment_count=attachment_count,
+        attachment_bytes=attachment_bytes,
+        attachment_storage_error=attachment_storage_error,
     )
 
 
