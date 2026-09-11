@@ -391,3 +391,7 @@ Referral identity is stored on `customers`: an immutable random five-digit `refe
 `referral_settings` controls whether new rewards are earned and the redemption policy. Redemption locks the customer row, checks the live ledger balance, appends a negative `redeem` entry and invokes the existing complimentary subscription-credit engine. Referral credits therefore remain distinct from money and from payment records.
 
 The customer portal intentionally does not expose referred-customer identities, payment amounts, or payment dates. It exposes only the referrer's own code, aggregate referral count, balance and generic credit-ledger reasons.
+
+
+### Referral redemption semantics (0.11.0a)
+Referral earning and spending are independent Billing Tier properties. `referral_credits` snapshots how many credits a qualifying referred payment awards; `referral_redeem_cost` determines how many credits a customer on that tier must spend for exactly one calendar month of access. Redemption directly advances `Subscription.current_period_end` by one calendar month (or starts from the current time when fully lapsed), refreshes grace/status, and records an append-only referral ledger debit with the exact coverage change. It never interprets a yearly tier as a yearly referral reward.

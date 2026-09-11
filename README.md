@@ -1,6 +1,6 @@
 # Share Manager
 
-> Current release: **0.11.0 — Referral Credits**
+> Current release: **0.11.0a — Tier-specific one-month referral redemption**
 
 
 
@@ -523,7 +523,7 @@ The admin desktop content rail is centred within the workspace remaining to the 
 ### Portal analytics
 v0.10.7 adds privacy-light portal adoption metrics: successful logins, 30-minute sessions, coarse page views and Requests-platform clicks. Metrics are aggregated per customer/day; Share Manager does not keep a detailed clickstream or third-party analytics profile.
 
-### Referral credits (0.11.0)
+### Referral credits (0.11.0 / 0.11.0a)
 
 Share Manager can run a simple referral-credit programme without requiring public signup or payment automation. Every customer gets a random five-digit code. Admins may assign that code as another customer's referrer, after which future qualifying payments award the configured number of credits from that customer's billing tier.
 

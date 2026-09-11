@@ -36,6 +36,7 @@ with engine.begin() as conn:
 add_column_if_missing("billing_tiers", "grace_period_days", "INTEGER NOT NULL DEFAULT 3")
 add_column_if_missing("billing_tiers", "stream_limit", "INTEGER NOT NULL DEFAULT 1")
 add_column_if_missing("billing_tiers", "referral_credits", "INTEGER NOT NULL DEFAULT 0")
+add_column_if_missing("billing_tiers", "referral_redeem_cost", "INTEGER NOT NULL DEFAULT 0")
 add_column_if_missing("tautulli_settings", "admin_user_ids", "TEXT NULL")
 add_column_if_missing("tautulli_activity", "history_backfill_complete", "BOOLEAN NOT NULL DEFAULT FALSE")
 add_column_if_missing("tautulli_activity", "history_backfill_offset", "INTEGER NOT NULL DEFAULT 0")

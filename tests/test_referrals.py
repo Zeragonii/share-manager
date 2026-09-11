@@ -53,3 +53,22 @@ def test_relationship_is_prospective():
     db.commit()
     assign_referrer(db, referred, referrer.referral_code, actor="admin"); db.commit()
     assert award_for_payment(db, payment) is None
+
+
+def test_redeem_uses_tier_cost_and_extends_exactly_one_calendar_month():
+    from app.models import ReferralCreditEntry
+    from app.services.referrals import redeem_credits
+    db, referrer, referred, sub = make_db()
+    tier = sub.billing_tier
+    tier.referral_redeem_cost = 100
+    ref_sub = Subscription(customer=referrer, billing_tier=tier, status="active", current_period_start=datetime(2026, 9, 20), current_period_end=datetime(2026, 12, 20), grace_until=datetime(2026, 12, 23))
+    db.add(ref_sub)
+    db.add(ReferralCreditEntry(customer_id=referrer.id, kind="earn", credits=120, description="test balance"))
+    db.commit()
+    reward_sub, entry, before, after = redeem_credits(db, referrer, actor="test")
+    db.commit()
+    assert before == datetime(2026, 12, 20)
+    assert after == datetime(2027, 1, 20)
+    assert reward_sub.current_period_end == datetime(2027, 1, 20)
+    assert entry.credits == -100
+    assert credit_balance(db, referrer.id) == 20

@@ -5,8 +5,7 @@
   <div class="row between"><div><h2>Programme settings</h2><p class="muted">Payments use the referral reward configured on the referred customer's billing tier.</p></div><span class="badge {{ 'active' if referral_settings.enabled else 'suspended' }}">{{ 'Enabled' if referral_settings.enabled else 'Disabled' }}</span></div>
   <form method="post" action="/referrals/settings" class="grid-form compact">
     <label>Programme<select name="enabled"><option value="true" {% if referral_settings.enabled %}selected{% endif %}>Enabled</option><option value="false" {% if not referral_settings.enabled %}selected{% endif %}>Disabled</option></select></label>
-    <label>Credits per redemption<input type="number" name="credits_per_reward" min="1" value="{{ referral_settings.credits_per_reward }}" required></label>
-    <label>Complimentary periods<input type="number" name="reward_periods" min="1" value="{{ referral_settings.reward_periods }}" required><span class="muted">Uses the customer's current billing tier interval.</span></label>
+    <div class="muted">Earning and one-month redemption costs are configured independently on each Billing Tier.</div>
     <button>Save settings</button>
   </form>
 </section>
@@ -19,7 +18,7 @@
 <section>
   <h2>Credit balances</h2>
   <div class="table-wrap"><table><thead><tr><th>Customer</th><th>Code</th><th>Referrals</th><th>Available</th><th>Lifetime earned</th><th></th></tr></thead><tbody>
-  {% for row in balances %}<tr><td>{{ row.customer.name }}</td><td><code>{{ row.customer.referral_code }}</code></td><td>{{ row.referrals }}</td><td><strong>{{ row.balance }}</strong></td><td>{{ row.earned }}</td><td>{% if referral_settings.enabled and row.balance >= referral_settings.credits_per_reward %}<form method="post" action="/referrals/{{ row.customer.id }}/redeem" onsubmit="return confirm('Redeem credits for {{ row.customer.name|e }}?');"><button class="secondary small-action">Redeem</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="muted">No customers.</td></tr>{% endfor %}
+  {% for row in balances %}<tr><td>{{ row.customer.name }}</td><td><code>{{ row.customer.referral_code }}</code></td><td>{{ row.referrals }}</td><td><strong>{{ row.balance }}</strong></td><td>{{ row.earned }}</td><td>{% if referral_settings.enabled and row.redeem_cost and row.balance >= row.redeem_cost %}<form method="post" action="/referrals/{{ row.customer.id }}/redeem" onsubmit="return confirm('Spend {{ row.redeem_cost }} credits to extend {{ row.customer.name|e }} from {{ row.redeem_from.strftime('%d %b %Y') }} to {{ row.redeem_to.strftime('%d %b %Y') }}?');"><button class="secondary small-action">Redeem {{ row.redeem_cost }}</button></form>{% elif row.redeem_tier and not row.redeem_cost %}<span class="muted">Disabled</span>{% elif row.redeem_cost %}<span class="muted">Needs {{ row.redeem_cost }}</span>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="muted">No customers.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 <section>

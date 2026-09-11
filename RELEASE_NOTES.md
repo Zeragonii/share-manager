@@ -1,3 +1,14 @@
+## 0.11.0a — Tier-specific one-month referral redemption
+
+- Added a per-Billing-Tier **Redeem 1 month** credit cost alongside referral credits earned per payment.
+- Referral redemption now always extends the customer’s paid-through date by exactly one calendar month, regardless of whether the tier itself is monthly, yearly, or weekly.
+- Active/grace subscriptions extend from the existing paid-through date; fully lapsed subscriptions restart the redeemed month from the redemption time.
+- Customer portal previews the exact before/after access dates before confirmation.
+- Admin redemption uses the same tier-aware engine and ledger.
+- A redemption cost of `0` disables referral redemption for that tier.
+- Historical ledger entries snapshot the credits spent and resulting coverage dates.
+- Existing global referral reward-period settings are retained in the schema for upgrade compatibility but are no longer used for redemption.
+
 ## 0.11.0 — Referral Credits
 
 - Every customer now receives an immutable random five-digit referral code.

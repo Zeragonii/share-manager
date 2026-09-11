@@ -1,5 +1,6 @@
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 
@@ -122,32 +123,59 @@ def credit_balance(db: Session, customer_id: int) -> int:
     return int(db.query(func.coalesce(func.sum(ReferralCreditEntry.credits), 0)).filter(ReferralCreditEntry.customer_id == customer_id).scalar() or 0)
 
 
+def redemption_quote(db: Session, customer: Customer, *, now: datetime | None = None):
+    """Return the current tier, credit cost, and exact one-month coverage change."""
+    now = now or datetime.utcnow()
+    sub = (db.query(Subscription).options(joinedload(Subscription.billing_tier)).filter(
+        Subscription.customer_id == customer.id, Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES)
+    ).order_by(Subscription.id.desc()).first())
+    if not sub or not sub.billing_tier:
+        raise ValueError("Customer does not have a current subscription tier")
+    tier = sub.billing_tier
+    cost = int(tier.referral_redeem_cost or 0)
+    if cost <= 0:
+        raise ValueError("Referral redemption is disabled for this billing tier")
+    if sub.current_period_end:
+        cutoff = sub.grace_until or (sub.current_period_end + timedelta(days=max(0, int(tier.grace_period_days or 0))))
+        coverage_start = sub.current_period_end if now <= cutoff else now
+    else:
+        coverage_start = now
+    coverage_end = coverage_start + relativedelta(months=1)
+    return sub, tier, cost, coverage_start, coverage_end
+
+
 def redeem_credits(db: Session, customer: Customer, *, actor: str):
     settings = ensure_referral_settings(db)
     if not settings.enabled:
         raise ValueError("The referral programme is currently disabled")
-    cost = max(1, int(settings.credits_per_reward or 10))
-    periods = max(1, int(settings.reward_periods or 1))
     # Lock the customer row so two simultaneous redemptions cannot overspend.
     locked = db.query(Customer).filter(Customer.id == customer.id).with_for_update().one()
+    sub, tier, cost, coverage_start, coverage_end = redemption_quote(db, locked)
     balance = credit_balance(db, locked.id)
     if balance < cost:
         raise ValueError(f"At least {cost} referral credits are required")
-    from .billing import apply_subscription_credit
-    credit = apply_subscription_credit(
-        db,
-        customer=locked,
-        periods=periods,
-        granted_at=datetime.utcnow(),
-        reason=f"Referral reward ({cost} credits)",
-        granted_by=actor,
-    )
+
+    previous_end = sub.current_period_end
+    if sub.current_period_end is None:
+        sub.started_at = coverage_start
+    sub.current_period_start = coverage_start
+    sub.current_period_end = coverage_end
+    from .billing import grace_end
+    sub.grace_until = grace_end(coverage_end, tier)
+    sub.status = "active"
+    sub.cancelled_at = None
+    if not locked.exempt:
+        locked.status = "active"
+
     entry = ReferralCreditEntry(
         customer_id=locked.id,
+        billing_tier_id=tier.id,
         kind="redeem",
         credits=-cost,
-        description=f"Redeemed {cost} referral credits for {periods} complimentary billing period(s)",
+        description=(f"Redeemed {cost} referral credits for 1 month of access · "
+                     f"paid through {coverage_start:%Y-%m-%d} -> {coverage_end:%Y-%m-%d}"),
     )
     db.add(entry)
     db.flush()
-    return credit, entry
+    return sub, entry, coverage_start, coverage_end
+

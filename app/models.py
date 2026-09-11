@@ -81,6 +81,7 @@ class BillingTier(Base):
     grace_period_days: Mapped[int] = mapped_column(Integer, default=3)
     stream_limit: Mapped[int] = mapped_column(Integer, default=1)
     referral_credits: Mapped[int] = mapped_column(Integer, default=0)
+    referral_redeem_cost: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     package: Mapped[Package] = relationship(back_populates="billing_tiers")
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="billing_tier")

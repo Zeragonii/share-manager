@@ -86,7 +86,7 @@ from .services.tickets import (
 )
 from .services.referrals import (
     ensure_customer_referral_code, assign_referrer, award_for_payment, reverse_for_payment,
-    credit_balance, ensure_referral_settings, redeem_credits,
+    credit_balance, ensure_referral_settings, redeem_credits, redemption_quote,
 )
 from .services.attachments import (
     save_pending_upload, attachment_path, attachment_root, cleanup_pending, CUSTOMER_TICKET_ATTACHMENT_LIMIT,
@@ -2424,14 +2424,15 @@ def add_tier(
     grace_period_days: int = Form(3),
     stream_limit: int = Form(1),
     referral_credits: int = Form(0),
+    referral_redeem_cost: int = Form(0),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
     if gate:
         return gate
-    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or referral_credits < 0 or price < 0:
+    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or referral_credits < 0 or referral_redeem_cost < 0 or price < 0:
         return RedirectResponse("/packages?error=Invalid+billing+tier+values", status_code=303)
-    t = BillingTier(package_id=package_id, name=name.strip(), price=price, interval_unit=interval_unit, interval_count=interval_count, grace_period_days=grace_period_days, stream_limit=stream_limit, referral_credits=referral_credits)
+    t = BillingTier(package_id=package_id, name=name.strip(), price=price, interval_unit=interval_unit, interval_count=interval_count, grace_period_days=grace_period_days, stream_limit=stream_limit, referral_credits=referral_credits, referral_redeem_cost=referral_redeem_cost)
     db.add(t)
     db.commit()
     return RedirectResponse("/packages", status_code=303)
@@ -2449,6 +2450,7 @@ def edit_tier(
     grace_period_days: int = Form(3),
     stream_limit: int = Form(1),
     referral_credits: int = Form(0),
+    referral_redeem_cost: int = Form(0),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -2457,7 +2459,7 @@ def edit_tier(
     t = db.query(BillingTier).filter(BillingTier.id == tier_id, BillingTier.package_id == package_id).first()
     if not t:
         return RedirectResponse("/packages?error=Billing+tier+not+found", status_code=303)
-    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or referral_credits < 0 or price < 0:
+    if interval_unit not in {"week", "month", "year"} or interval_count < 1 or grace_period_days < 0 or stream_limit < 0 or referral_credits < 0 or referral_redeem_cost < 0 or price < 0:
         return RedirectResponse("/packages?error=Invalid+billing+tier+values", status_code=303)
     t.name = name.strip()
     t.price = price
@@ -2466,7 +2468,8 @@ def edit_tier(
     t.grace_period_days = grace_period_days
     t.stream_limit = stream_limit
     t.referral_credits = referral_credits
-    db.add(AuditLog(actor=settings.admin_username, action="billing_tier.update", target_type="billing_tier", target_id=str(t.id), detail=f"{t.name}: £{price} / {interval_count} {interval_unit}; {grace_period_days}d grace; stream limit {stream_limit}; referral reward {referral_credits} credits"))
+    t.referral_redeem_cost = referral_redeem_cost
+    db.add(AuditLog(actor=settings.admin_username, action="billing_tier.update", target_type="billing_tier", target_id=str(t.id), detail=f"{t.name}: £{price} / {interval_count} {interval_unit}; {grace_period_days}d grace; stream limit {stream_limit}; referral reward {referral_credits} credits; redemption {referral_redeem_cost} credits/month"))
     db.commit()
     return RedirectResponse("/packages?notice=Billing+tier+updated", status_code=303)
 
@@ -3477,19 +3480,22 @@ def referrals_page(request: Request, error: str | None = None, notice: str | Non
     balances = []
     for c in customers:
         earned = int(db.query(func.coalesce(func.sum(ReferralCreditEntry.credits), 0)).filter(ReferralCreditEntry.customer_id == c.id, ReferralCreditEntry.credits > 0).scalar() or 0)
-        balances.append({"customer": c, "balance": credit_balance(db, c.id), "earned": earned, "referrals": db.query(func.count(Customer.id)).filter(Customer.referrer_customer_id == c.id).scalar() or 0})
+        
+        try:
+            _sub, redeem_tier, redeem_cost, redeem_from, redeem_to = redemption_quote(db, c)
+        except ValueError:
+            redeem_tier = None; redeem_cost = 0; redeem_from = None; redeem_to = None
+        balances.append({"customer": c, "balance": credit_balance(db, c.id), "earned": earned, "referrals": db.query(func.count(Customer.id)).filter(Customer.referrer_customer_id == c.id).scalar() or 0, "redeem_tier": redeem_tier, "redeem_cost": redeem_cost, "redeem_from": redeem_from, "redeem_to": redeem_to})
     ledger = db.query(ReferralCreditEntry).options(joinedload(ReferralCreditEntry.customer)).order_by(ReferralCreditEntry.created_at.desc()).limit(250).all()
     return render(request, "referrals.html", referral_settings=referral_settings, relationships=relationships, balances=balances, ledger=ledger, error=error, notice=notice)
 
 @app.post("/referrals/settings")
-def save_referral_settings(request: Request, enabled: str = Form("true"), credits_per_reward: int = Form(10), reward_periods: int = Form(1), db: Session = Depends(get_db)):
+def save_referral_settings(request: Request, enabled: str = Form("true"), db: Session = Depends(get_db)):
     gate = auth(request)
     if gate:
         return gate
-    if credits_per_reward < 1 or reward_periods < 1:
-        return RedirectResponse("/referrals?error=Referral+reward+values+must+be+at+least+1", status_code=303)
-    row = ensure_referral_settings(db); row.enabled = enabled == "true"; row.credits_per_reward = credits_per_reward; row.reward_periods = reward_periods
-    db.add(AuditLog(actor=settings.admin_username, action="referral.settings.update", target_type="referral_settings", target_id="1", detail=f"enabled={row.enabled}; {credits_per_reward} credits -> {reward_periods} period(s)")); db.commit()
+    row = ensure_referral_settings(db); row.enabled = enabled == "true"
+    db.add(AuditLog(actor=settings.admin_username, action="referral.settings.update", target_type="referral_settings", target_id="1", detail=f"enabled={row.enabled}; redemption costs are configured per billing tier")); db.commit()
     return RedirectResponse("/referrals?notice=Referral+settings+updated", status_code=303)
 
 @app.post("/referrals/{customer_id}/redeem")
@@ -3501,7 +3507,7 @@ def admin_redeem_referral_credits(request: Request, customer_id: int, db: Sessio
     if not customer:
         return RedirectResponse("/referrals?error=Customer+not+found", status_code=303)
     try:
-        reward, entry = redeem_credits(db, customer, actor=settings.admin_username)
+        reward, entry, coverage_start, coverage_end = redeem_credits(db, customer, actor=settings.admin_username)
         db.add(AuditLog(actor=settings.admin_username, action="referral.credit.redeem", target_type="customer", target_id=str(customer.id), detail=entry.description)); db.commit()
         process_billing(db, customer_id=customer.id)
         if customer.plex_username and not customer.exempt:
@@ -3523,7 +3529,11 @@ def portal_referrals(request: Request, error: str | None = None, notice: str | N
     balance = credit_balance(db, customer.id)
     lifetime_earned = int(db.query(func.coalesce(func.sum(ReferralCreditEntry.credits), 0)).filter(ReferralCreditEntry.customer_id == customer.id, ReferralCreditEntry.kind == "earn", ReferralCreditEntry.credits > 0).scalar() or 0)
     referral_count = db.query(func.count(Customer.id)).filter(Customer.referrer_customer_id == customer.id, Customer.archived.is_(False)).scalar() or 0
-    return render(request, "portal_referrals.html", customer=customer, referral_settings=referral_settings, ledger=ledger, balance=balance, lifetime_earned=lifetime_earned, referral_count=referral_count, error=error, notice=notice)
+    try:
+        _sub, redeem_tier, redeem_cost, redeem_from, redeem_to = redemption_quote(db, customer)
+    except ValueError:
+        redeem_tier = None; redeem_cost = 0; redeem_from = None; redeem_to = None
+    return render(request, "portal_referrals.html", customer=customer, referral_settings=referral_settings, ledger=ledger, balance=balance, lifetime_earned=lifetime_earned, referral_count=referral_count, redeem_tier=redeem_tier, redeem_cost=redeem_cost, redeem_from=redeem_from, redeem_to=redeem_to, error=error, notice=notice)
 
 @app.post("/portal/referrals/redeem")
 def portal_redeem_referral_credits(request: Request, db: Session = Depends(get_db)):
@@ -3531,7 +3541,7 @@ def portal_redeem_referral_credits(request: Request, db: Session = Depends(get_d
     if not customer:
         return RedirectResponse("/portal/login", status_code=303)
     try:
-        reward, entry = redeem_credits(db, customer, actor=f"portal:{customer.id}")
+        reward, entry, coverage_start, coverage_end = redeem_credits(db, customer, actor=f"portal:{customer.id}")
         db.add(AuditLog(actor=f"portal:{customer.id}", action="referral.credit.redeem", target_type="customer", target_id=str(customer.id), detail=entry.description)); db.commit()
         process_billing(db, customer_id=customer.id)
         if customer.plex_username and not customer.exempt:
