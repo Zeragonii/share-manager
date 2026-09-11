@@ -7,6 +7,10 @@
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
 
+## v0.11.1a — Referrals favicon hotfix
+
+The customer Referrals page now uses the same favicon and Apple touch icon metadata as the rest of the portal.
+
 ## v0.11.1 — Unified Account Credits
 
 Share Manager now uses one account-credit ledger for referral rewards and administrator goodwill/manual grants. New complimentary-access grants are retired; historical complimentary records remain visible read-only. Admin grants require a reason and use the same tier-specific one-calendar-month redemption engine as referral credits.

@@ -1,3 +1,8 @@
+# 0.11.1a — Referrals favicon hotfix
+
+- Restored the standard Share Manager favicon and Apple touch icon metadata on the customer Referrals page.
+- No functional or database changes.
+
 # 0.11.1 — Unified Account Credits
 
 - Retired new complimentary-access grants from the admin UI; historical SubscriptionCredit records remain read-only for audit/history.
