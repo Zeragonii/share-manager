@@ -1,6 +1,6 @@
 # Share Manager
 
-> Current release: **0.10.6** — customer portal navigation/news hub and live Support unread indicators.
+> Current release: **0.10.6a** — customer portal navigation/news hub and live Support unread indicators.
 
 > **Current version: 0.10.3** — mobile UI consistency and touch-target polish across admin and customer PWAs.
 
@@ -494,6 +494,13 @@ Admins have an active ticket queue plus a dedicated Closed view, filters for sta
 ## Scheduled customer news banners (0.10.4)
 Admins can queue non-overlapping customer portal announcements from the News page. Each banner has a severity and UTC-backed start/end window entered in the browser's local time. Active banners are displayed prominently throughout the customer PWA and update on a lightweight one-minute poll.
 
+
+
+## v0.10.6a — Desktop portal alignment hotfix
+
+- Centres the customer portal content rail within the workspace to the right of the desktop sidebar.
+- Constrains active news/critical banners to the same rail and horizontal edges as normal portal content.
+- Preserves the existing desktop content width and leaves the mobile layout unchanged.
 
 ## v0.10.6 — Ticket attachments
 

@@ -1,3 +1,10 @@
+# 0.10.6a — Desktop Portal Alignment Hotfix
+
+- Centre the customer portal content rail within the post-sidebar desktop workspace.
+- Align customer-facing news banners to the exact same desktop content rail.
+- Preserve the established portal content width and mobile layout.
+- No database, API, storage, ticket-attachment, or functional changes.
+
 # 0.10.6 — Ticket Attachments
 
 - Added customer/admin ticket attachments with asynchronous one-file-at-a-time uploads.
