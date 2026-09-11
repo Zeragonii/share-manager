@@ -208,6 +208,19 @@ class RequestsPlatformSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class NewsBanner(Base):
+    __tablename__ = "news_banners"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(String(24), default="info", index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    ends_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+
 class TautulliSettings(Base):
     __tablename__ = "tautulli_settings"
     id: Mapped[int] = mapped_column(primary_key=True, default=1)

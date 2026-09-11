@@ -1,3 +1,18 @@
+# 0.10.4a
+
+- Customer news visibility now follows severity: Info, Advisory, and Warning banners display on Account only; Critical banners remain global across the customer portal.
+- The live banner refresh endpoint respects the same Account/global scope so scheduled transitions remain correct without a page refresh.
+- Scheduling and overlap validation are unchanged.
+
+# 0.10.4 — Scheduled customer news banners
+
+- Adds an admin News page for scheduled portal announcements.
+- Banners have title, body, severity, local start/end date-times, and conflict validation.
+- Multiple future banners can be queued, but overlapping active windows are rejected.
+- Active banners are shown prominently across the customer portal with subtle Info/Advisory/Warning/Critical styling.
+- Customer PWAs poll once per minute while visible so scheduled banners can appear/end without a full navigation refresh.
+- Admins can end an active banner or cancel a queued banner while preserving audit/history.
+
 ## v0.10.3 — Mobile UI consistency pass
 
 - Added a mobile-only set of shared control/layout tokens for consistent sizing and spacing.

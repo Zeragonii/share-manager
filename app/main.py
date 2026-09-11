@@ -46,6 +46,7 @@ from .models import (
     AdminNotificationPreference,
     ScheduledCustomerBroadcast,
     RequestsPlatformSettings,
+    NewsBanner,
     TautulliActivity,
     TautulliSettings,
     TautulliWatchHistory,
@@ -495,9 +496,22 @@ def render(request: Request, name: str, **ctx):
     # page can still render without the badge.
     admin_open_ticket_count = 0
     requests_platform = None
+    active_news_banner = None
     nav_db = SessionLocal()
     try:
         requests_platform = nav_db.get(RequestsPlatformSettings, 1)
+        if request.url.path.startswith("/portal"):
+            now_utc = datetime.utcnow()
+            active_news_banner = (
+                nav_db.query(NewsBanner)
+                .filter(
+                    NewsBanner.cancelled_at.is_(None),
+                    NewsBanner.starts_at <= now_utc,
+                    NewsBanner.ends_at > now_utc,
+                )
+                .order_by(NewsBanner.starts_at.desc())
+                .first()
+            )
         if logged_in(request):
             admin_open_ticket_count = (
                 nav_db.query(func.count(SupportTicket.id))
@@ -517,6 +531,7 @@ def render(request: Request, name: str, **ctx):
             "app_version": APP_VERSION,
             "admin_open_ticket_count": admin_open_ticket_count,
             "requests_platform": requests_platform,
+            "active_news_banner": active_news_banner,
             **ctx,
         },
     )
@@ -2287,6 +2302,109 @@ def set_entitlements(request: Request, package_id: int, integration_id: int = Fo
             db.add(PackageEntitlement(package_id=package_id, integration_id=integration_id, resource_type="library", resource_id=lid, resource_name=libs[lid]["name"]))
     db.commit()
     return RedirectResponse("/packages", status_code=303)
+
+
+NEWS_BANNER_SEVERITIES = ("info", "advisory", "warning", "critical")
+
+
+def _parse_utc_local(value: str) -> datetime:
+    parsed = datetime.fromisoformat((value or "").strip())
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
+def _news_banner_conflict(db: Session, starts_at: datetime, ends_at: datetime, exclude_id: int | None = None) -> NewsBanner | None:
+    query = db.query(NewsBanner).filter(
+        NewsBanner.cancelled_at.is_(None),
+        NewsBanner.starts_at < ends_at,
+        NewsBanner.ends_at > starts_at,
+    )
+    if exclude_id is not None:
+        query = query.filter(NewsBanner.id != exclude_id)
+    return query.order_by(NewsBanner.starts_at.asc()).first()
+
+
+@app.get("/news", response_class=HTMLResponse)
+def news_banners(request: Request, error: str | None = None, notice: str | None = None, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    now = datetime.utcnow()
+    active = db.query(NewsBanner).filter(NewsBanner.cancelled_at.is_(None), NewsBanner.starts_at <= now, NewsBanner.ends_at > now).order_by(NewsBanner.starts_at.desc()).first()
+    queued = db.query(NewsBanner).filter(NewsBanner.cancelled_at.is_(None), NewsBanner.starts_at > now).order_by(NewsBanner.starts_at.asc()).all()
+    recent = db.query(NewsBanner).filter(or_(NewsBanner.cancelled_at.is_not(None), NewsBanner.ends_at <= now)).order_by(NewsBanner.ends_at.desc()).limit(25).all()
+    return render(request, "news.html", active_banner=active, queued_banners=queued, recent_banners=recent, severities=NEWS_BANNER_SEVERITIES, error=error, notice=notice)
+
+
+@app.post("/news")
+def create_news_banner(
+    request: Request, title: str = Form(...), body: str = Form(...), severity: str = Form("info"),
+    starts_at_utc: str = Form(...), ends_at_utc: str = Form(...), db: Session = Depends(get_db),
+):
+    gate = auth(request)
+    if gate:
+        return gate
+    clean_title = title.strip()
+    clean_body = body.strip()
+    clean_severity = severity.strip().lower()
+    if not clean_title or not clean_body:
+        return RedirectResponse("/news?error=Title+and+body+are+required", status_code=303)
+    if len(clean_title) > 160:
+        return RedirectResponse("/news?error=Title+must+be+160+characters+or+fewer", status_code=303)
+    if clean_severity not in NEWS_BANNER_SEVERITIES:
+        return RedirectResponse("/news?error=Invalid+banner+severity", status_code=303)
+    try:
+        starts_at = datetime.fromisoformat((starts_at_utc or "").strip())
+        ends_at = datetime.fromisoformat((ends_at_utc or "").strip())
+    except ValueError:
+        return RedirectResponse("/news?error=Invalid+start+or+end+time", status_code=303)
+    if ends_at <= starts_at:
+        return RedirectResponse("/news?error=End+time+must+be+after+start+time", status_code=303)
+    conflict = _news_banner_conflict(db, starts_at, ends_at)
+    if conflict:
+        return RedirectResponse(f"/news?error={quote_plus('Schedule conflicts with '+conflict.title)}", status_code=303)
+    row = NewsBanner(title=clean_title, body=clean_body, severity=clean_severity, starts_at=starts_at, ends_at=ends_at, created_by=settings.admin_username)
+    db.add(row); db.flush()
+    db.add(AuditLog(actor=settings.admin_username, action="news_banner.create", target_type="news_banner", target_id=str(row.id), detail=f"{row.title}; {row.starts_at.isoformat()}Z -> {row.ends_at.isoformat()}Z; severity={row.severity}"))
+    db.commit()
+    return RedirectResponse("/news?notice=Banner+scheduled", status_code=303)
+
+
+@app.post("/news/{banner_id}/cancel")
+def cancel_news_banner(request: Request, banner_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    row = db.get(NewsBanner, banner_id)
+    if not row:
+        return RedirectResponse("/news?error=Banner+not+found", status_code=303)
+    if row.cancelled_at is None:
+        row.cancelled_at = datetime.utcnow()
+        db.add(AuditLog(actor=settings.admin_username, action="news_banner.cancel", target_type="news_banner", target_id=str(row.id), detail=row.title))
+        db.commit()
+    return RedirectResponse("/news?notice=Banner+cancelled", status_code=303)
+
+
+@app.get("/portal/api/news-banner")
+def portal_news_banner_api(request: Request, scope: str = "global", db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    now = datetime.utcnow()
+    query = db.query(NewsBanner).filter(
+        NewsBanner.cancelled_at.is_(None),
+        NewsBanner.starts_at <= now,
+        NewsBanner.ends_at > now,
+    )
+    # Lower-severity announcements live on Account; only Critical follows the
+    # customer throughout the rest of the portal.
+    if scope != "account":
+        query = query.filter(NewsBanner.severity == "critical")
+    row = query.order_by(NewsBanner.starts_at.desc()).first()
+    if not row:
+        return {"banner": None}
+    return {"banner": {"id": row.id, "title": row.title, "body": row.body, "severity": row.severity, "ends_at": row.ends_at.isoformat() + "Z"}}
 
 
 @app.get("/integrations", response_class=HTMLResponse)

@@ -17,8 +17,38 @@
   <form method="post" action="/portal/logout" class="portal-sidebar-signout"><button class="ghost">Sign out</button></form>
 </aside>
 {%- endmacro %}
-{% macro portal_topbar(customer) -%}
+{% macro portal_topbar(customer, news_banner=None, show_noncritical=False) -%}
 <header class="portal-topbar"><div class="portal-mobile-brand"><img src="/static/icons/icon-192.png" alt=""><div><strong>Share Manager</strong><span>Customer Portal</span></div></div><form method="post" action="/portal/logout"><button class="ghost">Sign out</button></form></header>
+<div id="portal-news-slot" class="portal-news-slot" data-news-scope="{{ 'account' if show_noncritical else 'global' }}"{% if not news_banner or (news_banner.severity != 'critical' and not show_noncritical) %} hidden{% endif %}>
+  {% if news_banner and (show_noncritical or news_banner.severity == 'critical') %}<section class="portal-news-banner severity-{{ news_banner.severity }}" data-news-id="{{ news_banner.id }}"><div class="portal-news-kicker">{{ news_banner.severity|replace('_',' ')|title }}</div><h2>{{ news_banner.title }}</h2><p>{{ news_banner.body }}</p><small>Scheduled until <span class="portal-news-time" data-utc="{{ news_banner.ends_at.isoformat() }}Z">{{ news_banner.ends_at.strftime('%d %b %Y · %H:%M') }} UTC</span></small></section>{% endif %}
+</div>
+<script>
+(() => {
+  const slot = document.getElementById('portal-news-slot');
+  if (!slot) return;
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const label = (value) => String(value || 'info').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const fmt = (iso) => { try { return new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(iso)); } catch (_) { return iso; } };
+  function localize() { slot.querySelectorAll('[data-utc]').forEach(el => el.textContent = fmt(el.dataset.utc)); }
+  async function refreshBanner() {
+    if (document.visibilityState !== 'visible') return;
+    try {
+      const scope = slot.dataset.newsScope === 'account' ? 'account' : 'global';
+      const response = await fetch(`/portal/api/news-banner?scope=${encodeURIComponent(scope)}`, {credentials:'same-origin',cache:'no-store'});
+      if (!response.ok) return;
+      const data = await response.json();
+      const b = data.banner;
+      const current = slot.querySelector('[data-news-id]');
+      if (!b) { slot.hidden = true; slot.innerHTML = ''; return; }
+      if (current && String(current.dataset.newsId) === String(b.id)) { localize(); return; }
+      slot.innerHTML = `<section class="portal-news-banner severity-${escapeHtml(b.severity)}" data-news-id="${escapeHtml(b.id)}"><div class="portal-news-kicker">${escapeHtml(label(b.severity))}</div><h2>${escapeHtml(b.title)}</h2><p>${escapeHtml(b.body)}</p><small>Scheduled until <span class="portal-news-time" data-utc="${escapeHtml(b.ends_at)}">${escapeHtml(fmt(b.ends_at))}</span></small></section>`;
+      slot.hidden = false; localize();
+    } catch (_) {}
+  }
+  localize(); setInterval(refreshBanner, 60000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshBanner(); });
+})();
+</script>
 {%- endmacro %}
 {% macro portal_bottom_nav(active) -%}
 <nav class="portal-bottom-nav" aria-label="Customer portal">

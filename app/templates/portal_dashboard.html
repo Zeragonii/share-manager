@@ -5,7 +5,7 @@
 <div class="portal-shell portal-app-shell">
 {{ portal_sidebar('account', customer, requests_platform) }}
 <div class="portal-content-shell">
-{{ portal_topbar(customer) }}
+{{ portal_topbar(customer, active_news_banner, True) }}
 <main class="portal-main portal-main-with-nav">
   <section class="portal-welcome"><div><span class="muted">Welcome back</span><h1>{{ customer.name }}</h1></div><span class="badge {{ effective_status }}">{{ effective_status }}</span></section>
   {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}{% if error %}<div class="alert error">{{ error }}</div>{% endif %}

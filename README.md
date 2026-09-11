@@ -6,6 +6,10 @@
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
 
+## v0.10.4a
+
+News banner visibility is severity-aware: Info, Advisory and Warning announcements are shown on the customer Account page, while Critical announcements follow the customer throughout the portal.
+
 ## v0.10.3 — Mobile UI consistency pass
 
 - Standardised mobile button heights, padding, typography and corner radii across admin and customer PWAs.
@@ -483,3 +487,7 @@ The notification platform supports immediate and scheduled critical customer bro
 Customers can raise support tickets from the portal with a category, subject and description, follow a threaded conversation, subscribe per-ticket to push notifications, and see Open / Reviewed / In Progress / Resolved / Closed states. Resolved tickets reopen automatically when the customer replies; Closed is the terminal/archive state.
 
 Admins have an active ticket queue plus a dedicated Closed view, filters for status/category/priority/customer search, threaded customer replies, internal notes, status and priority controls, unread markers and customer context. New tickets and customer replies use the Notification Platform; subscribed customers receive deep-linked push notifications for admin replies and status changes. Ticket creation/replies are rate-limited. Attachments and multi-agent assignment are intentionally deferred.
+
+
+## Scheduled customer news banners (0.10.4)
+Admins can queue non-overlapping customer portal announcements from the News page. Each banner has a severity and UTC-backed start/end window entered in the browser's local time. Active banners are displayed prominently throughout the customer PWA and update on a lightweight one-minute poll.

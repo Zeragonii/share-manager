@@ -5,7 +5,7 @@
 <div class="portal-shell portal-app-shell">
 {{ portal_sidebar('activity', customer, requests_platform) }}
 <div class="portal-content-shell">
-{{ portal_topbar(customer) }}
+{{ portal_topbar(customer, active_news_banner) }}
 <main class="portal-main portal-main-with-nav">
   <section class="portal-page-heading"><div><span class="muted">Your Plex account</span><h1>Activity</h1></div></section>
   {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}{% if error %}<div class="alert error">{{ error }}</div>{% endif %}

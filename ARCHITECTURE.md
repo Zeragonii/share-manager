@@ -355,3 +355,11 @@ The shared admin shell independently polls a compact ticket-summary endpoint eve
 ## v0.10.3 mobile UI consistency
 
 The mobile presentation layer now centralises common touch-target and spacing values in a max-width 700px CSS scope. Shared controls, cards, status markers, collapsible headers and bottom-navigation hit areas use those mobile-only tokens, while compact utility actions retain a smaller explicit variant. No application routes, data models or desktop layouts change in this release.
+
+
+## News banners
+`news_banners` stores scheduled customer announcements. Only non-cancelled windows participate in overlap validation. Customer portal rendering resolves the currently active window (`starts_at <= now < ends_at`) and a session-scoped JSON endpoint supports one-minute visible-tab refreshes. Times are persisted as naive UTC to match existing scheduling conventions.
+
+## News banner visibility
+
+Scheduled news banners remain mutually exclusive by active time window. The customer portal treats Info, Advisory, and Warning as Account-page announcements. Critical banners are global and appear across all authenticated customer portal views. The polling endpoint accepts the portal display scope so live schedule changes follow the same rule.

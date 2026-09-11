@@ -31,7 +31,7 @@
       <button type="button" class="ghost aside-close" aria-label="Close navigation">×</button>
     </div>
     <nav>
-      <a href="/" data-nav-root="/">Dashboard</a><a href="/customers" data-nav-root="/customers">Customers</a><a href="/tickets" data-nav-root="/tickets" class="nav-ticket-link"><span>Tickets</span><span class="nav-ticket-count" data-ticket-count aria-label="{{ admin_open_ticket_count }} active tickets" {% if not admin_open_ticket_count %}hidden{% endif %}>{{ admin_open_ticket_count }}</span></a><a href="/packages" data-nav-root="/packages">Packages</a><a href="/payments" data-nav-root="/payments">Payments</a><a href="/integrations" data-nav-root="/integrations">Integrations</a><a href="/stream-limits" data-nav-root="/stream-limits">Stream Limits</a><a href="/backups" data-nav-root="/backups">Backups</a>
+      <a href="/" data-nav-root="/">Dashboard</a><a href="/customers" data-nav-root="/customers">Customers</a><a href="/tickets" data-nav-root="/tickets" class="nav-ticket-link"><span>Tickets</span><span class="nav-ticket-count" data-ticket-count aria-label="{{ admin_open_ticket_count }} active tickets" {% if not admin_open_ticket_count %}hidden{% endif %}>{{ admin_open_ticket_count }}</span></a><a href="/packages" data-nav-root="/packages">Packages</a><a href="/payments" data-nav-root="/payments">Payments</a><a href="/news" data-nav-root="/news">News</a><a href="/integrations" data-nav-root="/integrations">Integrations</a><a href="/stream-limits" data-nav-root="/stream-limits">Stream Limits</a><a href="/backups" data-nav-root="/backups">Backups</a>
     </nav>
     <form method="post" action="/logout"><button class="ghost">Sign out</button></form>
   </aside>

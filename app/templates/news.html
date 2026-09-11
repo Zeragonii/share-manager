@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading"><div><span class="muted">Customer communications</span><h1>News banners</h1><p class="muted">Schedule one prominent portal announcement at a time. Adjacent time windows are allowed; overlapping windows are rejected.</p></div></div>
+{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+{% if active_banner %}
+<section>
+  <div class="row between"><div><h2>Live now</h2><p class="muted">This is currently visible across the customer portal.</p></div><span class="badge active">live</span></div>
+  <article class="admin-news-preview severity-{{ active_banner.severity }}"><div><span class="news-severity-label">{{ active_banner.severity|title }}</span><h3>{{ active_banner.title }}</h3><p>{{ active_banner.body }}</p><small class="muted"><span class="js-local-time" data-utc="{{ active_banner.starts_at.isoformat() }}Z">{{ active_banner.starts_at.strftime('%Y-%m-%d %H:%M') }} UTC</span> → <span class="js-local-time" data-utc="{{ active_banner.ends_at.isoformat() }}Z">{{ active_banner.ends_at.strftime('%Y-%m-%d %H:%M') }} UTC</span></small></div><form method="post" action="/news/{{ active_banner.id }}/cancel" onsubmit="return confirm('Remove this banner from the customer portal now?');"><button class="danger">End banner</button></form></article>
+</section>
+{% endif %}
+
+<section>
+  <h2>Schedule banner</h2>
+  <form method="post" action="/news" id="news-banner-form" class="news-banner-form">
+    <label>Title<input name="title" maxlength="160" required placeholder="Planned maintenance"></label>
+    <label>Severity<select name="severity"><option value="info">Info</option><option value="advisory">Advisory</option><option value="warning">Warning</option><option value="critical">Critical</option></select></label>
+    <label class="news-body-field">Body<textarea name="body" rows="5" required placeholder="Explain what customers need to know, expected impact, and any useful timings."></textarea></label>
+    <label>Starts <span class="muted">(your local time)</span><input type="datetime-local" id="news-start-local" required></label>
+    <label>Ends <span class="muted">(your local time)</span><input type="datetime-local" id="news-end-local" required></label>
+    <input type="hidden" name="starts_at_utc" id="news-start-utc"><input type="hidden" name="ends_at_utc" id="news-end-utc">
+    <div class="news-form-actions"><button>Schedule banner</button></div>
+  </form>
+</section>
+
+<section>
+  <div class="row between"><div><h2>Queued</h2><p class="muted">Future announcements are automatically shown when their window begins.</p></div><span class="badge">{{ queued_banners|length }}</span></div>
+  <div class="news-admin-list">
+    {% for item in queued_banners %}<article class="news-admin-row"><div class="news-admin-main"><div class="row"><span class="badge news-severity-{{ item.severity }}">{{ item.severity }}</span><strong>{{ item.title }}</strong></div><p>{{ item.body }}</p><small class="muted"><span class="js-local-time" data-utc="{{ item.starts_at.isoformat() }}Z">{{ item.starts_at.strftime('%Y-%m-%d %H:%M') }} UTC</span> → <span class="js-local-time" data-utc="{{ item.ends_at.isoformat() }}Z">{{ item.ends_at.strftime('%Y-%m-%d %H:%M') }} UTC</span></small></div><form method="post" action="/news/{{ item.id }}/cancel" onsubmit="return confirm('Cancel this scheduled banner?');"><button class="ghost">Cancel</button></form></article>{% else %}<div class="empty-state">No future banners are queued.</div>{% endfor %}
+  </div>
+</section>
+
+{% if recent_banners %}<section><h2>Recent</h2><div class="news-admin-list">{% for item in recent_banners %}<article class="news-admin-row subdued"><div class="news-admin-main"><div class="row"><span class="badge">{{ 'cancelled' if item.cancelled_at else item.severity }}</span><strong>{{ item.title }}</strong></div><small class="muted"><span class="js-local-time" data-utc="{{ item.starts_at.isoformat() }}Z">{{ item.starts_at.strftime('%Y-%m-%d %H:%M') }} UTC</span> → <span class="js-local-time" data-utc="{{ item.ends_at.isoformat() }}Z">{{ item.ends_at.strftime('%Y-%m-%d %H:%M') }} UTC</span></small></div></article>{% endfor %}</div></section>{% endif %}
+<script>
+(() => {
+  const form=document.getElementById('news-banner-form');
+  const start=document.getElementById('news-start-local'), end=document.getElementById('news-end-local');
+  const su=document.getElementById('news-start-utc'), eu=document.getElementById('news-end-utc');
+  form?.addEventListener('submit', e => {
+    if (!start.value || !end.value) return;
+    const sd=new Date(start.value), ed=new Date(end.value);
+    if (!(ed > sd)) { e.preventDefault(); alert('End time must be after start time.'); return; }
+    su.value=sd.toISOString().replace(/Z$/,''); eu.value=ed.toISOString().replace(/Z$/,'');
+  });
+  document.querySelectorAll('.js-local-time').forEach(el => { try { el.textContent=new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(el.dataset.utc)); } catch (_) {} });
+})();
+</script>
+{% endblock %}
