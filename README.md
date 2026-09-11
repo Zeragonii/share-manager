@@ -1,5 +1,7 @@
 # Share Manager
 
+> Current release: **0.10.5** — customer portal navigation/news hub and live Support unread indicators.
+
 > **Current version: 0.10.3** — mobile UI consistency and touch-target polish across admin and customer PWAs.
 
 

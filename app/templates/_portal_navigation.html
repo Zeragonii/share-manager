@@ -3,22 +3,46 @@
 {% macro icon_tickets() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v13H7l-3 3V4Zm3 4v2h10V8H7Zm0 4v2h7v-2H7Z"/></svg>{%- endmacro %}
 {% macro icon_history() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 1-7.45 5H2l3.5-3.5L9 9H6.6A6 6 0 1 0 12 6V4Zm-1 3h2v5.4l3.6 2.1-1 1.73L11 13.5V7Z"/></svg>{%- endmacro %}
 {% macro icon_request() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-2.05-4.95L14 10h7V3l-2.63 2.63A8.96 8.96 0 0 0 12 3Zm-1 5h2v5h-2V8Zm0 7h2v2h-2v-2Z"/></svg>{%- endmacro %}
+{% macro icon_news() -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a4 4 0 0 1-4-4V5a2 2 0 0 1 2-2Zm2 2v12a2 2 0 0 0 2 2h10V5H6Zm2 2h8v2H8V7Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"/></svg>{%- endmacro %}
 {% macro portal_sidebar(active, customer, requests_platform=None) -%}
 <aside class="portal-sidebar" aria-label="Customer portal navigation">
   <div class="portal-sidebar-brand"><img src="/static/icons/icon-192.png" alt=""><div><strong>Share Manager</strong><span>Customer Portal</span></div></div>
   <nav class="portal-sidebar-nav">
     <a href="/portal" class="{{ 'active' if active == 'account' else '' }}" {% if active == 'account' %}aria-current="page"{% endif %}>{{ icon_account() }}<span>Account</span></a>
     <a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>
-    <a href="/portal/tickets" class="{{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span></a>
+    <a href="/portal/tickets" class="portal-support-link {{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
     <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>History</span></a>
+    <a href="/portal/news" class="{{ 'active' if active == 'news' else '' }}" {% if active == 'news' %}aria-current="page"{% endif %}>{{ icon_news() }}<span>News</span></a>
     {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<a href="{{ requests_platform.base_url }}" target="_blank" rel="noopener noreferrer" class="portal-request-nav">{{ icon_request() }}<span>Request</span></a>{% endif %}
   </nav>
   <div class="portal-sidebar-account"><span>Signed in as</span><strong>{{ customer.name }}</strong><small>{{ customer.portal_username }}</small></div>
   <form method="post" action="/portal/logout" class="portal-sidebar-signout"><button class="ghost">Sign out</button></form>
 </aside>
 {%- endmacro %}
-{% macro portal_topbar(customer, news_banner=None, show_noncritical=False) -%}
-<header class="portal-topbar"><div class="portal-mobile-brand"><img src="/static/icons/icon-192.png" alt=""><div><strong>Share Manager</strong><span>Customer Portal</span></div></div><form method="post" action="/portal/logout"><button class="ghost">Sign out</button></form></header>
+{% macro portal_topbar(customer, news_banner=None, show_noncritical=False, requests_platform=None) -%}
+<header class="portal-topbar"><div class="portal-mobile-brand"><img src="/static/icons/icon-192.png" alt=""><div><strong>Share Manager</strong><span>Customer Portal</span></div></div><button type="button" class="portal-menu-toggle ghost" id="portal-menu-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="portal-mobile-menu"><span></span><span></span><span></span></button></header>
+<div class="portal-menu-backdrop" id="portal-menu-backdrop" hidden></div>
+<aside class="portal-mobile-menu" id="portal-mobile-menu" aria-label="Customer portal menu" aria-hidden="true">
+  <div class="portal-mobile-menu-head"><strong>Menu</strong><button type="button" class="ghost" id="portal-menu-close" aria-label="Close menu">×</button></div>
+  <nav>
+    <a href="/portal">{{ icon_account() }}<span>Account</span></a>
+    <a href="/portal/activity">{{ icon_activity() }}<span>Activity</span></a>
+    <a href="/portal/tickets" class="portal-support-link">{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
+    <a href="/portal/history">{{ icon_history() }}<span>History</span></a>
+    <a href="/portal/news">{{ icon_news() }}<span>News</span></a>
+    {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<a href="{{ requests_platform.base_url }}" target="_blank" rel="noopener noreferrer">{{ icon_request() }}<span>Request</span><span class="portal-external-mark">↗</span></a>{% endif %}
+  </nav>
+  <form method="post" action="/portal/logout"><button class="ghost">Sign out</button></form>
+</aside>
+<script>
+(() => {
+ const open=document.getElementById('portal-menu-toggle'), menu=document.getElementById('portal-mobile-menu'), close=document.getElementById('portal-menu-close'), backdrop=document.getElementById('portal-menu-backdrop');
+ if(!open||!menu||!backdrop) return;
+ const setOpen=(value)=>{ menu.classList.toggle('open',value); menu.setAttribute('aria-hidden',String(!value)); open.setAttribute('aria-expanded',String(value)); backdrop.hidden=!value; document.body.classList.toggle('portal-menu-open',value); };
+ open.addEventListener('click',()=>setOpen(true)); close?.addEventListener('click',()=>setOpen(false)); backdrop.addEventListener('click',()=>setOpen(false));
+ document.addEventListener('keydown',e=>{if(e.key==='Escape')setOpen(false)});
+})();
+</script>
 <div id="portal-news-slot" class="portal-news-slot" data-news-scope="{{ 'account' if show_noncritical else 'global' }}"{% if not news_banner or (news_banner.severity != 'critical' and not show_noncritical) %} hidden{% endif %}>
   {% if news_banner and (show_noncritical or news_banner.severity == 'critical') %}<section class="portal-news-banner severity-{{ news_banner.severity }}" data-news-id="{{ news_banner.id }}"><div class="portal-news-kicker">{{ news_banner.severity|replace('_',' ')|title }}</div><h2>{{ news_banner.title }}</h2><p>{{ news_banner.body }}</p></section>{% endif %}
 </div>
@@ -52,7 +76,23 @@
 <nav class="portal-bottom-nav" aria-label="Customer portal">
   <a href="/portal" class="{{ 'active' if active == 'account' else '' }}" {% if active == 'account' %}aria-current="page"{% endif %}>{{ icon_account() }}<span>Account</span></a>
   <a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>
-  <a href="/portal/tickets" class="{{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span></a>
+  <a href="/portal/tickets" class="portal-support-link {{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
   <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>History</span></a>
 </nav>
+<script>
+(() => {
+  const badges=()=>document.querySelectorAll('[data-portal-support-count]');
+  async function refreshSupportCount(){
+    if(document.visibilityState!=='visible') return;
+    try{
+      const r=await fetch('/portal/api/tickets/summary',{credentials:'same-origin',cache:'no-store'});
+      if(!r.ok)return; const data=await r.json(); const n=Number(data.unread_count||0);
+      badges().forEach(b=>{b.textContent=String(n);b.hidden=n<1;b.closest('.portal-support-link')?.classList.toggle('has-unread',n>0)});
+    }catch(_){}
+  }
+  refreshSupportCount(); const timer=setInterval(refreshSupportCount,10000);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshSupportCount()});
+  window.addEventListener('pagehide',()=>clearInterval(timer),{once:true});
+})();
+</script>
 {%- endmacro %}

@@ -5,7 +5,7 @@
 <div class="portal-shell portal-app-shell">
 {{ portal_sidebar('account', customer, requests_platform) }}
 <div class="portal-content-shell">
-{{ portal_topbar(customer, active_news_banner, True) }}
+{{ portal_topbar(customer, active_news_banner, True, requests_platform) }}
 <main class="portal-main portal-main-with-nav">
   <section class="portal-welcome"><div><span class="muted">Welcome back</span><h1>{{ customer.name }}</h1></div><span class="badge {{ effective_status }}">{{ effective_status }}</span></section>
   {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
@@ -23,11 +23,6 @@
       <div class="portal-empty"><strong>No subscription is currently recorded.</strong><span>Contact your administrator if you believe this is incorrect.</span></div>
     {% endif %}
   </section>
-  {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}
-  <section class="portal-info-section portal-request-mobile-card">
-    <div class="portal-request-card-content"><div><span class="muted">Content requests</span><h2>{{ requests_platform.name }}</h2><p class="muted">Search for and request something new to watch.</p></div><a class="button-link" href="{{ requests_platform.base_url }}" target="_blank" rel="noopener noreferrer">{{ requests_platform.button_label }}</a></div>
-  </section>
-  {% endif %}
   <section class="portal-info-section"><h2>Account</h2><div class="portal-account-grid compact"><div><span>Plex account</span><strong>{{ customer.plex_username or 'Not linked' }}</strong></div><div><span>Contact email</span><strong>{{ customer.email or 'Not set' }}</strong></div></div></section>
   <section class="portal-info-section portal-security-section">
     <div class="portal-section-heading"><div><h2>Security</h2><span class="muted">Change your customer portal password</span></div></div>

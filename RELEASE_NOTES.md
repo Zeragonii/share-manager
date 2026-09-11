@@ -1,3 +1,14 @@
+# 0.10.5 — Portal Navigation & News
+
+- Adds a mobile customer hamburger menu while retaining Account, Activity, Support and History in the bottom navigation.
+- Menu includes the four core destinations plus News, configured Requests Platform and Sign out.
+- Adds a customer News page with current and upcoming scheduled announcements.
+- Upcoming banner times render in the customer's browser-local timezone.
+- Moves the mobile Requests Platform entry out of the Account page and into the portal menu.
+- Adds a customer Support unread badge backed by a lightweight 10-second visible-tab poll.
+- Support badges update in the bottom bar, mobile menu and desktop portal sidebar; viewing the ticket clears its unread state.
+- No database schema changes.
+
 ## 0.10.4b
 
 - Removed scheduled banner expiry/end-time text from the customer portal. Admin scheduling and timing remain unchanged.

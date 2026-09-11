@@ -2386,6 +2386,36 @@ def cancel_news_banner(request: Request, banner_id: int, db: Session = Depends(g
     return RedirectResponse("/news?notice=Banner+cancelled", status_code=303)
 
 
+@app.get("/portal/news", response_class=HTMLResponse)
+def portal_news(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    now = datetime.utcnow()
+    active = (db.query(NewsBanner).filter(
+        NewsBanner.cancelled_at.is_(None),
+        NewsBanner.starts_at <= now,
+        NewsBanner.ends_at > now,
+    ).order_by(NewsBanner.starts_at.desc()).first())
+    upcoming = (db.query(NewsBanner).filter(
+        NewsBanner.cancelled_at.is_(None),
+        NewsBanner.starts_at > now,
+    ).order_by(NewsBanner.starts_at.asc()).all())
+    return render(request, "portal_news.html", customer=customer, current_banner=active, upcoming_banners=upcoming)
+
+
+@app.get("/portal/api/tickets/summary")
+def portal_ticket_summary(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    unread_count = (db.query(func.count(SupportTicket.id)).filter(
+        SupportTicket.customer_id == customer.id,
+        SupportTicket.customer_unread.is_(True),
+    ).scalar() or 0)
+    return {"unread_count": int(unread_count)}
+
+
 @app.get("/portal/api/news-banner")
 def portal_news_banner_api(request: Request, scope: str = "global", db: Session = Depends(get_db)):
     customer = _portal_customer(request, db)

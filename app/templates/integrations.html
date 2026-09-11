@@ -43,7 +43,7 @@
     {% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<span class="badge active">enabled</span>{% endif %}
   </div>
   <form method="post" action="/integrations/requests-platform" class="requests-platform-form">
-    <label class="toggle-choice"><input type="checkbox" name="enabled" {% if requests_platform and requests_platform.enabled %}checked{% endif %}><span><strong>Enable requests platform</strong><small class="muted">Shows Request in the desktop portal sidebar and a Request Content card on the mobile Account page.</small></span></label>
+    <label class="toggle-choice"><input type="checkbox" name="enabled" {% if requests_platform and requests_platform.enabled %}checked{% endif %}><span><strong>Enable requests platform</strong><small class="muted">Shows Request in the desktop portal sidebar and the mobile portal menu.</small></span></label>
     <div class="requests-platform-grid">
       <label>Friendly name<input name="name" maxlength="120" value="{{ requests_platform.name if requests_platform else 'Seerr' }}" placeholder="Seerr" required></label>
       <label>Button label<input name="button_label" maxlength="80" value="{{ requests_platform.button_label if requests_platform else 'Request Content' }}" placeholder="Request Content" required></label>

@@ -363,3 +363,8 @@ The mobile presentation layer now centralises common touch-target and spacing va
 ## News banner visibility
 
 Scheduled news banners remain mutually exclusive by active time window. The customer portal treats Info, Advisory, and Warning as Account-page announcements. Critical banners are global and appear across all authenticated customer portal views. The polling endpoint accepts the portal display scope so live schedule changes follow the same rule.
+
+
+## Portal navigation and news (0.10.5)
+
+The mobile customer portal keeps the four primary destinations in the fixed bottom navigation and exposes secondary destinations through a slide-in menu. News is a first-class customer route at `/portal/news`; Requests Platform remains an external destination and is only rendered when enabled. Customer ticket unread counts come from a session-scoped summary endpoint and are polled only while the document is visible.
