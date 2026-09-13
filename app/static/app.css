@@ -959,3 +959,12 @@ a.button-link, .button-link{white-space:nowrap}
 
 /* v0.12.0a: Activity is absent for customers whose assigned packages have no Plex libraries. */
 .portal-bottom-nav.portal-bottom-nav-no-plex{grid-template-columns:repeat(3,1fr)}
+
+/* v0.12.0b — keep the longer Payment History label tidy in the mobile bottom nav. */
+@media(max-width:700px){
+  .portal-bottom-nav .portal-payment-history-link span{
+    white-space:nowrap;
+    font-size:clamp(8px,2.6vw,10px);
+    letter-spacing:-.01em;
+  }
+}

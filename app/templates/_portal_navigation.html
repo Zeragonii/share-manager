@@ -83,7 +83,7 @@
   <a href="/portal" class="{{ 'active' if active == 'account' else '' }}" {% if active == 'account' %}aria-current="page"{% endif %}>{{ icon_account() }}<span>Account</span></a>
   {% if portal_has_plex %}<a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>{% endif %}
   <a href="/portal/tickets" class="portal-support-link {{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
-  <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>Payment History</span></a>
+  <a href="/portal/history" class="portal-payment-history-link {{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>Payment History</span></a>
 </nav>
 <script>
 (() => {

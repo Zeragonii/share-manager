@@ -1,3 +1,9 @@
+# 0.12.0b — Mobile Payment History nav polish
+
+- Keeps the longer **Payment History** label on one line in the customer mobile bottom navigation.
+- Uses responsive label sizing only for that navigation item, preserving the existing icon, wording and spacing for the other controls.
+- No functional or database changes.
+
 # 0.12.0a — Portal service-aware UI cleanup
 
 - Plex-specific customer portal UI now appears only when at least one currently assigned Package maps a Plex library entitlement.
