@@ -7,6 +7,10 @@
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
 
+## v0.12.0a — Portal service-aware UI cleanup
+
+Customer portal Plex controls are now capability-aware: Activity, Plex account details and concurrent-stream information are shown only when an assigned Package contains a Plex library entitlement. Billing History is labelled **Payment History** to distinguish it from Plex watch history.
+
 ## v0.12.0 — Customer FAQ / Knowledge Base
 
 Admins can publish FAQ entries globally or target them to one or more Packages. Portal customers receive only published FAQs that are global or match a currently assigned Package; active, grace and suspended assignments qualify while cancelled history does not. FAQs support categories, ordering, drafts, safe lightweight formatting, accordion presentation and local search.

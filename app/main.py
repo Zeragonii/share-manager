@@ -159,6 +159,24 @@ def _portal_customer(request: Request, db: Session) -> Customer | None:
 RESTORE_IN_PROGRESS = Event()
 DB_WORK_LOCK = Lock()
 
+def _customer_has_plex_package(db: Session, customer_id: int) -> bool:
+    """True when an assigned package maps at least one Plex library entitlement."""
+    return (
+        db.query(Subscription.id)
+        .join(BillingTier, Subscription.billing_tier_id == BillingTier.id)
+        .join(PackageEntitlement, PackageEntitlement.package_id == BillingTier.package_id)
+        .join(Integration, Integration.id == PackageEntitlement.integration_id)
+        .filter(
+            Subscription.customer_id == customer_id,
+            Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES),
+            PackageEntitlement.resource_type == "library",
+            func.lower(Integration.kind) == "plex",
+        )
+        .first()
+        is not None
+    )
+
+
 def serialized_db_worker(func):
     def wrapped(*args, **kwargs):
         with DB_WORK_LOCK:
@@ -582,10 +600,14 @@ def render(request: Request, name: str, **ctx):
     admin_open_ticket_count = 0
     requests_platform = None
     active_news_banner = None
+    portal_has_plex = False
     nav_db = SessionLocal()
     try:
         requests_platform = nav_db.get(RequestsPlatformSettings, 1)
         if request.url.path.startswith("/portal"):
+            portal_customer = ctx.get("customer")
+            if portal_customer is not None:
+                portal_has_plex = _customer_has_plex_package(nav_db, portal_customer.id)
             now_utc = datetime.utcnow()
             active_news_banner = (
                 nav_db.query(NewsBanner)
@@ -617,6 +639,7 @@ def render(request: Request, name: str, **ctx):
             "admin_open_ticket_count": admin_open_ticket_count,
             "requests_platform": requests_platform,
             "active_news_banner": active_news_banner,
+            "portal_has_plex": portal_has_plex,
             **ctx,
         },
     )
@@ -1146,6 +1169,8 @@ def portal_activity(
         response = RedirectResponse("/portal/login", status_code=303)
         response.delete_cookie("sm_portal_session", path="/portal")
         return response
+    if not _customer_has_plex_package(db, customer.id):
+        return RedirectResponse("/portal", status_code=303)
     activity = db.query(TautulliActivity).filter(TautulliActivity.customer_id == customer.id).first()
     settings_row = get_tautulli_settings(db)
     live = customer_live_sessions(db, customer, max_age_seconds=settings_row.live_refresh_seconds)
@@ -1245,6 +1270,8 @@ def portal_activity_api(request: Request, db: Session = Depends(get_db)):
     customer = _portal_customer(request, db)
     if not customer:
         return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    if not _customer_has_plex_package(db, customer.id):
+        return JSONResponse({"detail": "Activity is not available for this service"}, status_code=404)
     settings_row = get_tautulli_settings(db)
     live = customer_live_sessions(db, customer, max_age_seconds=settings_row.live_refresh_seconds)
     sessions = []
@@ -1272,6 +1299,8 @@ def portal_stop_stream(request: Request, session_key: str = Form(...), db: Sessi
         response = RedirectResponse("/portal/login", status_code=303)
         response.delete_cookie("sm_portal_session", path="/portal")
         return response
+    if not _customer_has_plex_package(db, customer.id):
+        return RedirectResponse("/portal", status_code=303)
     try:
         session = terminate_customer_session(db, customer, session_key)
         title = str(session.get("title") or "stream")[:180]

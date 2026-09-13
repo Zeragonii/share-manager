@@ -11,9 +11,9 @@
   <div class="portal-sidebar-brand"><img src="/static/icons/icon-192.png" alt=""><div><strong>Share Manager</strong><span>Customer Portal</span></div></div>
   <nav class="portal-sidebar-nav">
     <a href="/portal" class="{{ 'active' if active == 'account' else '' }}" {% if active == 'account' %}aria-current="page"{% endif %}>{{ icon_account() }}<span>Account</span></a>
-    <a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>
+    {% if portal_has_plex %}<a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>{% endif %}
     <a href="/portal/tickets" class="portal-support-link {{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
-    <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>History</span></a>
+    <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>Payment History</span></a>
     <a href="/portal/referrals" class="{{ 'active' if active == 'referrals' else '' }}" {% if active == 'referrals' %}aria-current="page"{% endif %}>{{ icon_referrals() }}<span>Referrals</span></a>
     <a href="/portal/faqs" class="{{ 'active' if active == 'faqs' else '' }}" {% if active == 'faqs' %}aria-current="page"{% endif %}>{{ icon_faq() }}<span>FAQ</span></a>
     <a href="/portal/news" class="{{ 'active' if active == 'news' else '' }}" {% if active == 'news' %}aria-current="page"{% endif %}>{{ icon_news() }}<span>News</span></a>
@@ -30,9 +30,9 @@
   <div class="portal-mobile-menu-head"><strong>Menu</strong><button type="button" class="ghost" id="portal-menu-close" aria-label="Close menu">×</button></div>
   <nav>
     <a href="/portal">{{ icon_account() }}<span>Account</span></a>
-    <a href="/portal/activity">{{ icon_activity() }}<span>Activity</span></a>
+    {% if portal_has_plex %}<a href="/portal/activity">{{ icon_activity() }}<span>Activity</span></a>{% endif %}
     <a href="/portal/tickets" class="portal-support-link">{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
-    <a href="/portal/history">{{ icon_history() }}<span>History</span></a>
+    <a href="/portal/history">{{ icon_history() }}<span>Payment History</span></a>
     <a href="/portal/referrals">{{ icon_referrals() }}<span>Referrals</span></a>
     <a href="/portal/faqs">{{ icon_faq() }}<span>FAQ</span></a>
     <a href="/portal/news">{{ icon_news() }}<span>News</span></a>
@@ -79,11 +79,11 @@
 </script>
 {%- endmacro %}
 {% macro portal_bottom_nav(active) -%}
-<nav class="portal-bottom-nav" aria-label="Customer portal">
+<nav class="portal-bottom-nav{{ ' portal-bottom-nav-no-plex' if not portal_has_plex else '' }}" aria-label="Customer portal">
   <a href="/portal" class="{{ 'active' if active == 'account' else '' }}" {% if active == 'account' %}aria-current="page"{% endif %}>{{ icon_account() }}<span>Account</span></a>
-  <a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>
+  {% if portal_has_plex %}<a href="/portal/activity" class="{{ 'active' if active == 'activity' else '' }}" {% if active == 'activity' %}aria-current="page"{% endif %}>{{ icon_activity() }}<span>Activity</span></a>{% endif %}
   <a href="/portal/tickets" class="portal-support-link {{ 'active' if active == 'tickets' else '' }}" {% if active == 'tickets' %}aria-current="page"{% endif %}>{{ icon_tickets() }}<span>Support</span><span class="portal-support-count" data-portal-support-count hidden>0</span></a>
-  <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>History</span></a>
+  <a href="/portal/history" class="{{ 'active' if active == 'history' else '' }}" {% if active == 'history' %}aria-current="page"{% endif %}>{{ icon_history() }}<span>Payment History</span></a>
 </nav>
 <script>
 (() => {

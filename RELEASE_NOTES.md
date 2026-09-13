@@ -1,3 +1,13 @@
+# 0.12.0a — Portal service-aware UI cleanup
+
+- Plex-specific customer portal UI now appears only when at least one currently assigned Package maps a Plex library entitlement.
+- Non-Plex customers no longer see Activity navigation, Plex account fields, or concurrent-stream information.
+- Mixed-service customers retain Plex UI whenever any assigned Package has a Plex library mapping.
+- Suspended Plex subscriptions retain Plex UI; cancelled/historical Plex subscriptions do not.
+- Direct access to the Plex Activity page/API/stream-stop endpoint is also guarded for non-Plex customers.
+- Renamed customer-facing **History** to **Payment History** to distinguish billing history from Plex watch history.
+- No database migration required.
+
 # 0.12.0 — Customer FAQ / Knowledge Base
 
 - Added an admin FAQ / Knowledge Base area with create, edit and delete workflows.
