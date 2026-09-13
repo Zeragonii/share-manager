@@ -1,3 +1,16 @@
+# 0.12.0 — Customer FAQ / Knowledge Base
+
+- Added an admin FAQ / Knowledge Base area with create, edit and delete workflows.
+- FAQ entries have a question, answer, category, manual sort order, Draft/Published state and Global visibility flag.
+- Non-global FAQs support many-to-many Package targeting; one entry can apply to any number of Packages.
+- Customer visibility is filtered server-side using currently assigned subscription Packages (`active`, `grace`, `suspended`). Cancelled/historical assignments do not qualify.
+- Global published FAQs remain visible to all portal customers.
+- Customer portal gains FAQ links in the desktop sidebar and mobile hamburger; the four-button bottom navigation is unchanged.
+- FAQ answers support a deliberately restricted safe format: paragraphs, `**bold**`, bullet lists and HTTP(S) Markdown links. Raw HTML is escaped.
+- Customer FAQ page uses accessible accordion entries grouped by category and instant client-side search over only the already-authorized FAQ set.
+- FAQ create/update/delete operations are recorded in the existing audit log.
+- Portal analytics gains a coarse `faq_views` page counter; FAQ searches and individual accordion opens are not tracked.
+
 # 0.11.1a — Referrals favicon hotfix
 
 - Restored the standard Share Manager favicon and Apple touch icon metadata on the customer Referrals page.

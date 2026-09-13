@@ -47,6 +47,7 @@ class PortalDailyMetric(Base):
     support_views: Mapped[int] = mapped_column(Integer, default=0)
     history_views: Mapped[int] = mapped_column(Integer, default=0)
     news_views: Mapped[int] = mapped_column(Integer, default=0)
+    faq_views: Mapped[int] = mapped_column(Integer, default=0)
     request_clicks: Mapped[int] = mapped_column(Integer, default=0)
     customer: Mapped["Customer"] = relationship()
     __table_args__ = (UniqueConstraint("customer_id", "metric_date", name="uq_portal_daily_customer_date"),)
@@ -60,6 +61,7 @@ class Package(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     billing_tiers: Mapped[list["BillingTier"]] = relationship(back_populates="package", cascade="all, delete-orphan")
     entitlements: Mapped[list["PackageEntitlement"]] = relationship(back_populates="package", cascade="all, delete-orphan")
+    faq_links: Mapped[list["FaqEntryPackage"]] = relationship(back_populates="package", cascade="all, delete-orphan")
 
 
 # Assigned means the customer still belongs to this tier, even if billing has
@@ -93,6 +95,32 @@ class BillingTier(Base):
     @property
     def current_subscription_count(self) -> int:
         return len(self.current_subscriptions)
+
+
+class FaqEntry(Base):
+    __tablename__ = "faq_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    question: Mapped[str] = mapped_column(String(300))
+    answer: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(120), default="General", index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=100)
+    published: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_global: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    package_links: Mapped[list["FaqEntryPackage"]] = relationship(back_populates="faq_entry", cascade="all, delete-orphan")
+
+    @property
+    def packages(self):
+        return [link.package for link in self.package_links if link.package]
+
+
+class FaqEntryPackage(Base):
+    __tablename__ = "faq_entry_packages"
+    faq_id: Mapped[int] = mapped_column(ForeignKey("faq_entries.id", ondelete="CASCADE"), primary_key=True)
+    package_id: Mapped[int] = mapped_column(ForeignKey("packages.id", ondelete="CASCADE"), primary_key=True)
+    faq_entry: Mapped[FaqEntry] = relationship(back_populates="package_links")
+    package: Mapped[Package] = relationship(back_populates="faq_links")
 
 
 class Integration(Base):

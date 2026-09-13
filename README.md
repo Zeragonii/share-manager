@@ -7,6 +7,10 @@
 Share Manager is a Dockerised subscription, payment and entitlement manager. Plex is the first entitlement integration; the core model is intentionally integration-agnostic.
 
 
+## v0.12.0 — Customer FAQ / Knowledge Base
+
+Admins can publish FAQ entries globally or target them to one or more Packages. Portal customers receive only published FAQs that are global or match a currently assigned Package; active, grace and suspended assignments qualify while cancelled history does not. FAQs support categories, ordering, drafts, safe lightweight formatting, accordion presentation and local search.
+
 ## v0.11.1a — Referrals favicon hotfix
 
 The customer Referrals page now uses the same favicon and Apple touch icon metadata as the rest of the portal.

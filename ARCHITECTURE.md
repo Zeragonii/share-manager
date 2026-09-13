@@ -400,3 +400,10 @@ Referral earning and spending are independent Billing Tier properties. `referral
 ## Unified account credits (v0.11.1)
 
 `ReferralCreditEntry` is the canonical spendable account-credit ledger despite its legacy model name. Referral payment rewards (`earn`), payment reversals (`reversal`), administrator grants (`admin_grant`) and redemptions (`redeem`) are append-only entries. Administrator grants affect available balance but not lifetime referral-earned metrics. New `SubscriptionCredit` grants are retired; existing rows remain read-only historical data and retain their already-applied coverage semantics. Redemption is independent of the referral-programme enabled switch and uses the customer's current Billing Tier `referral_redeem_cost` to purchase exactly one calendar month.
+
+
+## FAQ / Knowledge Base (v0.12.0)
+
+`faq_entries` stores question, answer, category, sort order, publication state and a global flag. `faq_entry_packages` is a composite-key many-to-many mapping to `packages`; package names are never duplicated into FAQ content. Portal visibility is enforced server-side: published global entries are eligible for every authenticated portal customer, while targeted entries require an intersection between their mapped package IDs and package IDs reached through the customer’s subscriptions in `ASSIGNED_SUBSCRIPTION_STATES` (`active`, `grace`, `suspended`). Cancelled/historical subscriptions do not qualify.
+
+FAQ answer formatting is deliberately restricted rather than accepting stored HTML. Source text is HTML-escaped before a small formatter permits paragraphs, bold markers, bullet lists and HTTP(S) Markdown links. Customer search runs only against the already-authorized rendered entry set. Portal analytics records a coarse FAQ page view only; search terms and individual FAQ opens are not persisted.

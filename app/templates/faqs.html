@@ -1,0 +1,39 @@
+{% extends 'base.html' %}{% block content %}
+<header><h1>FAQ / Knowledge Base</h1><p>Create customer help articles and target them to specific packages or everyone.</p></header>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
+<section>
+  <div class="row between"><div><h2>Create FAQ</h2><p class="muted">Answers support paragraphs, <code>**bold**</code>, bullet lists and Markdown-style HTTPS links.</p></div></div>
+  <form method="post" action="/faqs" class="faq-admin-form">
+    <label>Question<input name="question" maxlength="300" required placeholder="How do I request a new film or TV show?"></label>
+    <label>Answer<textarea name="answer" rows="7" required placeholder="Explain the answer here..."></textarea></label>
+    <div class="faq-admin-grid"><label>Category<input name="category" maxlength="120" value="General" required></label><label>Sort order<input name="sort_order" type="number" value="100"></label></div>
+    <div class="faq-target-box"><strong>Visibility</strong><label class="check-line"><input type="checkbox" name="is_global" value="1" data-faq-global> Global — show to all portal customers</label><div class="faq-package-picker" data-faq-packages>{% for p in packages %}<label class="check-line"><input type="checkbox" name="package_ids" value="{{ p.id }}"> {{ p.name }}</label>{% else %}<span class="muted">No active packages.</span>{% endfor %}</div></div>
+    <label class="check-line"><input type="checkbox" name="published" value="1" checked> Published</label>
+    <button>Create FAQ</button>
+  </form>
+</section>
+<section>
+  <div class="row between"><div><h2>Entries</h2><p class="muted">{{ entries|length }} FAQ entr{{ 'y' if entries|length == 1 else 'ies' }}</p></div></div>
+  <div class="faq-admin-list">
+  {% for item in entries %}
+    <article class="faq-admin-card">
+      <div class="row between"><div><span class="muted">{{ item.category }} · order {{ item.sort_order }}</span><h3>{{ item.question }}</h3></div><div class="row"><span class="badge {{ 'active' if item.published else 'suspended' }}">{{ 'Published' if item.published else 'Draft' }}</span><span class="badge">{{ 'Global' if item.is_global else (item.packages|map(attribute='name')|join(', ')) }}</span></div></div>
+      <div class="faq-answer-preview">{{ item.answer|faq_format }}</div>
+      <details class="faq-admin-edit"><summary>Edit</summary>
+        <form method="post" action="/faqs/{{ item.id }}/edit" class="faq-admin-form">
+          <label>Question<input name="question" maxlength="300" value="{{ item.question }}" required></label>
+          <label>Answer<textarea name="answer" rows="7" required>{{ item.answer }}</textarea></label>
+          <div class="faq-admin-grid"><label>Category<input name="category" maxlength="120" value="{{ item.category }}" required></label><label>Sort order<input name="sort_order" type="number" value="{{ item.sort_order }}"></label></div>
+          {% set selected_ids = item.package_links|map(attribute='package_id')|list %}
+          <div class="faq-target-box"><strong>Visibility</strong><label class="check-line"><input type="checkbox" name="is_global" value="1" data-faq-global {% if item.is_global %}checked{% endif %}> Global — show to all portal customers</label><div class="faq-package-picker" data-faq-packages>{% for p in packages %}<label class="check-line"><input type="checkbox" name="package_ids" value="{{ p.id }}" {% if p.id in selected_ids %}checked{% endif %}> {{ p.name }}</label>{% endfor %}</div></div>
+          <label class="check-line"><input type="checkbox" name="published" value="1" {% if item.published %}checked{% endif %}> Published</label>
+          <div class="row"><button>Save changes</button></div>
+        </form>
+        <form method="post" action="/faqs/{{ item.id }}/delete" onsubmit="return confirm('Delete this FAQ entry?');"><button class="danger secondary">Delete FAQ</button></form>
+      </details>
+    </article>
+  {% else %}<div class="portal-empty"><strong>No FAQ entries yet.</strong><span>Create the first one above.</span></div>{% endfor %}
+  </div>
+</section>
+<script>(()=>{document.querySelectorAll('.faq-admin-form').forEach(form=>{const global=form.querySelector('[data-faq-global]'),box=form.querySelector('[data-faq-packages]');if(!global||!box)return;const sync=()=>{box.classList.toggle('disabled',global.checked);box.querySelectorAll('input').forEach(i=>i.disabled=global.checked)};global.addEventListener('change',sync);sync();});})();</script>
+{% endblock %}

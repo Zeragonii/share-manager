@@ -6,12 +6,14 @@ import tempfile
 import re
 import secrets
 import string
+import html
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from threading import Event, Lock
 from urllib.parse import quote_plus, urlsplit, urlencode
+from markupsafe import Markup
 
 from fastapi import Depends, FastAPI, Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
@@ -57,6 +59,8 @@ from .models import (
     PortalDailyMetric,
     ReferralCreditEntry,
     ReferralSettings,
+    FaqEntry,
+    FaqEntryPackage,
 )
 from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
@@ -508,6 +512,7 @@ PORTAL_ANALYTICS_PAGE_FIELDS = {
     "/portal/tickets": "support_views",
     "/portal/history": "history_views",
     "/portal/news": "news_views",
+    "/portal/faqs": "faq_views",
 }
 
 def _portal_metric_row(db: Session, customer_id: int, when: datetime | None = None):
@@ -1497,9 +1502,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         since = (now - timedelta(days=days - 1)).date()
         rows = db.query(PortalDailyMetric).filter(PortalDailyMetric.metric_date >= since).all()
         portal_analytics[days] = {
-            "active_users": len({r.customer_id for r in rows if (r.session_count or r.login_count or r.account_views or r.activity_views or r.support_views or r.history_views or r.news_views or r.request_clicks)}),
+            "active_users": len({r.customer_id for r in rows if (r.session_count or r.login_count or r.account_views or r.activity_views or r.support_views or r.history_views or r.news_views or r.faq_views or r.request_clicks)}),
             "sessions": sum(r.session_count or 0 for r in rows),
-            "page_views": sum((r.account_views or 0)+(r.activity_views or 0)+(r.support_views or 0)+(r.history_views or 0)+(r.news_views or 0) for r in rows),
+            "page_views": sum((r.account_views or 0)+(r.activity_views or 0)+(r.support_views or 0)+(r.history_views or 0)+(r.news_views or 0)+(r.faq_views or 0) for r in rows),
             "request_clicks": sum(r.request_clicks or 0 for r in rows),
             "support_views": sum(r.support_views or 0 for r in rows),
         }
@@ -2305,6 +2310,102 @@ def reconcile(request: Request, customer_id: int, db: Session = Depends(get_db))
     return RedirectResponse("/customers", status_code=303)
 
 
+def _faq_answer_html(value: str | None) -> Markup:
+    """Small safe formatter: escape first, then allow markdown-like bold, lists and http(s) links."""
+    escaped = html.escape(value or "")
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"\[([^\]]+)\]\((https?://[^\s)&lt;&gt;]+)\)", r'<a href="\2" target="_blank" rel="noopener noreferrer">\1</a>', escaped)
+    blocks = []
+    list_items = []
+    for raw in escaped.splitlines():
+        line = raw.strip()
+        if line.startswith(("- ", "* ")):
+            list_items.append(f"<li>{line[2:].strip()}</li>")
+            continue
+        if list_items:
+            blocks.append("<ul>" + "".join(list_items) + "</ul>")
+            list_items = []
+        if line:
+            blocks.append(f"<p>{line}</p>")
+    if list_items:
+        blocks.append("<ul>" + "".join(list_items) + "</ul>")
+    return Markup("".join(blocks))
+
+
+templates.env.filters["faq_format"] = _faq_answer_html
+
+
+@app.get("/faqs", response_class=HTMLResponse)
+def faq_admin_page(request: Request, error: str | None = None, notice: str | None = None, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    entries = db.query(FaqEntry).options(joinedload(FaqEntry.package_links).joinedload(FaqEntryPackage.package)).order_by(FaqEntry.category.asc(), FaqEntry.sort_order.asc(), FaqEntry.question.asc()).all()
+    packages = db.query(Package).filter(Package.active.is_(True)).order_by(Package.name.asc()).all()
+    return render(request, "faqs.html", entries=entries, packages=packages, error=error, notice=notice)
+
+
+@app.post("/faqs")
+def faq_create(request: Request, question: str = Form(...), answer: str = Form(...), category: str = Form("General"), sort_order: int = Form(100), published: str | None = Form(None), is_global: str | None = Form(None), package_ids: list[int] = Form([]), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    q, a, cat = question.strip(), answer.strip(), category.strip() or "General"
+    global_flag = is_global is not None
+    if not q or not a:
+        return RedirectResponse("/faqs?error=Question+and+answer+are+required", status_code=303)
+    if not global_flag and not package_ids:
+        return RedirectResponse("/faqs?error=Choose+at+least+one+package+or+mark+the+FAQ+as+Global", status_code=303)
+    row = FaqEntry(question=q, answer=a, category=cat[:120], sort_order=sort_order, published=published is not None, is_global=global_flag)
+    db.add(row); db.flush()
+    if not global_flag:
+        valid_ids = {x[0] for x in db.query(Package.id).filter(Package.id.in_(package_ids), Package.active.is_(True)).all()}
+        row.package_links = [FaqEntryPackage(package_id=pid) for pid in sorted(valid_ids)]
+    db.add(AuditLog(actor=settings.admin_username, action="faq.create", target_type="faq", target_id=str(row.id), detail=row.question))
+    db.commit()
+    return RedirectResponse("/faqs?notice=FAQ+created", status_code=303)
+
+
+@app.post("/faqs/{faq_id}/edit")
+def faq_edit(request: Request, faq_id: int, question: str = Form(...), answer: str = Form(...), category: str = Form("General"), sort_order: int = Form(100), published: str | None = Form(None), is_global: str | None = Form(None), package_ids: list[int] = Form([]), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    row = db.query(FaqEntry).options(joinedload(FaqEntry.package_links)).filter(FaqEntry.id == faq_id).first()
+    if not row:
+        return RedirectResponse("/faqs?error=FAQ+not+found", status_code=303)
+    q, a, cat = question.strip(), answer.strip(), category.strip() or "General"
+    global_flag = is_global is not None
+    if not q or not a:
+        return RedirectResponse("/faqs?error=Question+and+answer+are+required", status_code=303)
+    if not global_flag and not package_ids:
+        return RedirectResponse("/faqs?error=Choose+at+least+one+package+or+mark+the+FAQ+as+Global", status_code=303)
+    row.question, row.answer, row.category, row.sort_order = q, a, cat[:120], sort_order
+    row.published, row.is_global, row.updated_at = published is not None, global_flag, datetime.utcnow()
+    row.package_links.clear()
+    if not global_flag:
+        valid_ids = {x[0] for x in db.query(Package.id).filter(Package.id.in_(package_ids), Package.active.is_(True)).all()}
+        row.package_links.extend(FaqEntryPackage(package_id=pid) for pid in sorted(valid_ids))
+    db.add(AuditLog(actor=settings.admin_username, action="faq.update", target_type="faq", target_id=str(row.id), detail=row.question))
+    db.commit()
+    return RedirectResponse("/faqs?notice=FAQ+updated", status_code=303)
+
+
+@app.post("/faqs/{faq_id}/delete")
+def faq_delete(request: Request, faq_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    row = db.get(FaqEntry, faq_id)
+    if not row:
+        return RedirectResponse("/faqs?error=FAQ+not+found", status_code=303)
+    detail = row.question
+    db.delete(row)
+    db.add(AuditLog(actor=settings.admin_username, action="faq.delete", target_type="faq", target_id=str(faq_id), detail=detail))
+    db.commit()
+    return RedirectResponse("/faqs?notice=FAQ+deleted", status_code=303)
+
+
 @app.get("/packages", response_class=HTMLResponse)
 def packages(request: Request, error: str | None = None, notice: str | None = None, db: Session = Depends(get_db)):
     gate = auth(request)
@@ -2580,6 +2681,25 @@ def portal_request_platform(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse("/portal", status_code=303)
     _portal_analytics_increment(customer.id, "request_clicks", count_session_if_idle=True)
     return RedirectResponse(platform.base_url, status_code=303)
+
+@app.get("/portal/faqs", response_class=HTMLResponse)
+def portal_faqs(request: Request, db: Session = Depends(get_db)):
+    customer = _portal_customer(request, db)
+    if not customer:
+        return RedirectResponse("/portal/login", status_code=303)
+    package_ids = {pid for (pid,) in db.query(BillingTier.package_id).join(Subscription, Subscription.billing_tier_id == BillingTier.id).filter(Subscription.customer_id == customer.id, Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES)).distinct().all()}
+    query = db.query(FaqEntry).options(joinedload(FaqEntry.package_links).joinedload(FaqEntryPackage.package)).filter(FaqEntry.published.is_(True))
+    if package_ids:
+        query = query.outerjoin(FaqEntryPackage, FaqEntryPackage.faq_id == FaqEntry.id).filter(or_(FaqEntry.is_global.is_(True), FaqEntryPackage.package_id.in_(package_ids))).distinct()
+    else:
+        query = query.filter(FaqEntry.is_global.is_(True))
+    entries = query.order_by(FaqEntry.category.asc(), FaqEntry.sort_order.asc(), FaqEntry.question.asc()).all()
+    categories = []
+    for entry in entries:
+        if entry.category not in categories:
+            categories.append(entry.category)
+    return render(request, "portal_faqs.html", customer=customer, entries=entries, categories=categories)
+
 
 @app.get("/portal/news", response_class=HTMLResponse)
 def portal_news(request: Request, db: Session = Depends(get_db)):
@@ -3431,11 +3551,11 @@ def customer_history(request: Request, customer_id: int, db: Session = Depends(g
     portal_usage = {
         "logins_30d": sum(r.login_count or 0 for r in metric_rows),
         "sessions_30d": sum(r.session_count or 0 for r in metric_rows),
-        "views_30d": sum((r.account_views or 0)+(r.activity_views or 0)+(r.support_views or 0)+(r.history_views or 0)+(r.news_views or 0) for r in metric_rows),
+        "views_30d": sum((r.account_views or 0)+(r.activity_views or 0)+(r.support_views or 0)+(r.history_views or 0)+(r.news_views or 0)+(r.faq_views or 0) for r in metric_rows),
         "request_clicks_30d": sum(r.request_clicks or 0 for r in metric_rows),
         "pages": {
             "Account": sum(r.account_views or 0 for r in metric_rows), "Activity": sum(r.activity_views or 0 for r in metric_rows),
-            "Support": sum(r.support_views or 0 for r in metric_rows), "History": sum(r.history_views or 0 for r in metric_rows), "News": sum(r.news_views or 0 for r in metric_rows),
+            "Support": sum(r.support_views or 0 for r in metric_rows), "History": sum(r.history_views or 0 for r in metric_rows), "News": sum(r.news_views or 0 for r in metric_rows), "FAQ": sum(r.faq_views or 0 for r in metric_rows),
         },
     }
     return render(request, "customer_history.html", customer=customer, events=events, tautulli_activity=tautulli_activity, stream_limit_events=stream_limit_events, portal_usage=portal_usage)
