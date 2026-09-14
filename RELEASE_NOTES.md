@@ -1,3 +1,12 @@
+# 0.12.0d — FAQ category picker fix
+
+- Replaced the browser-dependent FAQ category `datalist` with a real visible category selector plus editable text field.
+- Existing FAQ categories are populated into the selector on both Create FAQ and Edit FAQ.
+- Selecting an existing category copies it into the editable Category field.
+- Selecting **New category…** clears/focuses the field for a new category name.
+- Typing an exact existing category name keeps the selector synchronized.
+- No database changes.
+
 # 0.12.0c — FAQ category suggestions
 
 - FAQ Category fields now act as editable comboboxes using existing FAQ categories as suggestions.

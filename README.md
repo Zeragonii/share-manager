@@ -1,3 +1,7 @@
+## v0.12.0d — FAQ category picker fix
+
+Admin FAQ category selection now uses a real visible selector backed by categories already present in FAQ entries, alongside an editable field for creating new categories. This replaces the browser-dependent `datalist` behavior from 0.12.0c.
+
 ## v0.12.0c — FAQ category suggestions
 
 FAQ category fields now suggest categories already in use while remaining free-text, so administrators can reuse existing categories or create new ones without a separate category-management system.

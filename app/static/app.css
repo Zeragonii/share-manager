@@ -968,3 +968,6 @@ a.button-link, .button-link{white-space:nowrap}
     letter-spacing:-.01em;
   }
 }
+
+/* v0.12.0d FAQ category combobox */
+.faq-category-combo{display:grid;grid-template-columns:minmax(150px,.8fr) minmax(180px,1.2fr);gap:8px}.faq-category-combo select,.faq-category-combo input{width:100%}@media(max-width:700px){.faq-category-combo{grid-template-columns:1fr}}
