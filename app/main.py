@@ -2371,7 +2371,8 @@ def faq_admin_page(request: Request, error: str | None = None, notice: str | Non
         return gate
     entries = db.query(FaqEntry).options(joinedload(FaqEntry.package_links).joinedload(FaqEntryPackage.package)).order_by(FaqEntry.category.asc(), FaqEntry.sort_order.asc(), FaqEntry.question.asc()).all()
     packages = db.query(Package).filter(Package.active.is_(True)).order_by(Package.name.asc()).all()
-    return render(request, "faqs.html", entries=entries, packages=packages, error=error, notice=notice)
+    categories = sorted({(entry.category or "").strip() for entry in entries if (entry.category or "").strip()}, key=str.casefold)
+    return render(request, "faqs.html", entries=entries, packages=packages, categories=categories, error=error, notice=notice)
 
 
 @app.post("/faqs")

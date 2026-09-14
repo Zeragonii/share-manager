@@ -1,3 +1,10 @@
+# 0.12.0c — FAQ category suggestions
+
+- FAQ Category fields now act as editable comboboxes using existing FAQ categories as suggestions.
+- Admins can select a previously used category or type a brand-new category directly in both Create FAQ and Edit FAQ forms.
+- Suggestions are derived from categories currently in use, so categories disappear naturally once no FAQ entries use them.
+- No database changes.
+
 # 0.12.0b — Mobile Payment History nav polish
 
 - Keeps the longer **Payment History** label on one line in the customer mobile bottom navigation.

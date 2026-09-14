@@ -1,6 +1,10 @@
+## v0.12.0c — FAQ category suggestions
+
+FAQ category fields now suggest categories already in use while remaining free-text, so administrators can reuse existing categories or create new ones without a separate category-management system.
+
 # Share Manager
 
-> Current release: **0.11.0a — Tier-specific one-month referral redemption**
+> Current release: **0.12.0c — FAQ category suggestions**
 
 
 
