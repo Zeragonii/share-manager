@@ -24,6 +24,22 @@
     {% endif %}
   </section>
   <section class="portal-info-section"><h2>Account</h2><div class="portal-account-grid compact">{% if portal_has_plex %}<div><span>Plex account</span><strong>{{ customer.plex_username or 'Not linked' }}</strong></div>{% endif %}<div><span>Contact email</span><strong>{{ customer.email or 'Not set' }}</strong></div></div></section>
+  {% if seerr_usage and seerr_usage.status == 'matched' %}
+  <section class="portal-info-section seerr-usage-section">
+    <div class="portal-section-heading"><div><h2>Content requests</h2><span class="muted">Current Seerr quota usage{% if seerr_usage.package %} · policy from {{ seerr_usage.package.name }}{% endif %}</span></div>{% if requests_platform and requests_platform.base_url %}<a class="secondary button-like" href="/portal/request" target="_blank" rel="noopener noreferrer">Open {{ requests_platform.name or 'Seerr' }} ↗</a>{% endif %}</div>
+    <div class="seerr-quota-grid">
+      {% for label,q in [('Movies', seerr_usage.movie_quota), ('TV seasons', seerr_usage.tv_quota)] %}
+      <div class="seerr-quota-card">
+        <div class="row between"><strong>{{ label }}</strong><span>{% if q.limit %}{{ q.used if q.used is not none else '—' }} / {{ q.limit }}{% else %}Unlimited{% endif %}</span></div>
+        {% if q.limit %}<div class="seerr-quota-track"><div style="width:{{ q.pct }}%"></div></div>{% endif %}
+        <small class="muted">{% if q.limit %}{{ q.remaining if q.remaining is not none else '—' }} remaining{% if q.days %} in {{ q.days }} days{% endif %}{% else %}No request limit{% endif %}</small>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% elif seerr_usage and seerr_usage.status == 'error' %}
+  <section class="portal-info-section"><div class="muted">Request quota information is temporarily unavailable.</div></section>
+  {% endif %}
   <section class="portal-info-section portal-security-section">
     <div class="portal-section-heading"><div><h2>Security</h2><span class="muted">Change your customer portal password</span></div></div>
     <details class="portal-password-change">

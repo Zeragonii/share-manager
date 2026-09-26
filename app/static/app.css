@@ -971,3 +971,6 @@ a.button-link, .button-link{white-space:nowrap}
 
 /* v0.12.0d FAQ category combobox */
 .faq-category-combo{display:grid;grid-template-columns:minmax(150px,.8fr) minmax(180px,1.2fr);gap:8px}.faq-category-combo select,.faq-category-combo input{width:100%}@media(max-width:700px){.faq-category-combo{grid-template-columns:1fr}}
+
+/* v0.13 Seerr request quotas */
+.seerr-quota-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:12px}.seerr-quota-card{padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card)}.seerr-quota-track{height:8px;border-radius:999px;background:rgba(127,127,127,.18);overflow:hidden;margin:10px 0}.seerr-quota-track>div{height:100%;background:currentColor;opacity:.75}.button-like{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}@media(max-width:700px){.seerr-quota-grid{grid-template-columns:1fr}.seerr-usage-section .portal-section-heading{align-items:flex-start;gap:12px;flex-direction:column}}

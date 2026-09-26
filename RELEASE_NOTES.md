@@ -1,3 +1,14 @@
+# 0.13.0 — Seerr Management Integration
+
+- Upgraded the existing external Requests Platform link into an optional managed Seerr integration using Seerr API-key authentication.
+- Customers are matched to Seerr from their existing Plex identity; exact Plex username is primary and email is a safe fallback. The resolved Seerr user ID is cached.
+- Packages can now define movie and TV-season request quotas plus a policy priority. TV usage is explicitly measured in seasons.
+- Multi-package customers use the highest-priority assigned Package policy. Active, grace and suspended assignments qualify; cancelled history does not.
+- Optional quota management reconciles Seerr user overrides automatically every 15 minutes and via manual Sync/Reconcile actions.
+- Admin Integrations now shows matched/unmatched users, policy drift, current quota usage, lifetime movie requests, lifetime TV seasons and total Seerr request records.
+- The customer Account portal shows live movie/TV-season quota meters and a link to open Seerr.
+- Seerr failures are non-fatal to portal/account management; cached match/error state remains visible to administrators.
+
 # 0.12.0d — FAQ category picker fix
 
 - Replaced the browser-dependent FAQ category `datalist` with a real visible category selector plus editable text field.

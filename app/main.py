@@ -64,6 +64,7 @@ from .models import (
 )
 from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
+from .integrations.seerr import SeerrIntegration, SeerrError
 from .security import (
     logged_in, make_session, valid_credentials,
     hash_portal_password, verify_portal_password, make_portal_session, read_portal_session,
@@ -95,6 +96,7 @@ from .services.referrals import (
 from .services.attachments import (
     save_pending_upload, attachment_path, attachment_root, cleanup_pending, CUSTOMER_TICKET_ATTACHMENT_LIMIT,
 )
+from .services.seerr import sync_all as sync_seerr_all, customer_usage as seerr_customer_usage, effective_policy as seerr_effective_policy, reconcile_customer as reconcile_seerr_customer
 from .version import APP_VERSION
 
 
@@ -341,6 +343,33 @@ def run_tautulli_cycle() -> bool:
 
 
 @serialized_db_worker
+def run_seerr_cycle() -> bool:
+    if RESTORE_IN_PROGRESS.is_set():
+        return False
+    db = SessionLocal()
+    try:
+        cfg = db.get(RequestsPlatformSettings, 1)
+        if not cfg or not cfg.enabled or not cfg.api_key or not cfg.manage_quotas:
+            return False
+        if cfg.last_sync_at and datetime.utcnow() - cfg.last_sync_at < timedelta(minutes=15):
+            return False
+        sync_seerr_all(db, write=True)
+        db.commit()
+        return True
+    except Exception as exc:
+        db.rollback()
+        cfg = db.get(RequestsPlatformSettings, 1)
+        if cfg:
+            cfg.last_sync_at = datetime.utcnow()
+            cfg.last_sync_error = str(exc)
+            db.commit()
+        logger.exception("Seerr policy sync failed")
+        return False
+    finally:
+        db.close()
+
+
+@serialized_db_worker
 def run_tautulli_backfill_cycle() -> bool:
     if RESTORE_IN_PROGRESS.is_set():
         return False
@@ -446,6 +475,15 @@ async def lifespan(_app: FastAPI):
                 logger.exception("Tautulli worker cycle failed")
             await asyncio.sleep(60)
 
+    async def seerr_loop():
+        await asyncio.sleep(25)
+        while True:
+            try:
+                await asyncio.to_thread(run_seerr_cycle)
+            except Exception:
+                logger.exception("Seerr policy worker cycle failed")
+            await asyncio.sleep(60)
+
     async def tautulli_backfill_loop():
         # Full history is imported separately from the normal analytics sync so
         # Sync Now and page loads remain quick even for very large Tautulli histories.
@@ -495,6 +533,7 @@ async def lifespan(_app: FastAPI):
     backup_task = asyncio.create_task(backup_loop())
     reconcile_task = asyncio.create_task(reconcile_queue_loop())
     tautulli_task = asyncio.create_task(tautulli_loop())
+    seerr_task = asyncio.create_task(seerr_loop())
     tautulli_backfill_task = asyncio.create_task(tautulli_backfill_loop())
     stream_limit_task = asyncio.create_task(stream_limit_loop())
     notification_task = asyncio.create_task(notification_loop())
@@ -506,6 +545,7 @@ async def lifespan(_app: FastAPI):
         backup_task.cancel()
         reconcile_task.cancel()
         tautulli_task.cancel()
+        seerr_task.cancel()
         tautulli_backfill_task.cancel()
         stream_limit_task.cancel()
         notification_task.cancel()
@@ -518,6 +558,8 @@ async def lifespan(_app: FastAPI):
             await reconcile_task
         with suppress(asyncio.CancelledError):
             await tautulli_task
+        with suppress(asyncio.CancelledError):
+            await seerr_task
         with suppress(asyncio.CancelledError):
             await tautulli_backfill_task
         with suppress(asyncio.CancelledError):
@@ -756,8 +798,17 @@ def portal_dashboard(request: Request, db: Session = Depends(get_db)):
         sub = db.query(Subscription).options(joinedload(Subscription.billing_tier).joinedload(BillingTier.package)).filter(Subscription.customer_id == customer.id).order_by(Subscription.id.desc()).first()
     effective_status = "exempt" if customer.exempt else customer.status
     push_status = customer_push_status(db, customer.id)
+    seerr_usage = None
+    try:
+        if _customer_has_plex_package(db, customer.id):
+            seerr_usage = seerr_customer_usage(db, customer)
+            db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Seerr portal usage failed for customer %s: %s", customer.id, exc)
     return render(
         request, "portal_dashboard.html", customer=customer, subscription=sub, effective_status=effective_status, push_status=push_status,
+        seerr_usage=seerr_usage,
         notice=request.query_params.get("notice"), error=request.query_params.get("error"), now=datetime.utcnow(),
     )
 
@@ -2467,7 +2518,11 @@ def create_package(request: Request, name: str = Form(...), description: str = F
 
 
 @app.post("/packages/{package_id}/edit")
-def edit_package(request: Request, package_id: int, name: str = Form(...), description: str = Form(""), db: Session = Depends(get_db)):
+def edit_package(request: Request, package_id: int, name: str = Form(...), description: str = Form(""),
+    seerr_manage_quotas: str | None = Form(None), seerr_policy_priority: int = Form(0),
+    seerr_movie_limit: int = Form(0), seerr_movie_days: int = Form(30),
+    seerr_tv_limit: int = Form(0), seerr_tv_days: int = Form(30),
+    db: Session = Depends(get_db)):
     gate = auth(request)
     if gate:
         return gate
@@ -2481,9 +2536,17 @@ def edit_package(request: Request, package_id: int, name: str = Form(...), descr
     if duplicate:
         return RedirectResponse("/packages?error=A+package+with+that+name+already+exists", status_code=303)
     old_name = p.name
+    if min(seerr_policy_priority, seerr_movie_limit, seerr_movie_days, seerr_tv_limit, seerr_tv_days) < 0 or seerr_movie_days < 1 or seerr_tv_days < 1:
+        return RedirectResponse("/packages?error=Seerr+quota+values+must+be+non-negative+and+day+windows+at+least+1", status_code=303)
     p.name = clean_name
     p.description = description.strip() or None
-    db.add(AuditLog(actor=settings.admin_username, action="package.update", target_type="package", target_id=str(p.id), detail=f"{old_name} -> {p.name}"))
+    p.seerr_manage_quotas = seerr_manage_quotas is not None
+    p.seerr_policy_priority = seerr_policy_priority
+    p.seerr_movie_limit = seerr_movie_limit
+    p.seerr_movie_days = seerr_movie_days
+    p.seerr_tv_limit = seerr_tv_limit
+    p.seerr_tv_days = seerr_tv_days
+    db.add(AuditLog(actor=settings.admin_username, action="package.update", target_type="package", target_id=str(p.id), detail=f"{old_name} -> {p.name}; Seerr policy {'enabled' if p.seerr_manage_quotas else 'disabled'}"))
     db.commit()
     return RedirectResponse("/packages?notice=Package+updated", status_code=303)
 
@@ -2809,6 +2872,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
     admin_push_devices = db.query(PushSubscription).filter(PushSubscription.owner_type == "admin", PushSubscription.enabled.is_(True)).count()
     notification_event_count = db.query(NotificationEvent).count()
     scheduled_broadcasts = db.query(ScheduledCustomerBroadcast).filter(ScheduledCustomerBroadcast.status == "scheduled").order_by(ScheduledCustomerBroadcast.scheduled_for.asc()).limit(10).all()
+    seerr_customers = db.query(Customer).filter(Customer.archived.is_(False), Customer.plex_username.is_not(None)).order_by(Customer.name.asc()).all()
     return render(
         request,
         "integrations.html",
@@ -2822,6 +2886,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         critical_broadcast_audience=critical_broadcast_audience(db),
         scheduled_broadcasts=scheduled_broadcasts,
         requests_platform=db.get(RequestsPlatformSettings, 1),
+        seerr_customers=seerr_customers,
         tautulli_settings=get_tautulli_settings(db),
         tautulli_backfill=watch_history_backfill_status(db),
         error=error,
@@ -2876,6 +2941,8 @@ def save_requests_platform(
     name: str = Form("Seerr"),
     base_url: str = Form(""),
     button_label: str = Form("Request Content"),
+    api_key: str = Form(""),
+    manage_quotas: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -2900,10 +2967,15 @@ def save_requests_platform(
     if row is None:
         row = RequestsPlatformSettings(id=1)
         db.add(row)
+    if manage_quotas is not None and not (api_key.strip() or row.api_key):
+        return RedirectResponse("/integrations?error=Seerr+API+key+is+required+to+manage+quotas", status_code=303)
     row.enabled = is_enabled
     row.name = clean_name
     row.base_url = clean_url or None
     row.button_label = clean_label
+    if api_key.strip():
+        row.api_key = api_key.strip()
+    row.manage_quotas = manage_quotas is not None
     row.updated_at = datetime.utcnow()
     db.add(AuditLog(
         actor=settings.admin_username,
@@ -2914,6 +2986,58 @@ def save_requests_platform(
     ))
     db.commit()
     return RedirectResponse("/integrations?notice=Requests+platform+settings+saved", status_code=303)
+
+
+@app.post("/integrations/seerr/test")
+def test_seerr(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    cfg = db.get(RequestsPlatformSettings, 1)
+    if not cfg or not cfg.base_url or not cfg.api_key:
+        return RedirectResponse("/integrations?error=Configure+the+Seerr+URL+and+API+key+first", status_code=303)
+    try:
+        result = SeerrIntegration(cfg.base_url, cfg.api_key).test()
+        return RedirectResponse(f"/integrations?notice=Seerr+connection+successful%3A+{result['users']}+users+visible", status_code=303)
+    except SeerrError as exc:
+        return RedirectResponse("/integrations?error=" + quote_plus(str(exc)), status_code=303)
+
+
+@app.post("/customers/{customer_id}/seerr/reconcile")
+def reconcile_customer_seerr(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return RedirectResponse("/integrations?error=Customer+not+found", status_code=303)
+    cfg = db.get(RequestsPlatformSettings, 1)
+    try:
+        result = reconcile_seerr_customer(db, customer, write=bool(cfg and cfg.manage_quotas))
+        db.add(AuditLog(actor=settings.admin_username, action="seerr.customer.reconcile", target_type="customer", target_id=str(customer.id), detail=f"status={result.get('status')}; changed={result.get('changed', False)}; drift={len(result.get('drift') or {})}"))
+        db.commit()
+        if result.get("status") != "matched":
+            return RedirectResponse("/integrations?error=" + quote_plus(result.get("error") or "Seerr user could not be matched"), status_code=303)
+        return RedirectResponse("/integrations?notice=" + quote_plus(f"Seerr reconciled for {customer.name}"), status_code=303)
+    except (ValueError, SeerrError) as exc:
+        db.rollback()
+        return RedirectResponse("/integrations?error=" + quote_plus(str(exc)), status_code=303)
+
+
+@app.post("/integrations/seerr/sync")
+def sync_seerr(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    cfg = db.get(RequestsPlatformSettings, 1)
+    try:
+        result = sync_seerr_all(db, write=bool(cfg and cfg.manage_quotas))
+        db.add(AuditLog(actor=settings.admin_username, action="seerr.sync", target_type="requests_platform", target_id="1", detail=f"matched={result['matched']}; unmatched={result['unmatched']}; changed={result['changed']}; drift={result['drift']}"))
+        db.commit()
+        return RedirectResponse("/integrations?notice=" + quote_plus(f"Seerr sync complete: {result['matched']} matched, {result['unmatched']} unmatched, {result['changed']} quota policies reconciled"), status_code=303)
+    except (ValueError, SeerrError) as exc:
+        db.rollback()
+        return RedirectResponse("/integrations?error=" + quote_plus(str(exc)), status_code=303)
 
 
 @app.post("/integrations/tautulli")

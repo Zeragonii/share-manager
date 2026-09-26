@@ -27,6 +27,17 @@
     <form method="post" action="/packages/{{ p.id }}/edit" class="grid-form">
       <label>Name<input name="name" value="{{ p.name }}" required></label>
       <label>Description<input name="description" value="{{ p.description or '' }}"></label>
+      <div class="portal-admin-panel">
+        <div class="portal-admin-heading"><div><strong>Seerr quota policy</strong><span class="muted">Applied to Plex-linked Seerr users on this package. For multi-package customers, the highest priority policy wins.</span></div></div>
+        <label class="toggle-choice"><input type="checkbox" name="seerr_manage_quotas" {% if p.seerr_manage_quotas %}checked{% endif %}><span><strong>Manage Seerr quotas for this package</strong></span></label>
+        <div class="grid-form compact">
+          <label>Policy priority<input name="seerr_policy_priority" type="number" min="0" value="{{ p.seerr_policy_priority or 0 }}"><span class="muted">Higher wins when several assigned packages define a policy.</span></label>
+          <label>Movie limit<input name="seerr_movie_limit" type="number" min="0" value="{{ p.seerr_movie_limit or 0 }}"><span class="muted">0 = unlimited</span></label>
+          <label>Movie window<input name="seerr_movie_days" type="number" min="1" value="{{ p.seerr_movie_days or 30 }}"><span class="muted">days</span></label>
+          <label>TV season limit<input name="seerr_tv_limit" type="number" min="0" value="{{ p.seerr_tv_limit or 0 }}"><span class="muted">Seerr counts TV quota per season · 0 = unlimited</span></label>
+          <label>TV window<input name="seerr_tv_days" type="number" min="1" value="{{ p.seerr_tv_days or 30 }}"><span class="muted">days</span></label>
+        </div>
+      </div>
       <button type="submit">Save</button>
     </form>
     <div class="simple-delete-row">
