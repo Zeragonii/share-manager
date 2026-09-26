@@ -419,3 +419,8 @@ Package quota policy fields define movie limit/window and TV-season limit/window
 ### v0.13.1 Seerr identity matching
 
 Seerr identity resolution treats the Share Manager customer's existing Plex username as the canonical user-facing identity. Resolution first validates a cached Seerr user ID, then performs unique exact case-insensitive matches against Seerr `plexUsername`, Seerr `username`, and finally customer email. The ordinary `username` fallback is required because Plex-authenticated Seerr accounts may expose the visible Plex name there while `plexUsername` is empty. Ambiguous matches are never selected automatically.
+
+
+### v0.13.1a Seerr user pagination
+
+`SeerrIntegration.list_users()` is pagination-aware and walks Seerr `/user` with `take`/`skip` until `pageInfo.results` has been collected (with a short-page fallback where metadata is absent). Customer matching therefore receives the complete Seerr user set rather than the first default page only.

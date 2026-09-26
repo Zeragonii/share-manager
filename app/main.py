@@ -3034,7 +3034,7 @@ def sync_seerr(request: Request, db: Session = Depends(get_db)):
         result = sync_seerr_all(db, write=bool(cfg and cfg.manage_quotas))
         db.add(AuditLog(actor=settings.admin_username, action="seerr.sync", target_type="requests_platform", target_id="1", detail=f"matched={result['matched']}; unmatched={result['unmatched']}; changed={result['changed']}; drift={result['drift']}"))
         db.commit()
-        return RedirectResponse("/integrations?notice=" + quote_plus(f"Seerr sync complete: {result['matched']} matched, {result['unmatched']} unmatched, {result['changed']} quota policies reconciled"), status_code=303)
+        return RedirectResponse("/integrations?notice=" + quote_plus(f"Seerr sync complete: {result['users']} users loaded, {result['matched']} matched, {result['unmatched']} unmatched, {result['changed']} quota policies reconciled"), status_code=303)
     except (ValueError, SeerrError) as exc:
         db.rollback()
         return RedirectResponse("/integrations?error=" + quote_plus(str(exc)), status_code=303)

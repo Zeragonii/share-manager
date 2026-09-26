@@ -1,3 +1,10 @@
+# 0.13.1a — Seerr User Pagination Hotfix
+
+- Fixes Seerr user discovery so Share Manager follows every `/user` page using `take`/`skip` instead of only inspecting Seerr's first page.
+- Matching diagnostics and manual sync now reflect the complete Seerr user population.
+- Keeps the 0.13.1 identity order: cached ID → `plexUsername` → `username` → email.
+- No database migration.
+
 # 0.13.1 — Seerr Matching & Package UI
 
 - Fixed Seerr customer matching for Plex-linked accounts whose visible identity is exposed in Seerr's `username` field rather than `plexUsername`.

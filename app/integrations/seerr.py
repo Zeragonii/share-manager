@@ -48,13 +48,51 @@ class SeerrIntegration:
         return {"ok": True, "users": len(users)}
 
     def list_users(self) -> list[dict[str, Any]]:
-        payload = self._request("GET", "/user")
-        if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict):
+        """Return every Seerr user, following Seerr's take/skip pagination.
+
+        Seerr defaults collection endpoints to a small page size (commonly 10),
+        so a single GET /user silently truncates larger installations.  Keep
+        the page size conservative and use pageInfo.results when available;
+        fall back to a short-page stop condition for compatible variants.
+        """
+        page_size = 50
+        skip = 0
+        users: list[dict[str, Any]] = []
+
+        while True:
+            payload = self._request("GET", "/user", params={"take": page_size, "skip": skip})
+
+            # Older/compatible Seerr variants may return a bare list.  There is
+            # no pagination metadata in that shape, so treat it as complete.
+            if isinstance(payload, list):
+                users.extend(row for row in payload if isinstance(row, dict))
+                break
+
+            if not isinstance(payload, dict):
+                break
+
             rows = payload.get("results") or payload.get("users") or []
-            return rows if isinstance(rows, list) else []
-        return []
+            if not isinstance(rows, list):
+                break
+            rows = [row for row in rows if isinstance(row, dict)]
+            users.extend(rows)
+
+            page_info = payload.get("pageInfo") if isinstance(payload.get("pageInfo"), dict) else {}
+            total = page_info.get("results")
+            try:
+                total = int(total) if total is not None else None
+            except (TypeError, ValueError):
+                total = None
+
+            skip += len(rows)
+            if not rows:
+                break
+            if total is not None and skip >= total:
+                break
+            if total is None and len(rows) < page_size:
+                break
+
+        return users
 
     def user(self, user_id: int) -> dict[str, Any]:
         payload = self._request("GET", f"/user/{int(user_id)}")

@@ -92,3 +92,47 @@ def test_usage_cache_counts_tv_seasons_not_tv_requests():
     assert c.seerr_movie_requests_total == 1
     assert c.seerr_tv_seasons_total == 5
     assert c.seerr_request_count == 3
+
+
+def test_list_users_follows_take_skip_pagination():
+    from app.integrations.seerr import SeerrIntegration
+
+    client = SeerrIntegration("http://seerr.test", "key")
+    calls = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs.get("params")))
+        skip = kwargs["params"]["skip"]
+        if skip == 0:
+            return {
+                "pageInfo": {"page": 1, "pages": 2, "results": 88, "pageSize": 50},
+                "results": [{"id": i} for i in range(1, 51)],
+            }
+        if skip == 50:
+            return {
+                "pageInfo": {"page": 2, "pages": 2, "results": 88, "pageSize": 50},
+                "results": [{"id": i} for i in range(51, 89)],
+            }
+        raise AssertionError(f"unexpected skip {skip}")
+
+    client._request = fake_request
+    users = client.list_users()
+
+    assert len(users) == 88
+    assert users[0]["id"] == 1
+    assert users[-1]["id"] == 88
+    assert calls == [
+        ("GET", "/user", {"take": 50, "skip": 0}),
+        ("GET", "/user", {"take": 50, "skip": 50}),
+    ]
+
+
+def test_list_users_stops_on_short_page_without_pageinfo():
+    from app.integrations.seerr import SeerrIntegration
+
+    client = SeerrIntegration("http://seerr.test", "key")
+    client._request = lambda method, path, **kwargs: {
+        "results": [{"id": i} for i in range(1, 11)]
+    }
+    users = client.list_users()
+    assert len(users) == 10
