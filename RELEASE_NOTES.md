@@ -1,3 +1,11 @@
+# 0.13.1 — Seerr Matching & Package UI
+
+- Fixed Seerr customer matching for Plex-linked accounts whose visible identity is exposed in Seerr's `username` field rather than `plexUsername`.
+- Matching order is now cached Seerr ID, exact `plexUsername`, exact `username`, then exact email. All text identity matches are trimmed and case-insensitive, and ambiguous matches are rejected rather than guessed.
+- Unmatched customers now receive a more useful diagnostic describing the identity fields checked and the number of Seerr users inspected during bulk sync.
+- Reworked the Package editor's Seerr quota policy into a responsive full-width collapsible section with separate Movies and TV groups, clearer helper text, and a dedicated save row.
+- No database migration is required.
+
 # 0.13.0 — Seerr Management Integration
 
 - Upgraded the existing external Requests Platform link into an optional managed Seerr integration using Seerr API-key authentication.

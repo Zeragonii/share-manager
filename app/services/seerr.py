@@ -57,7 +57,12 @@ def match_customer(client: SeerrIntegration, customer: Customer, users: list[dic
     if customer.seerr_user_id:
         try:
             cached = client.user(int(customer.seerr_user_id))
-            if (plex and _norm(cached.get("plexUsername")) == plex) or (not plex and email and _norm(cached.get("email")) == email):
+            cached_plex = _norm(cached.get("plexUsername"))
+            cached_username = _norm(cached.get("username"))
+            cached_email = _norm(cached.get("email"))
+            if plex and plex in {cached_plex, cached_username}:
+                return cached, "cached"
+            if not plex and email and cached_email == email:
                 return cached, "cached"
         except SeerrError:
             # Re-resolve below if the cached ID disappeared.
@@ -67,6 +72,12 @@ def match_customer(client: SeerrIntegration, customer: Customer, users: list[dic
         matches = [u for u in users if _norm(u.get("plexUsername")) == plex]
         if len(matches) == 1:
             return matches[0], "plex_username"
+        # Some Plex-authenticated Seerr users expose the visible Plex name in
+        # `username` while `plexUsername` is blank. Treat the ordinary Seerr
+        # username as a safe exact-match fallback; never pick an ambiguous row.
+        matches = [u for u in users if _norm(u.get("username")) == plex]
+        if len(matches) == 1:
+            return matches[0], "username"
     if email:
         matches = [u for u in users if _norm(u.get("email")) == email]
         if len(matches) == 1:
@@ -154,7 +165,10 @@ def reconcile_customer(db: Session, customer: Customer, client: SeerrIntegration
     try:
         user, method = match_customer(client, customer, users)
         if not user:
-            cache_match(customer, None, None)
+            visible = len(users) if users is not None else None
+            suffix = f" ({visible} Seerr users inspected)" if visible is not None else ""
+            identity = customer.plex_username or customer.email or "unknown identity"
+            cache_match(customer, None, None, f"No exact Seerr match for {identity!r} using plexUsername, username, or email{suffix}")
             return {"status": "unmatched", "error": customer.seerr_last_error}
         cache_match(customer, user, method)
         package = effective_policy(db, customer.id)

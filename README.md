@@ -1,4 +1,4 @@
-## v0.13.0 — Seerr Management Integration
+## v0.13.1 — Seerr Matching & Package UI
 
 Share Manager can now manage Seerr users through their existing Plex-linked identity. Configure the Seerr URL and API key under Integrations, then define request quotas on Packages. Movie limits count movie requests; TV limits count requested seasons. When several assigned Packages define a Seerr policy, the highest policy priority wins. Quota reconciliation can run automatically every 15 minutes, while customers see their current quota usage on the portal Account page.
 

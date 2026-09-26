@@ -414,3 +414,8 @@ FAQ answer formatting is deliberately restricted rather than accepting stored HT
 The existing `RequestsPlatformSettings` remains the source of the customer-facing external request URL and now optionally stores the Seerr API key and reconciliation state. `SeerrIntegration` uses `/api/v1` with the `X-Api-Key` header. Customer identity remains Plex-centric: Share Manager resolves a Seerr user by exact case-insensitive `plexUsername`, then email as a unique fallback, and caches the numeric Seerr user id.
 
 Package quota policy fields define movie limit/window and TV-season limit/window. `seerr_policy_priority` provides deterministic multi-package precedence; the highest priority among assigned (`active`, `grace`, `suspended`) subscriptions wins. Cancelled subscriptions are historical and do not supply policy. A 15-minute worker and manual reconciliation use Seerr's per-user general-settings endpoint to apply quota overrides. Cached usage columns support inexpensive admin reporting, while the customer portal fetches live quota data when available. Seerr outages never determine local billing or Plex entitlement state.
+
+
+### v0.13.1 Seerr identity matching
+
+Seerr identity resolution treats the Share Manager customer's existing Plex username as the canonical user-facing identity. Resolution first validates a cached Seerr user ID, then performs unique exact case-insensitive matches against Seerr `plexUsername`, Seerr `username`, and finally customer email. The ordinary `username` fallback is required because Plex-authenticated Seerr accounts may expose the visible Plex name there while `plexUsername` is empty. Ambiguous matches are never selected automatically.

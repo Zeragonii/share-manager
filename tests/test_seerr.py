@@ -54,6 +54,28 @@ def test_plex_username_is_primary_seerr_identity_key():
     assert method == "plex_username"
 
 
+
+def test_seerr_username_is_exact_fallback_when_plex_username_field_is_blank():
+    c = Customer(name="DStride", email="different@example.com", plex_username="DStride")
+    users = [
+        {"id": 17, "plexUsername": None, "username": "dstride", "email": "seerr@example.com"},
+        {"id": 18, "plexUsername": "someoneelse", "username": "someoneelse", "email": "different@example.com"},
+    ]
+    user, method = match_customer(FakeSeerr(users), c, users)
+    assert user["id"] == 17
+    assert method == "username"
+
+
+def test_seerr_username_fallback_refuses_ambiguous_matches():
+    c = Customer(name="Duplicate", plex_username="SameName")
+    users = [
+        {"id": 1, "plexUsername": None, "username": "samename", "email": "one@example.com"},
+        {"id": 2, "plexUsername": None, "username": "SameName", "email": "two@example.com"},
+    ]
+    user, method = match_customer(FakeSeerr(users), c, users)
+    assert user is None
+    assert method is None
+
 def test_quota_drift_compares_package_values():
     p = Package(name="Plex", seerr_manage_quotas=True, seerr_movie_limit=10, seerr_movie_days=30, seerr_tv_limit=20, seerr_tv_days=30)
     assert quota_drift({"movieQuotaLimit":10,"movieQuotaDays":30,"tvQuotaLimit":20,"tvQuotaDays":30}, p) == {}
