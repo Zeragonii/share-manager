@@ -424,3 +424,8 @@ Seerr identity resolution treats the Share Manager customer's existing Plex user
 ### v0.13.1a Seerr user pagination
 
 `SeerrIntegration.list_users()` is pagination-aware and walks Seerr `/user` with `take`/`skip` until `pageInfo.results` has been collected (with a short-page fallback where metadata is absent). Customer matching therefore receives the complete Seerr user set rather than the first default page only.
+
+
+### v0.13.2 Package management UI refresh
+
+The Packages page is presentation-only refreshed. Package settings, billing-tier CRUD endpoints, Plex entitlement persistence, and Seerr quota policy semantics are unchanged. Billing tiers and integration entitlements are displayed as responsive stacked sections with expandable editors to reduce visual density without altering persisted data or reconciliation behaviour.

@@ -1,3 +1,13 @@
+# 0.13.2 — Package Management UI Refresh
+
+- Reorganised each Package into full-width sections for billing tiers and integration entitlements, eliminating the cramped two-column editor.
+- Replaced the always-visible Add Tier form with an expandable **Add billing tier** panel.
+- Billing tiers now render as compact summary cards with price, cadence, grace period, stream limit, referral earning and redemption information at a glance.
+- Tier editing uses a responsive field grid with clearer labels, helper text, save actions and archive/delete context.
+- Integration entitlements now use collapsible cards; Plex library selection expands into a responsive grid while integrations without package-level settings stay compact.
+- Package settings retain the v0.13.1 Seerr quota policy layout and move destructive package deletion into a visually separate danger row.
+- No database migration and no changes to package, billing, Plex entitlement, referral-credit or Seerr quota behaviour.
+
 # 0.13.1a — Seerr User Pagination Hotfix
 
 - Fixes Seerr user discovery so Share Manager follows every `/user` page using `take`/`skip` instead of only inspecting Seerr's first page.

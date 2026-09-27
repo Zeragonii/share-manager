@@ -1,3 +1,7 @@
+## v0.13.2 — Package Management UI Refresh
+
+Package administration has been reorganised into full-width, clearly separated sections for package settings, billing tiers, and integration entitlements. Billing tiers now use compact summary cards with expandable create/edit panels, while integration entitlements use collapsible cards with a responsive Plex library grid. This release is UI-only and does not change package, billing, entitlement, referral, or Seerr policy semantics.
+
 ## v0.13.1a — Seerr User Pagination Hotfix
 
 Seerr user discovery now walks all paginated `/user` results instead of stopping at the first page. This fixes installations with more than Seerr's default page size and allows matching against the complete user list.
@@ -16,7 +20,7 @@ FAQ category fields now suggest categories already in use while remaining free-t
 
 # Share Manager
 
-> Current release: **0.12.0c — FAQ category suggestions**
+> Current release: **0.13.2 — Package Management UI Refresh**
 
 
 

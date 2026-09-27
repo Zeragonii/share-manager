@@ -1,12 +1,20 @@
 {% extends 'base.html' %}{% block content %}
-<header><h1>Packages</h1><p>Packages define access. Billing tiers define how customers pay for it.</p></header>
+<header class="packages-page-header">
+  <h1>Packages</h1>
+  <p>Packages define access. Billing tiers define how customers pay for it.</p>
+</header>
 
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
 
-<section>
-  <h2>Create package</h2>
-  <form method="post" class="grid-form">
+<section class="package-create-card">
+  <div class="package-section-heading">
+    <div>
+      <h2>Create package</h2>
+      <p class="muted">Create the service first, then add billing tiers and integration entitlements.</p>
+    </div>
+  </div>
+  <form method="post" class="package-create-form-v2">
     <label>Name<input name="name" required></label>
     <label>Description<input name="description"></label>
     <button>Create package</button>
@@ -14,18 +22,18 @@
 </section>
 
 {% for p in packages %}
-<section>
-  <div class="row between package-simple-heading">
-    <div>
+<section class="package-management-card">
+  <div class="package-card-header">
+    <div class="package-card-title">
       <h2>{{ p.name }}</h2>
-      <p>{{ p.description or '' }}</p>
+      <p>{{ p.description or 'No description' }}</p>
     </div>
     <button type="button" class="secondary small-action js-toggle" data-target="package-edit-{{ p.id }}">Edit package</button>
   </div>
 
-  <div id="package-edit-{{ p.id }}" class="simple-editor" hidden>
-    <form method="post" action="/packages/{{ p.id }}/edit" class="package-edit-form">
-      <div class="package-fields-grid">
+  <div id="package-edit-{{ p.id }}" class="package-settings-panel" hidden>
+    <form method="post" action="/packages/{{ p.id }}/edit" class="package-edit-form-v2">
+      <div class="package-fields-grid-v2">
         <label>Name<input name="name" value="{{ p.name }}" required></label>
         <label>Description<input name="description" value="{{ p.description or '' }}"></label>
       </div>
@@ -37,117 +45,149 @@
         </summary>
         <div class="seerr-policy-body">
           <label class="toggle-choice seerr-policy-toggle"><input type="checkbox" name="seerr_manage_quotas" {% if p.seerr_manage_quotas %}checked{% endif %}><span><strong>Manage Seerr quotas for this package</strong><small class="muted">When enabled, Share Manager reconciles this package's limits into Seerr.</small></span></label>
-
           <div class="seerr-policy-general">
-            <label>Policy priority<input name="seerr_policy_priority" type="number" min="0" value="{{ p.seerr_policy_priority or 0 }}"><span class="muted">Higher priority wins when a customer has multiple packages with Seerr policies.</span></label>
+            <label>Policy priority<input name="seerr_policy_priority" type="number" min="0" value="{{ p.seerr_policy_priority or 0 }}"><span class="muted">Higher priority wins when multiple assigned packages define a Seerr policy.</span></label>
           </div>
-
           <div class="seerr-policy-columns">
             <fieldset>
               <legend>Movies</legend>
               <div class="seerr-policy-fields">
                 <label>Movie limit<input name="seerr_movie_limit" type="number" min="0" value="{{ p.seerr_movie_limit or 0 }}"><span class="muted">0 = unlimited</span></label>
-                <label>Window (days)<input name="seerr_movie_days" type="number" min="1" value="{{ p.seerr_movie_days or 30 }}"><span class="muted">Rolling Seerr quota window.</span></label>
+                <label>Window (days)<input name="seerr_movie_days" type="number" min="1" value="{{ p.seerr_movie_days or 30 }}"><span class="muted">Rolling quota window.</span></label>
               </div>
             </fieldset>
             <fieldset>
               <legend>TV</legend>
               <div class="seerr-policy-fields">
-                <label>Season limit<input name="seerr_tv_limit" type="number" min="0" value="{{ p.seerr_tv_limit or 0 }}"><span class="muted">Seerr counts TV quota per season · 0 = unlimited.</span></label>
-                <label>Window (days)<input name="seerr_tv_days" type="number" min="1" value="{{ p.seerr_tv_days or 30 }}"><span class="muted">Rolling Seerr quota window.</span></label>
+                <label>Season limit<input name="seerr_tv_limit" type="number" min="0" value="{{ p.seerr_tv_limit or 0 }}"><span class="muted">0 = unlimited · counted per season.</span></label>
+                <label>Window (days)<input name="seerr_tv_days" type="number" min="1" value="{{ p.seerr_tv_days or 30 }}"><span class="muted">Rolling quota window.</span></label>
               </div>
             </fieldset>
           </div>
         </div>
       </details>
 
-      <div class="package-edit-actions"><button type="submit">Save package</button></div>
+      <div class="package-settings-actions"><button type="submit">Save package</button></div>
     </form>
-    <div class="simple-delete-row">
-      <span class="muted">Packages with historical subscriptions are archived rather than erased.</span>
+    <div class="package-danger-row">
+      <div><strong>Delete package</strong><span class="muted">Packages with historical subscriptions are archived rather than erased.</span></div>
       <form method="post" action="/packages/{{ p.id }}/delete" onsubmit="return confirm('Delete or archive {{ p.name|e }}?');">
         <button type="submit" class="danger small-action">Delete package</button>
       </form>
     </div>
   </div>
 
-  <div class="two-col">
-    <div>
-      <h3>Billing tiers</h3>
-      <div class="table-wrap"><table class="tier-table">
-        <thead><tr><th>Name</th><th>Price</th><th>Interval</th><th>Streams</th><th>Earn / payment</th><th>Redeem 1 month</th><th></th></tr></thead>
-        <tbody>
-        {% for t in p.billing_tiers if t.active %}
-          <tr>
-            <td>{{ t.name }}</td>
-            <td>£{{ '%.2f'|format(t.price) }}</td>
-            <td>{{ t.interval_count }} {{ t.interval_unit }} <span class="muted">· {{ t.grace_period_days }}d grace</span></td>
-            <td>{{ "Unlimited" if t.stream_limit == 0 else t.stream_limit }}</td>
-            <td>{{ t.referral_credits }} credit{{ "" if t.referral_credits == 1 else "s" }}</td>
-            <td>{{ t.referral_redeem_cost if t.referral_redeem_cost else "Disabled" }}</td>
-            <td class="tier-actions-cell"><button type="button" class="secondary small-action js-toggle" data-target="tier-edit-{{ t.id }}">Edit</button></td>
-          </tr>
-          <tr id="tier-edit-{{ t.id }}" class="tier-edit-row" hidden>
-            <td colspan="7">
-              <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/edit" class="grid-form compact tier-inline-form">
-                <label>Name<input name="name" value="{{ t.name }}" required></label>
-                <label>Price<input name="price" type="number" min="0" step="0.01" value="{{ '%.2f'|format(t.price) }}" required></label>
-                <label>Interval<select name="interval_unit"><option value="month" {% if t.interval_unit == 'month' %}selected{% endif %}>month</option><option value="year" {% if t.interval_unit == 'year' %}selected{% endif %}>year</option><option value="week" {% if t.interval_unit == 'week' %}selected{% endif %}>week</option></select></label>
-                <label>Count<input name="interval_count" type="number" min="1" value="{{ t.interval_count }}"></label>
-                <label>Grace days<input name="grace_period_days" type="number" min="0" value="{{ t.grace_period_days }}"></label>
-                <label>Concurrent streams<input name="stream_limit" type="number" min="0" value="{{ t.stream_limit }}"><span class="muted">0 = unlimited</span></label>
-                <label>Referral reward<input name="referral_credits" type="number" min="0" value="{{ t.referral_credits }}"><span class="muted">Credits earned by the referrer per payment</span></label>
-                <label>Redeem 1 month<input name="referral_redeem_cost" type="number" min="0" value="{{ t.referral_redeem_cost }}"><span class="muted">Credits this tier spends to extend paid-through by one month · 0 = disabled</span></label>
-                <button type="submit">Save</button>
-              </form>
-              <div class="tier-edit-footer">
-                {% if t.current_subscription_count %}
-                  <span class="muted">Used by {{ t.current_subscription_count }} current subscription{% if t.current_subscription_count != 1 %}s{% endif %}.</span>
-                {% elif t.subscriptions %}
-                  <span class="muted">Not currently assigned. Delete will archive this tier because historical subscriptions reference it.</span>
-                {% else %}
-                  <span class="muted">Not currently assigned.</span>
-                {% endif %}
-                <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/delete" onsubmit="return confirm('Delete or archive billing tier {{ t.name|e }}?');">
-                  <button type="submit" class="danger small-action" {% if t.current_subscription_count %}disabled title="This tier is currently assigned"{% endif %}>Delete</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-        {% else %}
-          <tr><td colspan="7" class="muted">No tiers yet.</td></tr>
-        {% endfor %}
-        </tbody>
-      </table></div>
-
-      <form method="post" action="/packages/{{ p.id }}/tiers" class="grid-form compact tier-create-form">
-        <label>Name<input name="name" placeholder="Monthly" required></label>
-        <label>Price<input name="price" type="number" min="0" step="0.01" required></label>
-        <label>Interval<select name="interval_unit"><option value="month">month</option><option value="year">year</option><option value="week">week</option></select></label>
-        <label>Count<input name="interval_count" type="number" min="1" value="1"></label>
-        <label>Grace days<input name="grace_period_days" type="number" min="0" value="3"></label>
-        <label>Concurrent streams<input name="stream_limit" type="number" min="0" value="1"><span class="muted">0 = unlimited</span></label>
-        <label>Referral reward<input name="referral_credits" type="number" min="0" value="0"><span class="muted">Credits earned by the referrer per payment</span></label>
-        <label>Redeem 1 month<input name="referral_redeem_cost" type="number" min="0" value="0"><span class="muted">Credits this tier spends to extend paid-through by one month · 0 = disabled</span></label>
-        <button>Add tier</button>
-      </form>
+  <div class="package-content-section">
+    <div class="package-section-heading">
+      <div>
+        <h3>Billing tiers</h3>
+        <p class="muted">Pricing, billing cadence, stream limits and account-credit rules.</p>
+      </div>
+      <button type="button" class="secondary small-action js-toggle" data-target="tier-create-{{ p.id }}">Add billing tier</button>
     </div>
 
-    <div>
-      <h3>Integration entitlements</h3>
-      {% for i in integrations %}
-      <div class="entitlement-box">
-        <strong>{{ i.name }} <span class="muted">({{ i.kind }})</span></strong>
-        {% if i.kind == 'plex' %}
-        <form method="post" action="/packages/{{ p.id }}/entitlements" class="library-form" data-integration="{{ i.id }}" data-selected='{{ selected.get((p.id|string) ~ ":" ~ (i.id|string), [])|tojson }}'>
-          <input type="hidden" name="integration_id" value="{{ i.id }}">
-          <div class="library-list">Loading libraries…</div>
-          <button>Save Plex libraries</button>
+    <div class="tier-overview-list">
+      {% for t in p.billing_tiers if t.active %}
+      <article class="tier-overview-card">
+        <div class="tier-overview-main">
+          <div class="tier-name-price">
+            <strong>{{ t.name }}</strong>
+            <span class="tier-price">£{{ '%.2f'|format(t.price) }}</span>
+          </div>
+          <div class="tier-overview-meta">
+            <span>{{ t.interval_count }} {{ t.interval_unit }}{% if t.interval_count != 1 %}s{% endif %}</span>
+            <span>{{ t.grace_period_days }}d grace</span>
+            <span>{{ 'Unlimited streams' if t.stream_limit == 0 else (t.stream_limit|string ~ ' stream' ~ ('' if t.stream_limit == 1 else 's')) }}</span>
+            <span>{{ t.referral_credits }} credit{{ '' if t.referral_credits == 1 else 's' }} earned</span>
+            <span>{{ (t.referral_redeem_cost|string ~ ' credits / month') if t.referral_redeem_cost else 'Redemption disabled' }}</span>
+          </div>
+        </div>
+        <div class="tier-overview-actions">
+          {% if t.current_subscription_count %}<span class="usage-pill">{{ t.current_subscription_count }} active</span>{% endif %}
+          <button type="button" class="secondary small-action js-toggle" data-target="tier-edit-{{ t.id }}">Edit</button>
+        </div>
+      </article>
+
+      <div id="tier-edit-{{ t.id }}" class="tier-editor-panel" hidden>
+        <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/edit" class="tier-form-v2">
+          <div class="tier-form-grid">
+            <label>Name<input name="name" value="{{ t.name }}" required></label>
+            <label>Price (£)<input name="price" type="number" min="0" step="0.01" value="{{ '%.2f'|format(t.price) }}" required></label>
+            <label>Interval<select name="interval_unit"><option value="month" {% if t.interval_unit == 'month' %}selected{% endif %}>Month</option><option value="year" {% if t.interval_unit == 'year' %}selected{% endif %}>Year</option><option value="week" {% if t.interval_unit == 'week' %}selected{% endif %}>Week</option></select></label>
+            <label>Interval count<input name="interval_count" type="number" min="1" value="{{ t.interval_count }}"></label>
+            <label>Grace period (days)<input name="grace_period_days" type="number" min="0" value="{{ t.grace_period_days }}"></label>
+            <label>Concurrent streams<input name="stream_limit" type="number" min="0" value="{{ t.stream_limit }}"><span class="muted">0 = unlimited</span></label>
+            <label>Referral reward<input name="referral_credits" type="number" min="0" value="{{ t.referral_credits }}"><span class="muted">Credits earned by the referrer per payment.</span></label>
+            <label>Redeem one month<input name="referral_redeem_cost" type="number" min="0" value="{{ t.referral_redeem_cost }}"><span class="muted">0 = redemption disabled.</span></label>
+          </div>
+          <div class="tier-editor-actions"><button type="submit">Save tier</button></div>
         </form>
-        {% endif %}
+        <div class="tier-editor-footer">
+          {% if t.current_subscription_count %}
+            <span class="muted">Used by {{ t.current_subscription_count }} current subscription{% if t.current_subscription_count != 1 %}s{% endif %}. Delete is disabled while assigned.</span>
+          {% elif t.subscriptions %}
+            <span class="muted">Not currently assigned. Delete will archive this tier because historical subscriptions reference it.</span>
+          {% else %}
+            <span class="muted">Not currently assigned.</span>
+          {% endif %}
+          <form method="post" action="/packages/{{ p.id }}/tiers/{{ t.id }}/delete" onsubmit="return confirm('Delete or archive billing tier {{ t.name|e }}?');">
+            <button type="submit" class="danger small-action" {% if t.current_subscription_count %}disabled title="This tier is currently assigned"{% endif %}>Delete tier</button>
+          </form>
+        </div>
       </div>
       {% else %}
-      <p class="muted">Add an integration first.</p>
+      <div class="package-empty-state">No billing tiers yet.</div>
+      {% endfor %}
+    </div>
+
+    <div id="tier-create-{{ p.id }}" class="tier-create-panel" hidden>
+      <div class="tier-create-heading"><div><strong>Add billing tier</strong><span class="muted">Define how customers on this tier are billed and what limits apply.</span></div></div>
+      <form method="post" action="/packages/{{ p.id }}/tiers" class="tier-form-v2">
+        <div class="tier-form-grid">
+          <label>Name<input name="name" placeholder="Monthly" required></label>
+          <label>Price (£)<input name="price" type="number" min="0" step="0.01" required></label>
+          <label>Interval<select name="interval_unit"><option value="month">Month</option><option value="year">Year</option><option value="week">Week</option></select></label>
+          <label>Interval count<input name="interval_count" type="number" min="1" value="1"></label>
+          <label>Grace period (days)<input name="grace_period_days" type="number" min="0" value="3"></label>
+          <label>Concurrent streams<input name="stream_limit" type="number" min="0" value="1"><span class="muted">0 = unlimited</span></label>
+          <label>Referral reward<input name="referral_credits" type="number" min="0" value="0"><span class="muted">Credits earned by the referrer per payment.</span></label>
+          <label>Redeem one month<input name="referral_redeem_cost" type="number" min="0" value="0"><span class="muted">0 = redemption disabled.</span></label>
+        </div>
+        <div class="tier-editor-actions"><button>Add tier</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="package-content-section package-integrations-section">
+    <div class="package-section-heading">
+      <div>
+        <h3>Integration entitlements</h3>
+        <p class="muted">Control which external-service resources this package grants.</p>
+      </div>
+    </div>
+
+    <div class="entitlement-stack">
+      {% for i in integrations %}
+      <details class="entitlement-details" {% if i.kind == 'plex' %}open{% endif %}>
+        <summary>
+          <span class="entitlement-summary-title"><strong>{{ i.name }}</strong><span class="integration-type">{{ i.kind }}</span></span>
+          <span class="entitlement-chevron">⌄</span>
+        </summary>
+        <div class="entitlement-details-body">
+          {% if i.kind == 'plex' %}
+          <p class="muted entitlement-description">Select the Plex libraries customers on this package can access.</p>
+          <form method="post" action="/packages/{{ p.id }}/entitlements" class="library-form" data-integration="{{ i.id }}" data-selected='{{ selected.get((p.id|string) ~ ":" ~ (i.id|string), [])|tojson }}'>
+            <input type="hidden" name="integration_id" value="{{ i.id }}">
+            <div class="library-list">Loading libraries…</div>
+            <div class="entitlement-save-row"><button>Save Plex libraries</button></div>
+          </form>
+          {% else %}
+          <p class="muted entitlement-description">No package-level entitlement settings are required for this integration.</p>
+          {% endif %}
+        </div>
+      </details>
+      {% else %}
+      <div class="package-empty-state">Add an integration first.</div>
       {% endfor %}
     </div>
   </div>
@@ -160,7 +200,11 @@ document.querySelectorAll('.js-toggle').forEach(button => {
     const target = document.getElementById(button.dataset.target);
     if (!target) return;
     target.hidden = !target.hidden;
-    button.textContent = target.hidden ? (button.dataset.target.startsWith('tier-') ? 'Edit' : 'Edit package') : 'Close';
+    const isTierCreate = button.dataset.target.startsWith('tier-create-');
+    const isTierEdit = button.dataset.target.startsWith('tier-edit-');
+    button.textContent = target.hidden
+      ? (isTierCreate ? 'Add billing tier' : (isTierEdit ? 'Edit' : 'Edit package'))
+      : 'Close';
   });
 });
 
@@ -176,7 +220,7 @@ document.querySelectorAll('.library-form').forEach(async form => {
     libs.forEach(lib => {
       const label = document.createElement('label');
       label.className = 'check';
-      label.innerHTML = `<input type="checkbox" name="library_ids" value="${lib.id}" ${selected.includes(String(lib.id)) ? 'checked' : ''}> ${lib.name} <span>${lib.type}</span>`;
+      label.innerHTML = `<input type="checkbox" name="library_ids" value="${lib.id}" ${selected.includes(String(lib.id)) ? 'checked' : ''}> <span class="check-name">${lib.name}</span> <span class="check-type">${lib.type}</span>`;
       box.appendChild(label);
     });
   } catch (e) {
