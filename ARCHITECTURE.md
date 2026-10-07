@@ -429,3 +429,7 @@ Seerr identity resolution treats the Share Manager customer's existing Plex user
 ### v0.13.2 Package management UI refresh
 
 The Packages page is presentation-only refreshed. Package settings, billing-tier CRUD endpoints, Plex entitlement persistence, and Seerr quota policy semantics are unchanged. Billing tiers and integration entitlements are displayed as responsive stacked sections with expandable editors to reduce visual density without altering persisted data or reconciliation behaviour.
+
+### v0.13.2a Seerr zero-request quota semantics
+
+Package-level Seerr limits use three states: `-1` leaves that media type unmanaged, `0` blocks requests, and positive values configure a rolling Seerr quota. Since Seerr's own quota engine treats limit `0` as unlimited, Share Manager enforces a hard zero by reconciling the matched user's movie/TV request permission bits. The original request-related permission bits are cached per customer before first write and restored when no Package policy remains. Existing pre-0.13.2a zero values are migrated to `-1` once to preserve prior unlimited behaviour.

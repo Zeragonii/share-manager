@@ -52,14 +52,14 @@
             <fieldset>
               <legend>Movies</legend>
               <div class="seerr-policy-fields">
-                <label>Movie limit<input name="seerr_movie_limit" type="number" min="0" value="{{ p.seerr_movie_limit or 0 }}"><span class="muted">0 = unlimited</span></label>
+                <label>Movie limit<input name="seerr_movie_limit" type="number" min="-1" value="{{ p.seerr_movie_limit if p.seerr_movie_limit is not none else -1 }}"><span class="muted">-1 = unmanaged · 0 = blocked · 1+ = rolling quota</span></label>
                 <label>Window (days)<input name="seerr_movie_days" type="number" min="1" value="{{ p.seerr_movie_days or 30 }}"><span class="muted">Rolling quota window.</span></label>
               </div>
             </fieldset>
             <fieldset>
               <legend>TV</legend>
               <div class="seerr-policy-fields">
-                <label>Season limit<input name="seerr_tv_limit" type="number" min="0" value="{{ p.seerr_tv_limit or 0 }}"><span class="muted">0 = unlimited · counted per season.</span></label>
+                <label>Season limit<input name="seerr_tv_limit" type="number" min="-1" value="{{ p.seerr_tv_limit if p.seerr_tv_limit is not none else -1 }}"><span class="muted">-1 = unmanaged · 0 = blocked · 1+ = rolling quota, counted per season</span></label>
                 <label>Window (days)<input name="seerr_tv_days" type="number" min="1" value="{{ p.seerr_tv_days or 30 }}"><span class="muted">Rolling quota window.</span></label>
               </div>
             </fieldset>

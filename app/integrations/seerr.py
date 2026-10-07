@@ -106,6 +106,28 @@ class SeerrIntegration:
         payload = self._request("POST", f"/user/{int(user_id)}/settings/main", json=settings)
         return payload if isinstance(payload, dict) else {}
 
+    def user_permissions(self, user_id: int) -> int:
+        payload = self._request("GET", f"/user/{int(user_id)}/settings/permissions")
+        if not isinstance(payload, dict):
+            return 0
+        try:
+            return int(payload.get("permissions") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def update_user_permissions(self, user_id: int, permissions: int) -> int:
+        payload = self._request(
+            "POST",
+            f"/user/{int(user_id)}/settings/permissions",
+            json={"permissions": int(permissions)},
+        )
+        if not isinstance(payload, dict):
+            return int(permissions)
+        try:
+            return int(payload.get("permissions", permissions))
+        except (TypeError, ValueError):
+            return int(permissions)
+
     def quota(self, user_id: int) -> dict[str, Any]:
         payload = self._request("GET", f"/user/{int(user_id)}/quota")
         return payload if isinstance(payload, dict) else {}

@@ -30,6 +30,7 @@ class Customer(Base):
     seerr_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     seerr_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     seerr_match_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    seerr_permissions_baseline: Mapped[int | None] = mapped_column(Integer, nullable=True)
     seerr_last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     seerr_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     seerr_request_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -76,9 +77,9 @@ class Package(Base):
     faq_links: Mapped[list["FaqEntryPackage"]] = relationship(back_populates="package", cascade="all, delete-orphan")
     seerr_manage_quotas: Mapped[bool] = mapped_column(Boolean, default=False)
     seerr_policy_priority: Mapped[int] = mapped_column(Integer, default=0)
-    seerr_movie_limit: Mapped[int] = mapped_column(Integer, default=0)
+    seerr_movie_limit: Mapped[int] = mapped_column(Integer, default=-1)
     seerr_movie_days: Mapped[int] = mapped_column(Integer, default=30)
-    seerr_tv_limit: Mapped[int] = mapped_column(Integer, default=0)
+    seerr_tv_limit: Mapped[int] = mapped_column(Integer, default=-1)
     seerr_tv_days: Mapped[int] = mapped_column(Integer, default=30)
 
 
@@ -309,6 +310,7 @@ class RequestsPlatformSettings(Base):
     last_matched_count: Mapped[int] = mapped_column(Integer, default=0)
     last_unmatched_count: Mapped[int] = mapped_column(Integer, default=0)
     last_drift_count: Mapped[int] = mapped_column(Integer, default=0)
+    seerr_quota_semantics_v2: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

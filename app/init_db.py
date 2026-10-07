@@ -33,6 +33,7 @@ add_column_if_missing("customers", "referral_started_at", "TIMESTAMP NULL")
 add_column_if_missing("customers", "seerr_user_id", "INTEGER NULL")
 add_column_if_missing("customers", "seerr_username", "VARCHAR(255) NULL")
 add_column_if_missing("customers", "seerr_match_method", "VARCHAR(32) NULL")
+add_column_if_missing("customers", "seerr_permissions_baseline", "INTEGER NULL")
 add_column_if_missing("customers", "seerr_last_sync_at", "TIMESTAMP NULL")
 add_column_if_missing("customers", "seerr_last_error", "TEXT NULL")
 add_column_if_missing("customers", "seerr_request_count", "INTEGER NOT NULL DEFAULT 0")
@@ -44,9 +45,9 @@ add_column_if_missing("customers", "seerr_tv_used", "INTEGER NULL")
 add_column_if_missing("customers", "seerr_tv_limit", "INTEGER NULL")
 add_column_if_missing("packages", "seerr_manage_quotas", "BOOLEAN NOT NULL DEFAULT FALSE")
 add_column_if_missing("packages", "seerr_policy_priority", "INTEGER NOT NULL DEFAULT 0")
-add_column_if_missing("packages", "seerr_movie_limit", "INTEGER NOT NULL DEFAULT 0")
+add_column_if_missing("packages", "seerr_movie_limit", "INTEGER NOT NULL DEFAULT -1")
 add_column_if_missing("packages", "seerr_movie_days", "INTEGER NOT NULL DEFAULT 30")
-add_column_if_missing("packages", "seerr_tv_limit", "INTEGER NOT NULL DEFAULT 0")
+add_column_if_missing("packages", "seerr_tv_limit", "INTEGER NOT NULL DEFAULT -1")
 add_column_if_missing("packages", "seerr_tv_days", "INTEGER NOT NULL DEFAULT 30")
 add_column_if_missing("requests_platform_settings", "api_key", "TEXT NULL")
 add_column_if_missing("requests_platform_settings", "manage_quotas", "BOOLEAN NOT NULL DEFAULT FALSE")
@@ -56,6 +57,7 @@ add_column_if_missing("requests_platform_settings", "last_sync_error", "TEXT NUL
 add_column_if_missing("requests_platform_settings", "last_matched_count", "INTEGER NOT NULL DEFAULT 0")
 add_column_if_missing("requests_platform_settings", "last_unmatched_count", "INTEGER NOT NULL DEFAULT 0")
 add_column_if_missing("requests_platform_settings", "last_drift_count", "INTEGER NOT NULL DEFAULT 0")
+add_column_if_missing("requests_platform_settings", "seerr_quota_semantics_v2", "BOOLEAN NOT NULL DEFAULT FALSE")
 with engine.begin() as conn:
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_referral_code ON customers (referral_code) WHERE referral_code IS NOT NULL"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_customers_seerr_user_id ON customers (seerr_user_id) WHERE seerr_user_id IS NOT NULL"))
@@ -157,6 +159,16 @@ try:
             base_url=None,
             button_label="Request Content",
         ))
+        db.flush()
+
+    # v0.13.2a: quota semantics changed from 0=unlimited to
+    # -1=unmanaged and 0=blocked. Preserve existing installations by
+    # translating legacy zero limits to -1 exactly once.
+    requests_cfg = db.get(RequestsPlatformSettings, 1)
+    if requests_cfg is not None and not requests_cfg.seerr_quota_semantics_v2:
+        db.execute(text("UPDATE packages SET seerr_movie_limit = -1 WHERE seerr_movie_limit = 0"))
+        db.execute(text("UPDATE packages SET seerr_tv_limit = -1 WHERE seerr_tv_limit = 0"))
+        requests_cfg.seerr_quota_semantics_v2 = True
 
 
     if db.get(ReferralSettings, 1) is None:

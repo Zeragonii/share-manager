@@ -3,7 +3,20 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
 from app.models import BillingTier, Customer, Package, RequestsPlatformSettings, Subscription
-from app.services.seerr import effective_policy, match_customer, policy_values, quota_drift, cache_usage
+from app.services.seerr import (
+    SEERR_REQUEST,
+    SEERR_REQUEST_4K,
+    SEERR_REQUEST_4K_MOVIE,
+    SEERR_REQUEST_4K_TV,
+    SEERR_REQUEST_MOVIE,
+    SEERR_REQUEST_TV,
+    cache_usage,
+    effective_policy,
+    match_customer,
+    policy_permissions,
+    policy_values,
+    quota_drift,
+)
 
 
 class FakeSeerr:
@@ -136,3 +149,45 @@ def test_list_users_stops_on_short_page_without_pageinfo():
     }
     users = client.list_users()
     assert len(users) == 10
+
+
+def test_policy_values_minus_one_is_unmanaged_and_zero_is_explicit():
+    p = Package(
+        name="Blocked movies",
+        seerr_manage_quotas=True,
+        seerr_movie_limit=0,
+        seerr_movie_days=30,
+        seerr_tv_limit=-1,
+        seerr_tv_days=30,
+    )
+    assert policy_values(p) == {"movieQuotaLimit": 0, "movieQuotaDays": 30}
+    assert quota_drift(
+        {"movieQuotaLimit": 0, "movieQuotaDays": 30, "tvQuotaLimit": 99, "tvQuotaDays": 7},
+        p,
+    ) == {}
+
+
+def test_zero_movie_limit_blocks_movie_permission_but_preserves_tv_from_generic():
+    baseline = SEERR_REQUEST | SEERR_REQUEST_4K
+    p = Package(name="TV only", seerr_manage_quotas=True, seerr_movie_limit=0, seerr_tv_limit=-1)
+    desired = policy_permissions(baseline, baseline, p)
+    assert not (desired & SEERR_REQUEST)
+    assert not (desired & SEERR_REQUEST_MOVIE)
+    assert desired & SEERR_REQUEST_TV
+    assert not (desired & SEERR_REQUEST_4K)
+    assert not (desired & SEERR_REQUEST_4K_MOVIE)
+    assert desired & SEERR_REQUEST_4K_TV
+
+
+def test_zero_both_limits_removes_all_request_permissions_only():
+    unrelated = 1 << 20
+    baseline = unrelated | SEERR_REQUEST | SEERR_REQUEST_MOVIE | SEERR_REQUEST_TV | SEERR_REQUEST_4K | SEERR_REQUEST_4K_MOVIE | SEERR_REQUEST_4K_TV
+    p = Package(name="No requests", seerr_manage_quotas=True, seerr_movie_limit=0, seerr_tv_limit=0)
+    desired = policy_permissions(baseline, baseline, p)
+    assert desired == unrelated
+
+
+def test_minus_one_limits_do_not_change_request_permissions():
+    baseline = SEERR_REQUEST | SEERR_REQUEST_4K | (1 << 20)
+    p = Package(name="Unmanaged", seerr_manage_quotas=True, seerr_movie_limit=-1, seerr_tv_limit=-1)
+    assert policy_permissions(baseline, baseline, p) == baseline

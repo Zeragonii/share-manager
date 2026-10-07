@@ -30,9 +30,9 @@
     <div class="seerr-quota-grid">
       {% for label,q in [('Movies', seerr_usage.movie_quota), ('TV seasons', seerr_usage.tv_quota)] %}
       <div class="seerr-quota-card">
-        <div class="row between"><strong>{{ label }}</strong><span>{% if q.limit %}{{ q.used if q.used is not none else '—' }} / {{ q.limit }}{% else %}Unlimited{% endif %}</span></div>
-        {% if q.limit %}<div class="seerr-quota-track"><div style="width:{{ q.pct }}%"></div></div>{% endif %}
-        <small class="muted">{% if q.limit %}{{ q.remaining if q.remaining is not none else '—' }} remaining{% if q.days %} in {{ q.days }} days{% endif %}{% else %}No request limit{% endif %}</small>
+        <div class="row between"><strong>{{ label }}</strong><span>{% if q.blocked %}Blocked{% elif q.limit %}{{ q.used if q.used is not none else '—' }} / {{ q.limit }}{% elif q.unmanaged %}Unmanaged{% else %}Unlimited{% endif %}</span></div>
+        {% if q.limit and not q.blocked %}<div class="seerr-quota-track"><div style="width:{{ q.pct }}%"></div></div>{% endif %}
+        <small class="muted">{% if q.blocked %}Requests are disabled by your package{% elif q.limit %}{{ q.remaining if q.remaining is not none else '—' }} remaining{% if q.days %} in {{ q.days }} days{% endif %}{% elif q.unmanaged %}Share Manager leaves this quota unchanged in Seerr{% else %}No request limit{% endif %}</small>
       </div>
       {% endfor %}
     </div>

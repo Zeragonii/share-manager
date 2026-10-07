@@ -1,3 +1,7 @@
+## v0.13.2a — Seerr Zero-Request Quotas
+
+Seerr package quota semantics now use `-1` for an unmanaged quota, `0` for a hard request block, and positive values for rolling quotas. Existing `0 = unlimited` package values are migrated to `-1` once on upgrade so current customers are not accidentally blocked. Hard zero limits are enforced through Seerr's media-specific request permissions because Seerr itself interprets a numeric quota of `0` as unlimited.
+
 ## v0.13.2 — Package Management UI Refresh
 
 Package administration has been reorganised into full-width, clearly separated sections for package settings, billing tiers, and integration entitlements. Billing tiers now use compact summary cards with expandable create/edit panels, while integration entitlements use collapsible cards with a responsive Plex library grid. This release is UI-only and does not change package, billing, entitlement, referral, or Seerr policy semantics.
@@ -20,7 +24,7 @@ FAQ category fields now suggest categories already in use while remaining free-t
 
 # Share Manager
 
-> Current release: **0.13.2 — Package Management UI Refresh**
+> Current release: **0.13.2a — Seerr Zero-Request Quotas**
 
 
 

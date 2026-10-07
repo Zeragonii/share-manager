@@ -2520,8 +2520,8 @@ def create_package(request: Request, name: str = Form(...), description: str = F
 @app.post("/packages/{package_id}/edit")
 def edit_package(request: Request, package_id: int, name: str = Form(...), description: str = Form(""),
     seerr_manage_quotas: str | None = Form(None), seerr_policy_priority: int = Form(0),
-    seerr_movie_limit: int = Form(0), seerr_movie_days: int = Form(30),
-    seerr_tv_limit: int = Form(0), seerr_tv_days: int = Form(30),
+    seerr_movie_limit: int = Form(-1), seerr_movie_days: int = Form(30),
+    seerr_tv_limit: int = Form(-1), seerr_tv_days: int = Form(30),
     db: Session = Depends(get_db)):
     gate = auth(request)
     if gate:
@@ -2536,8 +2536,8 @@ def edit_package(request: Request, package_id: int, name: str = Form(...), descr
     if duplicate:
         return RedirectResponse("/packages?error=A+package+with+that+name+already+exists", status_code=303)
     old_name = p.name
-    if min(seerr_policy_priority, seerr_movie_limit, seerr_movie_days, seerr_tv_limit, seerr_tv_days) < 0 or seerr_movie_days < 1 or seerr_tv_days < 1:
-        return RedirectResponse("/packages?error=Seerr+quota+values+must+be+non-negative+and+day+windows+at+least+1", status_code=303)
+    if seerr_policy_priority < 0 or seerr_movie_limit < -1 or seerr_tv_limit < -1 or seerr_movie_days < 1 or seerr_tv_days < 1:
+        return RedirectResponse("/packages?error=Seerr+limits+must+be+-1+or+higher%3B+priority+must+be+non-negative%3B+day+windows+must+be+at+least+1", status_code=303)
     p.name = clean_name
     p.description = description.strip() or None
     p.seerr_manage_quotas = seerr_manage_quotas is not None
@@ -2873,6 +2873,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
     notification_event_count = db.query(NotificationEvent).count()
     scheduled_broadcasts = db.query(ScheduledCustomerBroadcast).filter(ScheduledCustomerBroadcast.status == "scheduled").order_by(ScheduledCustomerBroadcast.scheduled_for.asc()).limit(10).all()
     seerr_customers = db.query(Customer).filter(Customer.archived.is_(False), Customer.plex_username.is_not(None)).order_by(Customer.name.asc()).all()
+    seerr_policies = {customer.id: seerr_effective_policy(db, customer.id) for customer in seerr_customers}
     return render(
         request,
         "integrations.html",
@@ -2887,6 +2888,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         scheduled_broadcasts=scheduled_broadcasts,
         requests_platform=db.get(RequestsPlatformSettings, 1),
         seerr_customers=seerr_customers,
+        seerr_policies=seerr_policies,
         tautulli_settings=get_tautulli_settings(db),
         tautulli_backfill=watch_history_backfill_status(db),
         error=error,

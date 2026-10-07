@@ -15,6 +15,26 @@ from ..models import (
 )
 
 
+# Seerr permission bits used only for enforcing a hard zero-request policy.
+# Seerr treats quota limit 0 as unlimited, so Share Manager uses request
+# permissions to represent its own 0 = blocked semantics while preserving the
+# user's original request permissions as a baseline for later restoration.
+SEERR_REQUEST = 32
+SEERR_REQUEST_4K = 1024
+SEERR_REQUEST_4K_MOVIE = 2048
+SEERR_REQUEST_4K_TV = 4096
+SEERR_REQUEST_MOVIE = 262144
+SEERR_REQUEST_TV = 524288
+SEERR_REQUEST_PERMISSION_MASK = (
+    SEERR_REQUEST
+    | SEERR_REQUEST_4K
+    | SEERR_REQUEST_4K_MOVIE
+    | SEERR_REQUEST_4K_TV
+    | SEERR_REQUEST_MOVIE
+    | SEERR_REQUEST_TV
+)
+
+
 def seerr_client(db: Session) -> SeerrIntegration | None:
     cfg = db.get(RequestsPlatformSettings, 1)
     if not cfg or not cfg.enabled or not cfg.base_url or not cfg.api_key:
@@ -98,13 +118,31 @@ def cache_match(customer: Customer, user: dict[str, Any] | None, method: str | N
     customer.seerr_last_sync_at = datetime.utcnow()
 
 
+def _configured_limit(value: int | None) -> int:
+    # Package defaults are -1 from v0.13.2a onward. Keep this helper explicit
+    # rather than using ``or`` so zero retains its new blocked meaning.
+    return int(value) if value is not None else -1
+
+
 def policy_values(package: Package) -> dict[str, int]:
-    return {
-        "movieQuotaLimit": max(0, int(package.seerr_movie_limit or 0)),
-        "movieQuotaDays": max(1, int(package.seerr_movie_days or 30)),
-        "tvQuotaLimit": max(0, int(package.seerr_tv_limit or 0)),
-        "tvQuotaDays": max(1, int(package.seerr_tv_days or 30)),
-    }
+    """Return only quota fields Share Manager should write to Seerr.
+
+    Package semantics:
+      -1 = unmanaged (leave Seerr's quota override untouched)
+       0 = blocked (permission enforcement handles the hard block; Seerr's
+           numeric zero is still written for a predictable override value)
+      >0 = rolling quota enforced by Seerr
+    """
+    values: dict[str, int] = {}
+    movie_limit = _configured_limit(package.seerr_movie_limit)
+    tv_limit = _configured_limit(package.seerr_tv_limit)
+    if movie_limit >= 0:
+        values["movieQuotaLimit"] = movie_limit
+        values["movieQuotaDays"] = max(1, int(package.seerr_movie_days or 30))
+    if tv_limit >= 0:
+        values["tvQuotaLimit"] = tv_limit
+        values["tvQuotaDays"] = max(1, int(package.seerr_tv_days or 30))
+    return values
 
 
 def quota_drift(settings: dict[str, Any], package: Package) -> dict[str, tuple[Any, Any]]:
@@ -120,6 +158,52 @@ def quota_drift(settings: dict[str, Any], package: Package) -> dict[str, tuple[A
         if actual_cmp != expected:
             drift[key] = (actual, expected)
     return drift
+
+
+def policy_permissions(current: int, baseline: int, package: Package) -> int:
+    """Apply only Share Manager's hard-block request permission changes.
+
+    Start from the user's original request permission bits, but preserve every
+    unrelated permission from Seerr's current value. Generic request grants are
+    split into media-specific grants when only one media type is blocked so the
+    other type keeps the same effective access.
+    """
+    current = int(current or 0)
+    baseline = int(baseline or 0)
+    desired = (current & ~SEERR_REQUEST_PERMISSION_MASK) | (baseline & SEERR_REQUEST_PERMISSION_MASK)
+    movie_limit = _configured_limit(package.seerr_movie_limit)
+    tv_limit = _configured_limit(package.seerr_tv_limit)
+
+    if movie_limit == 0 or tv_limit == 0:
+        if desired & SEERR_REQUEST:
+            desired &= ~SEERR_REQUEST
+            if movie_limit != 0:
+                desired |= SEERR_REQUEST_MOVIE
+            if tv_limit != 0:
+                desired |= SEERR_REQUEST_TV
+        if desired & SEERR_REQUEST_4K:
+            desired &= ~SEERR_REQUEST_4K
+            if movie_limit != 0:
+                desired |= SEERR_REQUEST_4K_MOVIE
+            if tv_limit != 0:
+                desired |= SEERR_REQUEST_4K_TV
+
+    if movie_limit == 0:
+        desired &= ~SEERR_REQUEST_MOVIE
+        desired &= ~SEERR_REQUEST_4K_MOVIE
+    if tv_limit == 0:
+        desired &= ~SEERR_REQUEST_TV
+        desired &= ~SEERR_REQUEST_4K_TV
+    return desired
+
+
+def policy_has_hard_block(package: Package) -> bool:
+    return _configured_limit(package.seerr_movie_limit) == 0 or _configured_limit(package.seerr_tv_limit) == 0
+
+
+def permission_drift(current: int, baseline: int, package: Package) -> tuple[int, int] | None:
+    wanted = policy_permissions(current, baseline, package)
+    return (int(current or 0), wanted) if int(current or 0) != wanted else None
 
 
 def _int_or_none(value):
@@ -171,25 +255,77 @@ def reconcile_customer(db: Session, customer: Customer, client: SeerrIntegration
             cache_match(customer, None, None, f"No exact Seerr match for {identity!r} using plexUsername, username, or email{suffix}")
             return {"status": "unmatched", "error": customer.seerr_last_error}
         cache_match(customer, user, method)
+        user_id = int(user["id"])
         package = effective_policy(db, customer.id)
-        current = client.user_settings(int(user["id"]))
-        drift = quota_drift(current, package) if package else {}
+        current = client.user_settings(user_id)
+        current_permissions = client.user_permissions(user_id)
+
+        # Capture the original request-permission state immediately before Share
+        # Manager first enforces a hard block. This lets later policy changes
+        # restore the user's pre-management request access exactly.
+        baseline = customer.seerr_permissions_baseline
+        hard_block = bool(package and policy_has_hard_block(package))
+        if hard_block and write and baseline is None:
+            baseline = int(current_permissions)
+            customer.seerr_permissions_baseline = baseline
+
+        quota_changes = quota_drift(current, package) if package else {}
+        permission_change = (
+            permission_drift(current_permissions, baseline, package)
+            if package and baseline is not None
+            else None
+        )
+        drift = dict(quota_changes)
+        if permission_change:
+            drift["requestPermissions"] = permission_change
+
         changed = False
-        if write and package and drift:
-            client.update_user_settings(int(user["id"]), policy_values(package))
-            current = client.user_settings(int(user["id"]))
-            drift = quota_drift(current, package)
-            changed = True
+        if write and package:
+            if quota_changes:
+                values = policy_values(package)
+                if values:
+                    client.update_user_settings(user_id, values)
+                changed = True
+            if permission_change:
+                current_permissions = client.update_user_permissions(user_id, permission_change[1])
+                changed = True
+            if changed:
+                current = client.user_settings(user_id)
+                current_permissions = client.user_permissions(user_id)
+                quota_changes = quota_drift(current, package)
+                permission_change = permission_drift(current_permissions, baseline if baseline is not None else current_permissions, package)
+                drift = dict(quota_changes)
+                if permission_change:
+                    drift["requestPermissions"] = permission_change
+
+            # A prior hard block may have captured a baseline. Once the current
+            # package no longer blocks either media type and those permissions
+            # are restored, release the baseline so Share Manager stops owning
+            # request permissions while positive/unmanaged quotas continue.
+            if baseline is not None and not hard_block and not permission_change:
+                customer.seerr_permissions_baseline = None
+                baseline = None
+
+        # If the customer no longer has any package managing Seerr quotas, put
+        # back the request permission bits captured before Share Manager touched
+        # them. Other permissions remain exactly as they are now.
+        if write and not package and baseline is not None:
+            restored = (int(current_permissions) & ~SEERR_REQUEST_PERMISSION_MASK) | (int(baseline) & SEERR_REQUEST_PERMISSION_MASK)
+            if restored != int(current_permissions):
+                current_permissions = client.update_user_permissions(user_id, restored)
+                changed = True
+            customer.seerr_permissions_baseline = None
+
         try:
-            quota = client.quota(int(user["id"]))
-            requests = client.requests_for_user(int(user["id"]))
+            quota = client.quota(user_id)
+            requests = client.requests_for_user(user_id)
             cache_usage(customer, quota, requests)
             if user.get("requestCount") is not None:
                 try: customer.seerr_request_count = int(user.get("requestCount"))
                 except (TypeError, ValueError): pass
         except SeerrError:
             quota, requests = {}, []
-        return {"status": "matched", "user": user, "package": package, "settings": current, "drift": drift, "changed": changed, "quota": quota, "requests": requests}
+        return {"status": "matched", "user": user, "package": package, "settings": current, "permissions": current_permissions, "drift": drift, "changed": changed, "quota": quota, "requests": requests}
     except SeerrError as exc:
         customer.seerr_last_error = str(exc)
         customer.seerr_last_sync_at = datetime.utcnow()
@@ -257,7 +393,7 @@ def customer_usage(db: Session, customer: Customer) -> dict[str, Any] | None:
             tv_seasons += len(seasons) if isinstance(seasons, list) else 0
     movie_quota = quota.get("movie") if isinstance(quota.get("movie"), dict) else {}
     tv_quota = quota.get("tv") if isinstance(quota.get("tv"), dict) else {}
-    def quota_view(part):
+    def quota_view(part, configured_limit):
         limit = part.get("limit")
         remaining = part.get("remaining")
         days = part.get("days")
@@ -270,15 +406,20 @@ def customer_usage(db: Session, customer: Customer) -> dict[str, Any] | None:
         try: direct_used = int(part.get("used")) if part.get("used") is not None else None
         except (TypeError, ValueError): direct_used = None
         used = direct_used if direct_used is not None else (max(0, limit - remaining) if limit is not None and remaining is not None else None)
+        configured_limit = _configured_limit(configured_limit) if configured_limit is not None else None
+        blocked = configured_limit == 0
+        unmanaged = configured_limit == -1
+        if blocked:
+            limit, remaining, used = 0, 0, 0
         pct = min(100, max(0, int(round(used * 100 / limit)))) if used is not None and limit else 0
-        return {"limit": limit, "remaining": remaining, "used": used, "days": days, "restricted": bool(part.get("restricted")), "pct": pct}
+        return {"limit": limit, "remaining": remaining, "used": used, "days": days, "restricted": bool(part.get("restricted")) or blocked, "pct": pct, "blocked": blocked, "unmanaged": unmanaged}
     return {
         "status": "matched",
         "user": row["user"],
         "package": row.get("package"),
         "quota": quota,
-        "movie_quota": quota_view(movie_quota),
-        "tv_quota": quota_view(tv_quota),
+        "movie_quota": quota_view(movie_quota, row.get("package").seerr_movie_limit if row.get("package") else None),
+        "tv_quota": quota_view(tv_quota, row.get("package").seerr_tv_limit if row.get("package") else None),
         "settings": row.get("settings") or {},
         "drift": row.get("drift") or {},
         "requests": requests,

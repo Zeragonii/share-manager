@@ -1,3 +1,11 @@
+# 0.13.2a — Seerr Zero-Request Quotas
+
+- Changed Package Seerr limit semantics to `-1 = unmanaged`, `0 = blocked`, and `1+ = rolling quota`.
+- Added hard zero-request enforcement using Seerr's movie/TV request permission bits, including 4K request permissions, because Seerr natively treats a numeric quota limit of `0` as unlimited.
+- Preserves each matched user's original request-permission bits before Share Manager modifies them, allowing package changes or removal of the managed policy to restore the prior request access.
+- Existing Package limits using the old `0 = unlimited` meaning are migrated to `-1` exactly once during startup.
+- Updated Package, admin integration, and customer portal quota displays to distinguish **Blocked**, **Unmanaged**, and positive rolling quotas.
+
 # 0.13.2 — Package Management UI Refresh
 
 - Reorganised each Package into full-width sections for billing tiers and integration entitlements, eliminating the cramped two-column editor.
