@@ -58,6 +58,7 @@ add_column_if_missing("requests_platform_settings", "last_matched_count", "INTEG
 add_column_if_missing("requests_platform_settings", "last_unmatched_count", "INTEGER NOT NULL DEFAULT 0")
 add_column_if_missing("requests_platform_settings", "last_drift_count", "INTEGER NOT NULL DEFAULT 0")
 add_column_if_missing("requests_platform_settings", "seerr_quota_semantics_v2", "BOOLEAN NOT NULL DEFAULT FALSE")
+add_column_if_missing("requests_platform_settings", "enforce_customer_access", "BOOLEAN NOT NULL DEFAULT FALSE")
 with engine.begin() as conn:
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_referral_code ON customers (referral_code) WHERE referral_code IS NOT NULL"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_customers_seerr_user_id ON customers (seerr_user_id) WHERE seerr_user_id IS NOT NULL"))

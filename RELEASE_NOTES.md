@@ -1,3 +1,11 @@
+# 0.13.2b — Seerr Invalid-Customer Permission Guard
+
+- Adds an opt-in Seerr setting to revoke request-related permissions from Seerr users who do not map to a currently valid Share Manager customer with active/grace Plex access.
+- Preserves all unrelated Seerr permission bits and protects Seerr Admin/Manage Users accounts from automatic revocation.
+- Stores the original request-permission bits for unmanaged users and restores them automatically when the customer becomes valid again or enforcement is disabled.
+- Suspended, cancelled, archived, unmatched, and non-Plex-entitled accounts are not considered valid request customers.
+- Manual/background Seerr sync notices now report invalid-user blocks and permission restorations.
+
 # 0.13.2a — Seerr Zero-Request Quotas
 
 - Changed Package Seerr limit semantics to `-1 = unmanaged`, `0 = blocked`, and `1+ = rolling quota`.

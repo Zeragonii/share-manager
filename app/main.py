@@ -349,11 +349,11 @@ def run_seerr_cycle() -> bool:
     db = SessionLocal()
     try:
         cfg = db.get(RequestsPlatformSettings, 1)
-        if not cfg or not cfg.enabled or not cfg.api_key or not cfg.manage_quotas:
+        if not cfg or not cfg.enabled or not cfg.api_key or not (cfg.manage_quotas or cfg.enforce_customer_access):
             return False
         if cfg.last_sync_at and datetime.utcnow() - cfg.last_sync_at < timedelta(minutes=15):
             return False
-        sync_seerr_all(db, write=True)
+        sync_seerr_all(db, write=bool(cfg.manage_quotas), enforce_access=bool(cfg.enforce_customer_access))
         db.commit()
         return True
     except Exception as exc:
@@ -2945,6 +2945,7 @@ def save_requests_platform(
     button_label: str = Form("Request Content"),
     api_key: str = Form(""),
     manage_quotas: str | None = Form(None),
+    enforce_customer_access: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     gate = auth(request)
@@ -2969,8 +2970,9 @@ def save_requests_platform(
     if row is None:
         row = RequestsPlatformSettings(id=1)
         db.add(row)
-    if manage_quotas is not None and not (api_key.strip() or row.api_key):
-        return RedirectResponse("/integrations?error=Seerr+API+key+is+required+to+manage+quotas", status_code=303)
+    previous_enforce_customer_access = bool(row.enforce_customer_access)
+    if (manage_quotas is not None or enforce_customer_access is not None) and not (api_key.strip() or row.api_key):
+        return RedirectResponse("/integrations?error=Seerr+API+key+is+required+for+API+management", status_code=303)
     row.enabled = is_enabled
     row.name = clean_name
     row.base_url = clean_url or None
@@ -2978,6 +2980,7 @@ def save_requests_platform(
     if api_key.strip():
         row.api_key = api_key.strip()
     row.manage_quotas = manage_quotas is not None
+    row.enforce_customer_access = enforce_customer_access is not None
     row.updated_at = datetime.utcnow()
     db.add(AuditLog(
         actor=settings.admin_username,
@@ -2987,7 +2990,21 @@ def save_requests_platform(
         detail=f"{clean_name}: {'enabled' if is_enabled else 'disabled'}",
     ))
     db.commit()
-    return RedirectResponse("/integrations?notice=Requests+platform+settings+saved", status_code=303)
+
+    # Turning the guard off must not strand accounts with request permissions
+    # removed. Restore recorded baselines immediately while the integration is
+    # still enabled/configured. A later manual sync can retry if Seerr is down.
+    restore_notice = ""
+    if previous_enforce_customer_access and not row.enforce_customer_access and row.enabled and row.api_key:
+        try:
+            result = sync_seerr_all(db, write=bool(row.manage_quotas), enforce_access=False)
+            db.commit()
+            if result.get("access_restored"):
+                restore_notice = f"; {result['access_restored']} Seerr user permission baseline(s) restored"
+        except (ValueError, SeerrError):
+            db.rollback()
+            restore_notice = "; permission restoration is pending — run Sync users & quotas when Seerr is reachable"
+    return RedirectResponse("/integrations?notice=" + quote_plus("Requests platform settings saved" + restore_notice), status_code=303)
 
 
 @app.post("/integrations/seerr/test")
@@ -3033,10 +3050,10 @@ def sync_seerr(request: Request, db: Session = Depends(get_db)):
         return gate
     cfg = db.get(RequestsPlatformSettings, 1)
     try:
-        result = sync_seerr_all(db, write=bool(cfg and cfg.manage_quotas))
+        result = sync_seerr_all(db, write=bool(cfg and cfg.manage_quotas), enforce_access=bool(cfg and cfg.enforce_customer_access))
         db.add(AuditLog(actor=settings.admin_username, action="seerr.sync", target_type="requests_platform", target_id="1", detail=f"matched={result['matched']}; unmatched={result['unmatched']}; changed={result['changed']}; drift={result['drift']}"))
         db.commit()
-        return RedirectResponse("/integrations?notice=" + quote_plus(f"Seerr sync complete: {result['users']} users loaded, {result['matched']} matched, {result['unmatched']} unmatched, {result['changed']} quota policies reconciled"), status_code=303)
+        return RedirectResponse("/integrations?notice=" + quote_plus(f"Seerr sync complete: {result['users']} users loaded, {result['matched']} matched, {result['unmatched']} unmatched, {result['changed']} quota policies reconciled, {result.get('access_blocked', 0)} invalid users blocked, {result.get('access_restored', 0)} restored"), status_code=303)
     except (ValueError, SeerrError) as exc:
         db.rollback()
         return RedirectResponse("/integrations?error=" + quote_plus(str(exc)), status_code=303)

@@ -433,3 +433,8 @@ The Packages page is presentation-only refreshed. Package settings, billing-tier
 ### v0.13.2a Seerr zero-request quota semantics
 
 Package-level Seerr limits use three states: `-1` leaves that media type unmanaged, `0` blocks requests, and positive values configure a rolling Seerr quota. Since Seerr's own quota engine treats limit `0` as unlimited, Share Manager enforces a hard zero by reconciling the matched user's movie/TV request permission bits. The original request-related permission bits are cached per customer before first write and restored when no Package policy remains. Existing pre-0.13.2a zero values are migrated to `-1` once to preserve prior unlimited behaviour.
+
+
+### v0.13.2b Seerr invalid-customer permission guard
+
+Seerr can optionally be treated as an entitlement target as well as a quota target. When `enforce_customer_access` is enabled, a Seerr user is valid only when it exactly matches a non-archived Share Manager customer whose customer status and Plex-backed subscription are both active or grace. Suspended/cancelled/history-only/non-Plex customers therefore cannot make Seerr requests. Share Manager removes only the Seerr request permission mask and leaves unrelated permissions untouched; Admin and Manage Users accounts are protected. Request permission bits are persisted in `seerr_permission_baselines` before revocation and restored when the account becomes valid again or enforcement is disabled.

@@ -6,11 +6,15 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..integrations.seerr import SeerrIntegration, SeerrError
 from ..models import (
+    ACCESS_SUBSCRIPTION_STATES,
     ASSIGNED_SUBSCRIPTION_STATES,
     BillingTier,
     Customer,
+    Integration,
     Package,
+    PackageEntitlement,
     RequestsPlatformSettings,
+    SeerrPermissionBaseline,
     Subscription,
 )
 
@@ -19,6 +23,8 @@ from ..models import (
 # Seerr treats quota limit 0 as unlimited, so Share Manager uses request
 # permissions to represent its own 0 = blocked semantics while preserving the
 # user's original request permissions as a baseline for later restoration.
+SEERR_ADMIN = 2
+SEERR_MANAGE_USERS = 8
 SEERR_REQUEST = 32
 SEERR_REQUEST_4K = 1024
 SEERR_REQUEST_4K_MOVIE = 2048
@@ -116,6 +122,128 @@ def cache_match(customer: Customer, user: dict[str, Any] | None, method: str | N
         customer.seerr_match_method = None
         customer.seerr_last_error = error or "No matching Seerr user"
     customer.seerr_last_sync_at = datetime.utcnow()
+
+
+
+
+def customer_has_valid_seerr_access(db: Session, customer: Customer) -> bool:
+    """Mirror current Plex access semantics for Seerr request eligibility.
+
+    A valid request customer must be non-archived, currently active/in grace,
+    and have at least one active/in-grace subscription whose package maps a
+    Plex library. Suspended/cancelled/history-only customers are not valid.
+    """
+    if customer.archived or customer.status not in ACCESS_SUBSCRIPTION_STATES:
+        return False
+    return (
+        db.query(Subscription.id)
+        .join(BillingTier, BillingTier.id == Subscription.billing_tier_id)
+        .join(Package, Package.id == BillingTier.package_id)
+        .join(PackageEntitlement, PackageEntitlement.package_id == Package.id)
+        .join(Integration, Integration.id == PackageEntitlement.integration_id)
+        .filter(
+            Subscription.customer_id == customer.id,
+            Subscription.status.in_(ACCESS_SUBSCRIPTION_STATES),
+            Package.active.is_(True),
+            PackageEntitlement.resource_type == "library",
+            Integration.kind.ilike("plex"),
+        )
+        .first()
+        is not None
+    )
+
+
+def _user_id(user: dict[str, Any]) -> int | None:
+    try:
+        return int(user.get("id")) if user.get("id") is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _user_label(user: dict[str, Any]) -> str | None:
+    return user.get("plexUsername") or user.get("username") or user.get("email")
+
+
+def reconcile_unmanaged_user_permissions(
+    db: Session,
+    client: SeerrIntegration,
+    users: list[dict[str, Any]],
+    valid_user_ids: set[int],
+    *,
+    enabled: bool,
+) -> dict[str, int]:
+    """Block request permissions for invalid Seerr users and restore later.
+
+    Only request-related bits are owned by this feature. Existing Admin or
+    Manage Users accounts are protected from automatic revocation. Baselines
+    are stored by Seerr user ID so an account can be restored even when it has
+    no Share Manager customer row.
+    """
+    result = {"blocked": 0, "restored": 0, "protected": 0, "errors": 0}
+    baselines = {row.seerr_user_id: row for row in db.query(SeerrPermissionBaseline).all()}
+    users_by_id = {uid: user for user in users if (uid := _user_id(user)) is not None}
+
+    # When enforcement is disabled, unwind every permission change previously
+    # made by this feature rather than leaving users stranded without request
+    # access.
+    restore_ids = set(baselines) if not enabled else (set(baselines) & valid_user_ids)
+    for uid in sorted(restore_ids):
+        baseline = baselines.get(uid)
+        if baseline is None:
+            continue
+        try:
+            current = client.user_permissions(uid)
+            desired = (int(current) & ~SEERR_REQUEST_PERMISSION_MASK) | (int(baseline.request_permissions) & SEERR_REQUEST_PERMISSION_MASK)
+            if desired != int(current):
+                client.update_user_permissions(uid, desired)
+            db.delete(baseline)
+            result["restored"] += 1
+        except SeerrError:
+            result["errors"] += 1
+
+    if not enabled:
+        return result
+
+    for uid, user in users_by_id.items():
+        if uid in valid_user_ids:
+            continue
+        try:
+            current = client.user_permissions(uid)
+            # Never leave Seerr administrators or user managers under this
+            # guard. If one was previously blocked before gaining elevated
+            # permissions, restore its saved request bits immediately.
+            if current & (SEERR_ADMIN | SEERR_MANAGE_USERS):
+                baseline = baselines.get(uid)
+                if baseline is not None:
+                    desired = (int(current) & ~SEERR_REQUEST_PERMISSION_MASK) | (int(baseline.request_permissions) & SEERR_REQUEST_PERMISSION_MASK)
+                    if desired != int(current):
+                        client.update_user_permissions(uid, desired)
+                    db.delete(baseline)
+                    baselines.pop(uid, None)
+                    result["restored"] += 1
+                result["protected"] += 1
+                continue
+            desired = int(current) & ~SEERR_REQUEST_PERMISSION_MASK
+            baseline = baselines.get(uid)
+            if baseline is None and desired != int(current):
+                baseline = SeerrPermissionBaseline(
+                    seerr_user_id=uid,
+                    username=_user_label(user),
+                    request_permissions=int(current) & SEERR_REQUEST_PERMISSION_MASK,
+                    blocked_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(baseline)
+                baselines[uid] = baseline
+            elif baseline is not None:
+                baseline.username = _user_label(user)
+                baseline.updated_at = datetime.utcnow()
+            if desired != int(current):
+                client.update_user_permissions(uid, desired)
+                result["blocked"] += 1
+        except SeerrError:
+            result["errors"] += 1
+    return result
 
 
 def _configured_limit(value: int | None) -> int:
@@ -332,17 +460,48 @@ def reconcile_customer(db: Session, customer: Customer, client: SeerrIntegration
         return {"status": "error", "error": str(exc)}
 
 
-def sync_all(db: Session, *, write: bool = True) -> dict[str, Any]:
+def sync_all(db: Session, *, write: bool = True, enforce_access: bool = False) -> dict[str, Any]:
     client = seerr_client(db)
     if client is None:
         raise ValueError("Seerr API integration is not configured")
     users = client.list_users()
     customers = db.query(Customer).filter(Customer.archived.is_(False)).all()
-    result = {"matched": 0, "unmatched": 0, "errors": 0, "changed": 0, "drift": 0, "users": len(users)}
+
+    # Resolve all valid customer identities before writing anything. This lets
+    # previously blocked accounts be restored before package policy is applied.
+    valid_customer_ids: set[int] = set()
+    valid_user_ids: set[int] = set()
+    for customer in customers:
+        if not customer.plex_username or not customer_has_valid_seerr_access(db, customer):
+            continue
+        try:
+            user, _method = match_customer(client, customer, users)
+        except SeerrError:
+            continue
+        uid = _user_id(user) if user else None
+        if uid is not None:
+            valid_customer_ids.add(customer.id)
+            valid_user_ids.add(uid)
+
+    access = reconcile_unmanaged_user_permissions(
+        db, client, users, valid_user_ids, enabled=enforce_access
+    )
+
+    result = {
+        "matched": 0, "unmatched": 0, "errors": 0, "changed": 0,
+        "drift": 0, "users": len(users),
+        "access_blocked": access["blocked"],
+        "access_restored": access["restored"],
+        "access_protected": access["protected"],
+        "access_errors": access["errors"],
+    }
     for customer in customers:
         if not customer.plex_username:
             continue
-        row = reconcile_customer(db, customer, client, users, write=write)
+        # Invalid customers are still matched/read for diagnostics and cached
+        # usage, but package quota/permission policy must not re-grant access.
+        customer_write = bool(write and customer.id in valid_customer_ids)
+        row = reconcile_customer(db, customer, client, users, write=customer_write)
         if row["status"] == "matched":
             result["matched"] += 1
             if row.get("changed"):
@@ -353,11 +512,29 @@ def sync_all(db: Session, *, write: bool = True) -> dict[str, Any]:
             result["unmatched"] += 1
         elif row["status"] == "error":
             result["errors"] += 1
+
+    # Enforce invalid-user blocking last as a final guard against any
+    # customer-specific reconciliation path re-granting request bits.
+    if enforce_access:
+        access2 = reconcile_unmanaged_user_permissions(
+            db, client, users, valid_user_ids, enabled=True
+        )
+        for key in ("blocked", "restored", "protected", "errors"):
+            if key == "blocked":
+                result["access_blocked"] += access2[key]
+            elif key == "restored":
+                result["access_restored"] += access2[key]
+            elif key == "protected":
+                result["access_protected"] = max(result["access_protected"], access2[key])
+            elif key == "errors":
+                result["access_errors"] += access2[key]
+
     cfg = db.get(RequestsPlatformSettings, 1)
     if cfg:
         cfg.last_sync_at = datetime.utcnow()
-        cfg.last_sync_success_at = datetime.utcnow() if not result["errors"] else cfg.last_sync_success_at
-        cfg.last_sync_error = None if not result["errors"] else f"{result['errors']} customer sync error(s)"
+        total_errors = result["errors"] + result["access_errors"]
+        cfg.last_sync_success_at = datetime.utcnow() if not total_errors else cfg.last_sync_success_at
+        cfg.last_sync_error = None if not total_errors else f"{total_errors} Seerr sync error(s)"
         cfg.last_matched_count = result["matched"]
         cfg.last_unmatched_count = result["unmatched"]
         cfg.last_drift_count = result["drift"]

@@ -51,6 +51,7 @@
       <label>Seerr API key <span class="muted">{% if requests_platform and requests_platform.api_key %}(leave blank to keep current){% endif %}</span><input name="api_key" type="password" {% if not requests_platform or not requests_platform.api_key %}placeholder="Required for management"{% endif %}></label>
     </div>
     <label class="toggle-choice"><input type="checkbox" name="manage_quotas" {% if requests_platform and requests_platform.manage_quotas %}checked{% endif %}><span><strong>Manage Seerr request quotas</strong><small class="muted">Every 15 minutes Share Manager applies the highest-priority assigned Package policy to the matching Plex-linked Seerr user.</small></span></label>
+    <label class="toggle-choice"><input type="checkbox" name="enforce_customer_access" {% if requests_platform and requests_platform.enforce_customer_access %}checked{% endif %}><span><strong>Revoke request permission for invalid Seerr users</strong><small class="muted">Users without a current active/grace Share Manager customer and Plex entitlement lose request permissions. Existing Seerr Admin/Manage Users accounts are protected, and original request permissions are restored automatically when the account becomes valid again or this option is disabled.</small></span></label>
     <p class="muted requests-platform-help">The external Request link still works without an API key. API management uses Seerr's X-Api-Key authentication and matches customers primarily by Plex username.</p>
     <button>Save requests platform</button>
   </form>

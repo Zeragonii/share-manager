@@ -311,6 +311,16 @@ class RequestsPlatformSettings(Base):
     last_unmatched_count: Mapped[int] = mapped_column(Integer, default=0)
     last_drift_count: Mapped[int] = mapped_column(Integer, default=0)
     seerr_quota_semantics_v2: Mapped[bool] = mapped_column(Boolean, default=False)
+    enforce_customer_access: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SeerrPermissionBaseline(Base):
+    __tablename__ = "seerr_permission_baselines"
+    seerr_user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    request_permissions: Mapped[int] = mapped_column(Integer, default=0)
+    blocked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
