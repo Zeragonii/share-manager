@@ -303,6 +303,14 @@ def run_billing_cycle() -> int:
             except Exception as exc:
                 _notify_reconcile_failure(db, customer, exc)
         retry_pending_reconciliations(db, now=now, on_error=_notify_reconcile_failure)
+        # Check established playback immediately on billing suspension, without
+        # waiting for the ordinary Tautulli polling interval. A failed Tautulli
+        # API call must not roll back or interrupt billing reconciliation.
+        if any(customer.status == "suspended" and not customer.exempt for customer in changed):
+            try:
+                enforce_stream_limits(db, now=datetime.utcnow(), force_refresh=True)
+            except Exception:
+                logger.exception("Immediate suspended-stream enforcement failed")
         _notify_due_soon(db, now)
         return len(changed)
     finally:

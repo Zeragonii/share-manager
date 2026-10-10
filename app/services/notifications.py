@@ -97,6 +97,8 @@ EVENT_DEFINITIONS = {
     "tautulli.customer_inactive": {"label": "Customer inactive 90+ days", "severity": "warning", "customer": False},
     "tautulli.never_streamed": {"label": "Customer never streamed", "severity": "warning", "customer": False},
     "tautulli.suspended_streaming": {"label": "Suspended customer streaming", "severity": "critical", "customer": False},
+    "stream.suspension_enforced": {"label": "Suspended playback terminated", "severity": "warning", "customer": False},
+    "stream.suspension_enforcement_failed": {"label": "Suspended playback termination failed", "severity": "critical", "customer": False},
     "stream.limit_enforced": {"label": "Stream limit enforced", "severity": "warning", "customer": True},
     "stream.limit_enforcement_failed": {"label": "Stream limit enforcement failed", "severity": "critical", "customer": False},
     "ticket.created": {"label": "New support ticket", "severity": "warning", "customer": False},

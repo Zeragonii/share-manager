@@ -412,13 +412,13 @@ def sync_due(settings_row: TautulliSettings, now: datetime | None = None) -> boo
     return settings_row.last_sync_at + timedelta(minutes=max(5, settings_row.sync_interval_minutes)) <= now
 
 
-def get_live_activity(db: Session, *, max_age_seconds: int | None = None, now: datetime | None = None) -> dict[str, Any]:
+def get_live_activity(db: Session, *, max_age_seconds: int | None = None, now: datetime | None = None, force_refresh: bool = False) -> dict[str, Any]:
     now = now or datetime.utcnow()
     settings_row = get_tautulli_settings(db)
     ttl = max(5, min(60, max_age_seconds or settings_row.live_refresh_seconds or 10))
     with _live_lock:
         sampled = _live_cache.get("sampled_at")
-        if sampled and (now - sampled).total_seconds() < ttl:
+        if not force_refresh and sampled and (now - sampled).total_seconds() < ttl:
             return dict(_live_cache)
         try:
             client = _client(settings_row)
@@ -523,7 +523,7 @@ def dashboard_usage(db: Session, *, now: datetime | None = None) -> dict[str, in
     return {"active_7d": active_7d, "active_30d": active_30d, "inactive_90d": inactive_90d, "never": never, "watch_time_30d": total_30d, "average_30d": average_30d}
 
 
-def enforce_stream_limits(db: Session, *, now: datetime | None = None) -> dict[str, int]:
+def enforce_stream_limits(db: Session, *, now: datetime | None = None, force_refresh: bool = False) -> dict[str, int]:
     """Enforce per-tier concurrent stream limits from the shared Tautulli live sample.
 
     A customer must be over limit in two distinct Tautulli samples before an excess
@@ -536,7 +536,7 @@ def enforce_stream_limits(db: Session, *, now: datetime | None = None) -> dict[s
         _stream_observations.clear()
         return {"checked": 0, "enforced": 0, "failed": 0}
 
-    live = get_live_activity(db, max_age_seconds=settings_row.live_refresh_seconds, now=now)
+    live = get_live_activity(db, max_age_seconds=settings_row.live_refresh_seconds, now=now, force_refresh=force_refresh)
     if live.get("error"):
         return {"checked": 0, "enforced": 0, "failed": 0}
     sampled_at = live.get("sampled_at")
@@ -566,7 +566,72 @@ def enforce_stream_limits(db: Session, *, now: datetime | None = None) -> dict[s
     client = _client(settings_row)
     for customer_id, sessions in by_customer.items():
         customer = db.get(Customer, customer_id)
-        if not customer or customer.archived:
+        if not customer:
+            continue
+
+        # Suspension is enforced independently of stream caps and before the
+        # active/grace subscription filter. An established Plex stream may survive
+        # library revocation; it must not be allowed to continue indefinitely.
+        # Never terminate an exempt customer, and avoid a race with a payment or
+        # temporary manual access that has already restored an entitlement.
+        suspended = customer.status == "suspended" and not customer.exempt
+        if suspended:
+            from .billing import desired_billing_status
+            entitled = db.query(Subscription).filter(
+                Subscription.customer_id == customer_id,
+                Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES),
+            ).all()
+            if any(desired_billing_status(candidate, now) in ("active", "grace") for candidate in entitled):
+                suspended = False
+        if suspended:
+            _stream_observations.pop(customer_id, None)
+            checked += 1
+            # A confirmed live sample is enough; no two-strike delay for a
+            # customer who is already suspended. Retry surviving sessions after
+            # cooldown rather than permanently marking termination complete.
+            for session in sessions:
+                session_key = str(session.get("session_key") or "").strip()
+                if not session_key or session_key in _recent_terminations:
+                    continue
+                # Recheck status immediately before attempting termination.
+                db.refresh(customer)
+                if customer.status != "suspended" or customer.exempt:
+                    break
+                current_subs = db.query(Subscription).filter(
+                    Subscription.customer_id == customer_id,
+                    Subscription.status.in_(ASSIGNED_SUBSCRIPTION_STATES),
+                ).all()
+                if any(desired_billing_status(candidate, datetime.utcnow()) in ("active", "grace") for candidate in current_subs):
+                    break
+                title = str(session.get("title") or "Unknown title")
+                success = False
+                try:
+                    client.terminate_session(session_key, "Your access has been suspended. Please contact your service administrator to restore access.")
+                    success = True
+                    enforced += 1
+                    _recent_terminations[session_key] = now
+                    detail = "Suspended-account playback terminated"
+                except Exception as exc:
+                    failed += 1
+                    detail = f"Suspension termination failed: {type(exc).__name__}: {exc}"[:1000]
+                db.add(StreamLimitEvent(
+                    customer_id=customer.id, billing_tier_id=None, created_at=now,
+                    allowed_streams=0, detected_streams=len(sessions),
+                    session_key=session_key, title=title,
+                    player=str(session.get("player") or "") or None,
+                    ip_address=str(session.get("ip_address") or "") or None,
+                    success=success, detail=detail,
+                ))
+                db.add(AuditLog(actor="system", action="stream.suspension_enforced" if success else "stream.suspension_enforcement_failed", target_type="customer", target_id=str(customer.id), detail=f"{title} · {detail}"))
+                db.commit()
+                notify_event(db, event="stream.suspension_enforced" if success else "stream.suspension_enforcement_failed",
+                    title="Suspended playback terminated" if success else "Suspended playback termination failed",
+                    message=f"{customer.name}: {detail} ({title}).", severity="warning" if success else "critical",
+                    target_type="customer", target_id=str(customer.id),
+                    event_key=f"suspended-stream:{'ok' if success else 'failed'}:{customer.id}:{session_key}:{int(now.timestamp())}",
+                    data={"customer": customer.name, "title": title, "success": success})
+            continue
+        if customer.archived:
             continue
         sub = (
             db.query(Subscription)

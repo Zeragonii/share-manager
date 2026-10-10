@@ -1,3 +1,12 @@
+# 0.13.3 — Suspended Playback Enforcement
+
+- Tautulli worker stops already-running Plex sessions belonging to suspended, non-exempt customers, even when they have no active/grace subscription; this closes the gap after Plex library revocation.
+- Suspension takes priority over concurrent-stream caps and uses a clear suspension message via Tautulli termination.
+- Billing suspension transitions trigger a fresh, immediate Tautulli check; continuous polling also catches surviving/restarted sessions.
+- Rechecks status and valid paid/manual access before stopping a session. Unmatched streams, exemptions and legitimately reactivated subscriptions are never terminated by this rule.
+- Keeps the two-observation rule for ordinary stream-cap violations; suspension terminations use a two-minute retry cooldown.
+- Records attempts in existing stream enforcement history with distinct audit actions and notifications. No schema migration.
+
 # 0.13.2b — Seerr Invalid-Customer Permission Guard
 
 - Adds an opt-in Seerr setting to revoke request-related permissions from Seerr users who do not map to a currently valid Share Manager customer with active/grace Plex access.

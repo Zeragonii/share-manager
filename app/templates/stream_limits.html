@@ -1,5 +1,5 @@
 {% extends 'base.html' %}{% block content %}
-<header><h1>Stream Limits</h1><p>Concurrent-stream enforcement history from Tautulli. Billing exemption does not bypass fair-use limits; 0 on a tier means unlimited.</p></header>
+<header><h1>Stream Limits</h1><p>Stream-cap and suspended-account playback enforcement history from Tautulli. Billing exemption does not bypass fair-use limits; 0 on a tier means unlimited.</p></header>
 <section class="stream-limit-stats">
   <div class="stat"><strong>{{ stats.month }}</strong><span>Limit hits this month</span></div>
   <div class="stat"><strong>{{ stats.unique }}</strong><span>Unique customers</span></div>
@@ -7,7 +7,7 @@
   <div class="stat"><strong>{{ stats.failed }}</strong><span>Failed terminations</span></div>
 </section>
 <section>
-  <div class="row between stream-limit-heading"><div><h2>Enforcement history</h2><p>Newest attempts first. Every row represents a confirmed two-heartbeat over-limit condition.</p></div></div>
+  <div class="row between stream-limit-heading"><div><h2>Enforcement history</h2><p>Newest attempts first. Stream-cap violations require two samples; suspended-account playback is stopped on the first fresh sample.</p></div></div>
   <div class="stream-limit-mobile-tools">
     <div class="stream-limit-quick-ranges" role="group" aria-label="Quick date filters">
       <button type="button" class="secondary stream-range" data-days="0">Today</button>

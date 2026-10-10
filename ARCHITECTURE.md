@@ -438,3 +438,7 @@ Package-level Seerr limits use three states: `-1` leaves that media type unmanag
 ### v0.13.2b Seerr invalid-customer permission guard
 
 Seerr can optionally be treated as an entitlement target as well as a quota target. When `enforce_customer_access` is enabled, a Seerr user is valid only when it exactly matches a non-archived Share Manager customer whose customer status and Plex-backed subscription are both active or grace. Suspended/cancelled/history-only/non-Plex customers therefore cannot make Seerr requests. Share Manager removes only the Seerr request permission mask and leaves unrelated permissions untouched; Admin and Manage Users accounts are protected. Request permission bits are persisted in `seerr_permission_baselines` before revocation and restored when the account becomes valid again or enforcement is disabled.
+
+### v0.13.3 Suspended playback enforcement
+
+The existing Tautulli enforcement cycle gives suspended, non-exempt customers priority over normal concurrent-stream caps. It terminates already-established Plex sessions with an explanatory suspension message, logs results using the existing stream event table, and retries any surviving sessions after cooldown. Billing transitions trigger an immediate forced live sample; normal polling remains a backstop. Billing/access is checked again before each stop and active/grace/manual entitlements and exemptions remain protected.
