@@ -1,3 +1,7 @@
+# 0.13.3a — Plex duplicate-share reconciliation hotfix
+
+Avoid duplicate invites after reactivation: discover existing users using the full Plex user listing, refresh account state on Plex HTTP 400 already-sharing errors, update accepted shares rather than reinvite, and fail safely if Plex still cannot expose an existing share. Server-specific operations, no billing/schema changes.
+
 # 0.13.3 — Suspended Playback Enforcement
 
 - Tautulli worker stops already-running Plex sessions belonging to suspended, non-exempt customers, even when they have no active/grace subscription; this closes the gap after Plex library revocation.

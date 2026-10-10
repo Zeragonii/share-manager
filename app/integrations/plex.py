@@ -73,6 +73,41 @@ class PlexIntegration:
         return None
 
     @staticmethod
+    def _find_user_by_listing(account: MyPlexAccount, *identifiers):
+        """Fallback for Plex accounts not found by account.user(identifier).
+
+        Never choose an ambiguous match: an email/username match must identify
+        exactly one Plex user, otherwise a share could be changed for the wrong person.
+        """
+        wanted = {str(value).strip().casefold() for value in identifiers if value not in (None, "")}
+        if not wanted:
+            return None
+        matches = []
+        for user in account.users():
+            values = {
+                str(value).strip().casefold()
+                for value in (getattr(user, "id", None), getattr(user, "username", None),
+                              getattr(user, "email", None), getattr(user, "title", None))
+                if value not in (None, "")
+            }
+            if wanted.intersection(values):
+                matches.append(user)
+        if len(matches) > 1:
+            raise RuntimeError("Multiple Plex users match this customer's identity; refusing to modify shares")
+        return matches[0] if matches else None
+
+    def _resolve_user(self, account: MyPlexAccount, *identifiers):
+        user = self._find_user(account, *identifiers)
+        if user is not None:
+            return user
+        return self._find_user_by_listing(account, *identifiers)
+
+    @staticmethod
+    def _is_duplicate_share_error(exc: Exception) -> bool:
+        message = str(exc).casefold()
+        return "already sharing this server" in message or "already sharing" in message and "server" in message
+
+    @staticmethod
     def _find_pending_invite(account: MyPlexAccount, machine_identifier: str, *identifiers):
         """Find a sent pending invitation for this user/server, if one exists."""
         wanted = {str(value).lower() for value in identifiers if value not in (None, "")}
@@ -120,7 +155,7 @@ class PlexIntegration:
 
         # The user can disappear from /api/users after their final share is removed.
         # If they remain visible, verify that this PMS is no longer attached.
-        refreshed = self._find_user(account, user.id, user.username, user.email, user.title)
+        refreshed = self._resolve_user(account, user.id, user.username, user.email, user.title)
         if refreshed is not None and self._server_share(refreshed, server.machineIdentifier) is not None:
             raise RuntimeError(
                 f"Plex reported success but server access still exists for {user.title}"
@@ -206,7 +241,7 @@ class PlexIntegration:
         machine_identifier: str,
         expected_names: set[str],
     ) -> None:
-        refreshed = self._find_user(account, *identifiers)
+        refreshed = self._resolve_user(account, *identifiers)
         if refreshed is None:
             raise RuntimeError("Plex server share is missing after applying libraries")
 
@@ -239,7 +274,7 @@ class PlexIntegration:
         account = self.account()
         server = self.server()
         identifiers = (plex_user_id, plex_username, email)
-        user = self._find_user(account, *identifiers)
+        user = self._resolve_user(account, *identifiers)
 
         pending_invite = self._find_pending_invite(account, server.machineIdentifier, *identifiers)
 
@@ -271,14 +306,45 @@ class PlexIntegration:
         # libraries. We deliberately do not try to verify usable access until the
         # recipient accepts it.
         if share is None:
-            self._create_server_share(
-                account,
-                server,
-                sections,
-                plex_username=plex_username,
-                plex_user_id=plex_user_id,
-                email=email,
-            )
+            try:
+                self._create_server_share(
+                    account,
+                    server,
+                    sections,
+                    plex_username=plex_username,
+                    plex_user_id=plex_user_id,
+                    email=email,
+                )
+            except Exception as exc:
+                if not self._is_duplicate_share_error(exc):
+                    raise
+                # Plex is authoritative: a 400 here means the share already
+                # exists, even if PlexAPI failed to expose it on the first pass.
+                # Refresh server/account objects to avoid stale cached details.
+                refreshed_account = self.account()
+                refreshed_server = self.server()
+                existing = self._resolve_user(refreshed_account, *identifiers)
+                existing_share = (
+                    self._server_share(existing, refreshed_server.machineIdentifier)
+                    if existing is not None else None
+                )
+                if existing_share is not None:
+                    if getattr(existing_share, "pending", False):
+                        return {"state": "pending", "libraries": list(library_names)}
+                    refreshed_sections = [refreshed_server.library.section(name) for name in library_names]
+                    refreshed_account.updateFriend(user=existing, server=refreshed_server, sections=refreshed_sections)
+                    self._verify_shared_libraries(
+                        refreshed_account, identifiers, refreshed_server.machineIdentifier, set(library_names)
+                    )
+                    return {"state": "applied", "libraries": list(library_names)}
+                pending = self._find_pending_invite(refreshed_account, refreshed_server.machineIdentifier, *identifiers)
+                if pending is not None:
+                    return {"state": "pending", "libraries": list(library_names)}
+                raise RuntimeError(
+                    "Plex says this server is already shared with the customer, but its share "
+                    "is not discoverable. Check Plex Manage Library Access and pending "
+                    "invitations; no duplicate invitation or destructive replacement was attempted."
+                ) from exc
             return {"state": "invited", "libraries": list(library_names)}
 
         account.updateFriend(user=user, server=server, sections=sections)

@@ -1,3 +1,7 @@
+### v0.13.3a Plex duplicate-share recovery
+
+Existing accepted shares are discovered by direct lookup and full account listing. A duplicate-share error triggers one fresh discovery and updates visible accepted server shares, rather than repeating an invite. Unresolvable or ambiguous shares fail closed.
+
 # Share Manager Architecture — v0.5.2
 
 ## v0.5.2 reliable Plex reconciliation

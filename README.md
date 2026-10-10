@@ -1,4 +1,4 @@
-## v0.13.3 — Suspended Playback Enforcement
+## v0.13.3a — Suspended Playback Enforcement
 
 Adds optional Seerr request-permission enforcement for accounts that are not currently valid Share Manager Plex customers, with automatic permission restoration.
 Seerr package quota semantics now use `-1` for an unmanaged quota, `0` for a hard request block, and positive values for rolling quotas. Existing `0 = unlimited` package values are migrated to `-1` once on upgrade so current customers are not accidentally blocked. Hard zero limits are enforced through Seerr's media-specific request permissions because Seerr itself interprets a numeric quota of `0` as unlimited.
@@ -25,7 +25,7 @@ FAQ category fields now suggest categories already in use while remaining free-t
 
 # Share Manager
 
-> Current release: **0.13.3 — Suspended Playback Enforcement**
+> Current release: **0.13.3a — Suspended Playback Enforcement**
 
 
 
