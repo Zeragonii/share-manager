@@ -72,7 +72,8 @@ from .security import (
     hash_portal_password, verify_portal_password, make_portal_session, read_portal_session,
 )
 from .services.billing import apply_payment, desired_billing_status, initialize_subscription_period, process_billing
-from .services.reconcile import enqueue_reconciliation, reconcile_customer, retry_pending_reconciliations
+from .services.reconcile import enqueue_reconciliation, reconcile_customer as reconcile_plex_customer, retry_pending_reconciliations
+from .services.jellyfin import reconcile_customer as reconcile_jellyfin_customer
 from .services.payment_maintenance import payment_is_latest_coverage_event, recalculate_after_latest_payment_change, rollback_voided_latest_payment
 from .services.notifications import (
     EVENT_DEFINITIONS, CUSTOMER_PUSH_EVENTS, format_due_reminder_days, notify_due_reminders, notify_event, send_test,
@@ -100,6 +101,24 @@ from .services.attachments import (
 )
 from .services.seerr import sync_all as sync_seerr_all, customer_usage as seerr_customer_usage, effective_policy as seerr_effective_policy, reconcile_customer as reconcile_seerr_customer
 from .version import APP_VERSION
+
+
+def reconcile_customer(db, customer, **kwargs):
+    """Apply Plex and Jellyfin entitlements independently, including after billing changes."""
+    output = []
+    errors = []
+    try:
+        output.extend(reconcile_plex_customer(db, customer, **kwargs))
+    except Exception as exc:
+        errors.append(f"Plex: {exc}")
+    try:
+        output.extend(reconcile_jellyfin_customer(db, customer))
+    except Exception as exc:
+        errors.append(f"Jellyfin: {exc}")
+    if errors:
+        raise RuntimeError("; ".join(errors))
+    return output
+
 
 
 
@@ -298,7 +317,7 @@ def run_billing_cycle() -> int:
             elif customer.status == "active":
                 notify_event(db, event="customer.reactivated", title="Customer reactivated", message=f"{customer.name} is active again.", target_type="customer", target_id=str(customer.id), data={"customer": customer.name})
 
-            if not customer.plex_username or customer.exempt:
+            if customer.exempt:
                 continue
             try:
                 reconcile_customer(db, customer)
@@ -2680,16 +2699,32 @@ def set_entitlements(request: Request, package_id: int, integration_id: int = Fo
     if gate:
         return gate
     integration = db.get(Integration, integration_id)
-    if not integration or integration.kind != "plex":
-        return RedirectResponse("/packages", status_code=303)
-    client = PlexIntegration(integration.base_url, integration.secret)
-    libs = {x["id"]: x for x in client.libraries()}
+    if not integration or integration.kind not in ("plex", "jellyfin"):
+        return RedirectResponse("/packages?error=Invalid+integration", status_code=303)
+    try:
+        client = (PlexIntegration if integration.kind == "plex" else JellyfinIntegration)(integration.base_url, integration.secret)
+        libs = {x["id"]: x for x in client.libraries()}
+    except Exception as exc:
+        return RedirectResponse("/packages?error=" + quote_plus(f"Unable to load {integration.name} libraries: {exc}"), status_code=303)
     db.query(PackageEntitlement).filter(PackageEntitlement.package_id == package_id, PackageEntitlement.integration_id == integration_id).delete()
     for lid in library_ids:
         if lid in libs:
             db.add(PackageEntitlement(package_id=package_id, integration_id=integration_id, resource_type="library", resource_id=lid, resource_name=libs[lid]["name"]))
     db.commit()
-    return RedirectResponse("/packages", status_code=303)
+    if integration.kind == "jellyfin":
+        # Saving an entitlement immediately updates the linked customers using this package.
+        customer_ids = [row[0] for row in db.query(Subscription.customer_id).join(
+            BillingTier, BillingTier.id == Subscription.billing_tier_id
+        ).filter(BillingTier.package_id == package_id).distinct().all()]
+        errors = []
+        for cid in customer_ids:
+            try:
+                reconcile_jellyfin_customer(db, db.get(Customer, cid))
+            except Exception as exc:
+                errors.append(f"Customer {cid}: {exc}")
+        if errors:
+            return RedirectResponse("/packages?error=" + quote_plus("Saved entitlements; Jellyfin sync errors: " + "; ".join(errors[:3])), status_code=303)
+    return RedirectResponse("/packages?notice=" + quote_plus(f"Saved {integration.name} library entitlements"), status_code=303)
 
 
 NEWS_BANNER_SEVERITIES = ("info", "advisory", "warning", "critical")
@@ -3070,6 +3105,11 @@ def jellyfin_link(request: Request, account_id: int = Form(...), customer_id: st
         account.customer_id = None
     db.add(AuditLog(actor=settings.admin_username, action="jellyfin.link", target_type="jellyfin_account", target_id=str(account.id), detail=f"{account.username} linked to customer {account.customer_id or 'none'}"))
     db.commit()
+    if account.customer_id:
+        try:
+            reconcile_jellyfin_customer(db, db.get(Customer, account.customer_id))
+        except Exception as exc:
+            return _jf_redirect("error", f"Link saved, but Jellyfin library reconciliation failed: {exc}")
     return _jf_redirect("notice", f"Saved Jellyfin link for {account.username}")
 
 
@@ -4240,4 +4280,10 @@ def api_libraries(request: Request, integration_id: int, db: Session = Depends(g
     if not logged_in(request):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     integration = db.get(Integration, integration_id)
-    return PlexIntegration(integration.base_url, integration.secret).libraries()
+    if integration is None or integration.kind not in ("plex", "jellyfin"):
+        return JSONResponse({"error": "Unsupported integration"}, status_code=404)
+    try:
+        client = (PlexIntegration if integration.kind == "plex" else JellyfinIntegration)(integration.base_url, integration.secret)
+        return client.libraries()
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)

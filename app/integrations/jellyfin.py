@@ -56,3 +56,43 @@ class JellyfinIntegration:
             users.append({"id": str(item["Id"]), "name": str(item.get("Name") or "Unnamed"),
                           "admin": bool(policy.get("IsAdministrator")), "disabled": bool(policy.get("IsDisabled"))})
         return users
+
+
+    def libraries(self):
+        """Return actual virtual-library IDs for package grants."""
+        payload = self._get("/Library/VirtualFolders")
+        if not isinstance(payload, list):
+            raise JellyfinError("Unexpected Jellyfin library response")
+        return [{"id": str(row["ItemId"]), "name": str(row.get("Name") or "Unnamed"),
+                 "type": str(row.get("CollectionType") or "mixed")}
+                for row in payload if isinstance(row, dict) and row.get("ItemId")]
+
+    def user(self, user_id: str):
+        payload = self._get(f"/Users/{user_id}")
+        if not isinstance(payload, dict) or not isinstance(payload.get("Policy"), dict):
+            raise JellyfinError("Jellyfin did not return a complete user policy; no changes made")
+        return payload
+
+    def apply_libraries(self, user_id: str, library_ids: list[str]):
+        """Only change folder access; retain every other Jellyfin policy field."""
+        data = self.user(user_id)
+        policy = dict(data["Policy"])
+        if policy.get("IsAdministrator"):
+            return {"state": "skipped_admin", "libraries": []}
+        desired = sorted(set(str(x) for x in library_ids))
+        if policy.get("EnableAllFolders") is False and sorted(policy.get("EnabledFolders") or []) == desired:
+            return {"state": "unchanged", "libraries": desired}
+        policy["EnableAllFolders"] = False
+        policy["EnabledFolders"] = desired
+        try:
+            response = httpx.post(f"{self.base_url}/Users/{user_id}/Policy",
+                headers={"Authorization": f'MediaBrowser Token="{self.api_key}"',
+                         "Accept": "application/json", "Content-Type": "application/json"},
+                json=policy, timeout=self.timeout, follow_redirects=False)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise JellyfinError(f"Jellyfin library policy update failed: {type(exc).__name__}") from None
+        verified = self.user(user_id)["Policy"]
+        if verified.get("EnableAllFolders") is not False or sorted(verified.get("EnabledFolders") or []) != desired:
+            raise JellyfinError("Jellyfin returned unexpected library permissions after updating user")
+        return {"state": "applied", "libraries": desired}

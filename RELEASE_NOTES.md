@@ -1,3 +1,11 @@
+## v0.14.1 — Jellyfin package library entitlements
+
+- Packages now show selectable Jellyfin libraries alongside Plex integration entitlements.
+- Jellyfin library policies are applied to linked accounts based on active/grace package assignments; suspended or archived accounts receive no libraries. Exempt accounts and Jellyfin administrators remain unmanaged.
+- Jellyfin policies are read, selectively patched for folder access, sent in full, and verified. Other user-policy fields are preserved.
+- Applying package library changes synchronizes linked customers using that package. Linking accounts and ordinary customer reconciliation also sync Jellyfin.
+- Library fetch failures do not erase saved entitlements. No database migration.
+
 ## v0.14.0 — Jellyfin user provisioning
 
 - Bulk-create local Jellyfin users for non-archived customers who have no linked account, using initial password `Changeme!` (must be changed promptly).

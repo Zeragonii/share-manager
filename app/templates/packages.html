@@ -168,18 +168,18 @@
 
     <div class="entitlement-stack">
       {% for i in integrations %}
-      <details class="entitlement-details" {% if i.kind == 'plex' %}open{% endif %}>
+      <details class="entitlement-details" {% if i.kind in ('plex', 'jellyfin') %}open{% endif %}>
         <summary>
           <span class="entitlement-summary-title"><strong>{{ i.name }}</strong><span class="integration-type">{{ i.kind }}</span></span>
           <span class="entitlement-chevron">⌄</span>
         </summary>
         <div class="entitlement-details-body">
-          {% if i.kind == 'plex' %}
-          <p class="muted entitlement-description">Select the Plex libraries customers on this package can access.</p>
+          {% if i.kind in ('plex', 'jellyfin') %}
+          <p class="muted entitlement-description">Select the {{ i.name }} libraries customers on this package can access. For Jellyfin, saving also syncs linked customers on this package.</p>
           <form method="post" action="/packages/{{ p.id }}/entitlements" class="library-form" data-integration="{{ i.id }}" data-selected='{{ selected.get((p.id|string) ~ ":" ~ (i.id|string), [])|tojson }}'>
             <input type="hidden" name="integration_id" value="{{ i.id }}">
             <div class="library-list">Loading libraries…</div>
-            <div class="entitlement-save-row"><button>Save Plex libraries</button></div>
+            <div class="entitlement-save-row"><button>Save {{ i.name }} libraries</button></div>
           </form>
           {% else %}
           <p class="muted entitlement-description">No package-level entitlement settings are required for this integration.</p>
@@ -224,7 +224,7 @@ document.querySelectorAll('.library-form').forEach(async form => {
       box.appendChild(label);
     });
   } catch (e) {
-    box.textContent = 'Could not load libraries';
+    box.textContent = 'Could not load libraries. Check the integration connection and retry.';
   }
 });
 </script>
