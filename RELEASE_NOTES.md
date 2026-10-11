@@ -1,3 +1,8 @@
+## v0.13.4a — Jellyfin API authentication hotfix
+
+- Use `Authorization: MediaBrowser Token="…"` for Jellyfin API requests instead of the legacy `X-Emby-Token` header.
+- Retain read-only discovery, identity linking, and existing database structure unchanged.
+
 ## v0.13.4 — Jellyfin user discovery and manual identity linking
 
 - Configure/test a Jellyfin server with an API key (read-only `/Users` call).

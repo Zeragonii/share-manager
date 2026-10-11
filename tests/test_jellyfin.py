@@ -18,7 +18,7 @@ def test_discover_users_read_only():
     assert result[0] == {"id": "abc", "name": "Tester", "admin": False, "disabled": True}
     assert result[1]["admin"]
     assert calls[0][0] == "http://jellyfin:8096/Users"
-    assert calls[0][1]["headers"] == {"X-Emby-Token": "secret"}
+    assert calls[0][1]["headers"] == {"Authorization": 'MediaBrowser Token="secret"', "Accept": "application/json"}
     assert calls[0][1]["follow_redirects"] is False
 
 

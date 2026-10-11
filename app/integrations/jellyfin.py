@@ -18,7 +18,7 @@ class JellyfinIntegration:
 
     def _get(self, path: str):
         try:
-            response = httpx.get(f"{self.base_url}{path}", headers={"X-Emby-Token": self.api_key}, timeout=self.timeout, follow_redirects=False)
+            response = httpx.get(f"{self.base_url}{path}", headers={"Authorization": f'MediaBrowser Token="{self.api_key}"', "Accept": "application/json"}, timeout=self.timeout, follow_redirects=False)
             response.raise_for_status()
             return response.json()
         except (httpx.HTTPError, ValueError) as exc:
