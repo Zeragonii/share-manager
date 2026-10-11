@@ -990,3 +990,9 @@ a.button-link, .button-link{white-space:nowrap}
 .jf-picker{position:relative;min-width:0}.jf-search{width:100%}.jf-results{position:absolute;top:calc(100% - 22px);left:0;right:0;z-index:15;max-height:260px;overflow-y:auto;border:1px solid #64748b;border-radius:8px;background:#1c2431;padding:6px;box-shadow:0 12px 22px #0006}
 .jf-result{display:block;width:100%;text-align:left;margin:0;padding:9px;background:transparent;border:0;color:white;white-space:normal}.jf-result:hover,.jf-result:focus{background:#334155}.jf-clear{margin-top:6px}
 @media(max-width:750px){.jellyfin-link-row{grid-template-columns:1fr}.jf-results{top:calc(100% - 22px)}}
+
+/* v0.13.4b: keep Jellyfin account management tucked away until needed. */
+.jellyfin-linking-body{padding:12px;border-top:1px solid var(--line)}
+.jellyfin-linking-body>p{margin:0 0 10px}
+.jellyfin-refresh-form{margin:0 0 12px}
+.jellyfin-linking-panel>summary{list-style:revert;line-height:1.5}

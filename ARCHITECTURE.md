@@ -1,3 +1,10 @@
+## v0.13.4b — Collapsible Jellyfin account linking
+
+- Collapses the Jellyfin user-discovery/linking panel by default on Integrations, keeping the connection settings visible.
+- The collapsed header shows discovered and linked account counts.
+- Expanding restores the existing searchable customer picker, manual linking and refresh actions unchanged.
+- UI-only release; no database migration or change to Jellyfin API/authentication, Plex, Seerr or billing.
+
 ## v0.13.4a — Jellyfin API authentication hotfix
 
 - Use `Authorization: MediaBrowser Token="…"` for Jellyfin API requests instead of the legacy `X-Emby-Token` header.

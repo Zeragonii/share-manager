@@ -46,9 +46,12 @@
     <button>Save &amp; test connection</button>
   </form>
   {% if jellyfin %}
-  <form method="post" action="/integrations/jellyfin/sync" style="margin:1rem 0"><button type="submit" class="secondary">Discover / refresh Jellyfin users</button></form>
-  <p class="muted">{{ jellyfin_accounts|length }} users discovered · {{ jellyfin_accounts|selectattr('customer_id')|list|length }} linked. Refreshing does not delete previous links.</p>
-  <div class="jellyfin-user-list">
+  <details class="integration-add jellyfin-linking-panel" id="jellyfin-user-linking">
+    <summary>Manage Jellyfin user links — {{ jellyfin_accounts|length }} discovered · {{ jellyfin_accounts|selectattr('customer_id')|list|length }} linked</summary>
+    <div class="jellyfin-linking-body">
+      <p class="muted">Expand to discover users, search for customers, or edit existing links. Refreshing does not delete previous links.</p>
+      <form method="post" action="/integrations/jellyfin/sync" class="jellyfin-refresh-form"><button type="submit" class="secondary">Discover / refresh Jellyfin users</button></form>
+      <div class="jellyfin-user-list">
     {% for account in jellyfin_accounts %}
     <form method="post" action="/integrations/jellyfin/link" class="jellyfin-link-row">
       <input type="hidden" name="account_id" value="{{ account.id }}">
@@ -66,7 +69,9 @@
     {% else %}
       <p class="muted">No users imported yet. Click Discover / refresh Jellyfin users.</p>
     {% endfor %}
-  </div>
+      </div>
+    </div>
+  </details>
   {% endif %}
 </section>
 <script>
