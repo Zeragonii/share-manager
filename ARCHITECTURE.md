@@ -1,3 +1,9 @@
+## v0.13.4c — Collapsible Integrations dashboard
+
+- Every major Integrations category (Plex, Jellyfin, Requests/Seerr, Tautulli, Notifications, notification deliveries) is collapsed by default on desktop and mobile.
+- Section headers retain concise counts or connection statuses. Existing forms, actions, nested details, and searchable Jellyfin links remain inside their sections.
+- Replaces the old mobile-only Tautulli toggle with the same cross-device section mechanism. No migration or integration behaviour changes.
+
 ## v0.13.4b — Collapsible Jellyfin account linking
 
 - Collapses the Jellyfin user-discovery/linking panel by default on Integrations, keeping the connection settings visible.
