@@ -1,3 +1,11 @@
+## v0.13.4 — Jellyfin user discovery and manual identity linking
+
+- Configure/test a Jellyfin server with an API key (read-only `/Users` call).
+- Discover Jellyfin accounts and persist their stable Jellyfin IDs and administrative/disabled indicators.
+- Search existing Share Manager customers by name, email, Plex username or portal username; explicitly link/unlink accounts.
+- No Jellyfin write API calls, entitlement changes, stream-control changes, automatic customer creation or billing changes.
+- Existing links are preserved when user discovery refreshes. One Jellyfin account per customer in this initial version.
+
 ## v0.13.3a — Suspended Playback Enforcement
 
 Adds optional Seerr request-permission enforcement for accounts that are not currently valid Share Manager Plex customers, with automatic permission restoration.

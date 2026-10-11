@@ -37,6 +37,70 @@
   </div>
 </section>
 
+<section class="integration-section" id="jellyfin">
+  <h2>Jellyfin — account linking</h2>
+  <p class="muted">Read-only user discovery. Linking accounts does not change Jellyfin passwords, library access, playback, or customer billing.</p>
+  <form method="post" action="/integrations/jellyfin/save" class="grid-form">
+    <label>Jellyfin server URL<input name="base_url" type="url" placeholder="http://jellyfin:8096" value="{{ jellyfin.base_url if jellyfin else '' }}" required></label>
+    <label>Jellyfin API key <span class="muted">{% if jellyfin %}(leave blank to retain existing key){% endif %}</span><input name="api_key" type="password" {% if not jellyfin %}required{% endif %}></label>
+    <button>Save &amp; test connection</button>
+  </form>
+  {% if jellyfin %}
+  <form method="post" action="/integrations/jellyfin/sync" style="margin:1rem 0"><button type="submit" class="secondary">Discover / refresh Jellyfin users</button></form>
+  <p class="muted">{{ jellyfin_accounts|length }} users discovered · {{ jellyfin_accounts|selectattr('customer_id')|list|length }} linked. Refreshing does not delete previous links.</p>
+  <div class="jellyfin-user-list">
+    {% for account in jellyfin_accounts %}
+    <form method="post" action="/integrations/jellyfin/link" class="jellyfin-link-row">
+      <input type="hidden" name="account_id" value="{{ account.id }}">
+      <div><strong>{{ account.username }}</strong> {% if account.is_administrator %}<span class="muted">(Admin)</span>{% endif %}{% if account.is_disabled %}<span class="muted">(Disabled)</span>{% endif %}<small class="muted" style="display:block">{{ account.jellyfin_user_id }}</small></div>
+      <div class="jf-picker" data-jf-picker>
+        <label for="jf-customer-{{ account.id }}">Search Share Manager customers</label>
+        <input id="jf-customer-{{ account.id }}" class="jf-search" type="search" autocomplete="off" placeholder="Name, email or Plex username…" value="{{ account.customer.name if account.customer else '' }}">
+        <input type="hidden" name="customer_id" value="{{ account.customer_id or '' }}">
+        <div class="jf-results" role="listbox" hidden></div>
+        <small class="muted jf-selection">{% if account.customer %}Linked: {{ account.customer.name }} (@{{ account.customer.plex_username or 'no Plex name' }}){% else %}Unlinked{% endif %}</small>
+        <button type="button" class="secondary jf-clear">Clear selection / unlink</button>
+      </div>
+      <button type="submit">Save link</button>
+    </form>
+    {% else %}
+      <p class="muted">No users imported yet. Click Discover / refresh Jellyfin users.</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+<script>
+(() => {
+  const customers = {{ jellyfin_customer_options|tojson }};
+  const format = c => `${c.name} — @${c.plex || c.portal || 'no username'}${c.email ? ' · '+c.email : ''}`;
+  for (const wrapper of document.querySelectorAll('[data-jf-picker]')) {
+    const search = wrapper.querySelector('.jf-search');
+    const hidden = wrapper.querySelector('[name="customer_id"]');
+    const results = wrapper.querySelector('.jf-results');
+    const selection = wrapper.querySelector('.jf-selection');
+    const clear = wrapper.querySelector('.jf-clear');
+    function draw() {
+      const q = search.value.trim().toLocaleLowerCase();
+      results.replaceChildren();
+      if (!q) { results.hidden = true; return; }
+      const candidates = customers.filter(c => [c.name,c.email,c.plex,c.portal].some(v => v.toLocaleLowerCase().includes(q))).slice(0,12);
+      for (const c of candidates) {
+        const b = document.createElement('button');
+        b.type='button'; b.className='jf-result'; b.textContent=format(c);
+        b.addEventListener('click', () => {hidden.value=String(c.id); search.value=c.name; selection.textContent='Selected: '+format(c); results.hidden=true;});
+        results.appendChild(b);
+      }
+      if (!candidates.length) {const msg=document.createElement('span');msg.textContent='No matching customers';msg.className='muted';results.appendChild(msg);}
+      results.hidden=false;
+    }
+    search.addEventListener('input', () => {hidden.value='';selection.textContent='No customer selected — save to unlink';draw();});
+    search.addEventListener('focus', draw);
+    clear.addEventListener('click', () => {hidden.value='';search.value='';selection.textContent='Unlinked (save to apply)';results.hidden=true;});
+    document.addEventListener('click', e => {if (!wrapper.contains(e.target)) results.hidden=true;});
+  }
+})();
+</script>
+
 <section class="integration-section requests-platform-integration">
   <div class="row between">
     <div><h2>Requests platform</h2><p class="muted">Link the customer portal to Seerr or another external content-request service.</p></div>

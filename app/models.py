@@ -154,6 +154,21 @@ class Integration(Base):
     __table_args__ = (UniqueConstraint("kind", "name"),)
 
 
+class JellyfinAccount(Base):
+    """Discovered Jellyfin identity. No Jellyfin permissions are written."""
+    __tablename__ = "jellyfin_accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    integration_id: Mapped[int] = mapped_column(ForeignKey("integrations.id", ondelete="CASCADE"), index=True)
+    jellyfin_user_id: Mapped[str] = mapped_column(String(64))
+    username: Mapped[str] = mapped_column(String(255))
+    is_administrator: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    customer: Mapped[Customer | None] = relationship()
+    __table_args__ = (UniqueConstraint("integration_id", "jellyfin_user_id", name="uq_jellyfin_identity"), UniqueConstraint("customer_id", name="uq_jellyfin_customer"),)
+
+
 class PackageEntitlement(Base):
     __tablename__ = "package_entitlements"
     id: Mapped[int] = mapped_column(primary_key=True)

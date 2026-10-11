@@ -1,3 +1,11 @@
+## v0.13.4 — Jellyfin user discovery and manual identity linking
+
+- Configure/test a Jellyfin server with an API key (read-only `/Users` call).
+- Discover Jellyfin accounts and persist their stable Jellyfin IDs and administrative/disabled indicators.
+- Search existing Share Manager customers by name, email, Plex username or portal username; explicitly link/unlink accounts.
+- No Jellyfin write API calls, entitlement changes, stream-control changes, automatic customer creation or billing changes.
+- Existing links are preserved when user discovery refreshes. One Jellyfin account per customer in this initial version.
+
 # 0.13.3a — Plex duplicate-share reconciliation hotfix
 
 Avoid duplicate invites after reactivation: discover existing users using the full Plex user listing, refresh account state on Plex HTTP 400 already-sharing errors, update accepted shares rather than reinvite, and fail safely if Plex still cannot expose an existing share. Server-specific operations, no billing/schema changes.

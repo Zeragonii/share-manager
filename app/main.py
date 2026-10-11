@@ -33,6 +33,7 @@ from .models import (
     BillingTier,
     BackupSettings,
     Customer,
+    JellyfinAccount,
     Integration,
     Package,
     PackageEntitlement,
@@ -65,6 +66,7 @@ from .models import (
 from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
 from .integrations.seerr import SeerrIntegration, SeerrError
+from .integrations.jellyfin import JellyfinIntegration, JellyfinError
 from .security import (
     logged_in, make_session, valid_credentials,
     hash_portal_password, verify_portal_password, make_portal_session, read_portal_session,
@@ -2882,10 +2884,18 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
     scheduled_broadcasts = db.query(ScheduledCustomerBroadcast).filter(ScheduledCustomerBroadcast.status == "scheduled").order_by(ScheduledCustomerBroadcast.scheduled_for.asc()).limit(10).all()
     seerr_customers = db.query(Customer).filter(Customer.archived.is_(False), Customer.plex_username.is_not(None)).order_by(Customer.name.asc()).all()
     seerr_policies = {customer.id: seerr_effective_policy(db, customer.id) for customer in seerr_customers}
+    jellyfin = db.query(Integration).filter(Integration.kind == "jellyfin").order_by(Integration.id).first()
+    jellyfin_accounts = (db.query(JellyfinAccount).filter(JellyfinAccount.integration_id == jellyfin.id)
+                         .order_by(JellyfinAccount.username).all()) if jellyfin else []
+    jellyfin_customers = db.query(Customer).filter(Customer.archived.is_(False)).order_by(Customer.name).all()
     return render(
         request,
         "integrations.html",
         integrations=enriched,
+        jellyfin=jellyfin,
+        jellyfin_accounts=jellyfin_accounts,
+        jellyfin_customers=jellyfin_customers,
+        jellyfin_customer_options=[{"id": c.id, "name": c.name, "email": c.email or "", "plex": c.plex_username or "", "portal": c.portal_username or ""} for c in jellyfin_customers],
         notification_endpoints=notification_endpoints,
         notification_deliveries=notification_deliveries,
         notification_events=EVENT_DEFINITIONS,
@@ -2902,6 +2912,94 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         error=error,
         notice=notice,
     )
+
+
+def _jf_redirect(key: str, detail: str):
+    return RedirectResponse("/integrations?" + urlencode({key: detail}) + "#jellyfin", status_code=303)
+
+
+@app.post("/integrations/jellyfin/save")
+def jellyfin_save(request: Request, base_url: str = Form(...), api_key: str = Form(""), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    url = base_url.strip().rstrip("/")
+    current = db.query(Integration).filter(Integration.kind == "jellyfin").first()
+    key = api_key.strip() or (current.secret if current else "")
+    try:
+        client = JellyfinIntegration(url, key)
+        client.users()  # Validate credentials without modifying Jellyfin
+    except JellyfinError as exc:
+        return _jf_redirect("error", str(exc))
+    if current is None:
+        current = Integration(kind="jellyfin", name="Jellyfin", enabled=True, base_url=url, secret=key)
+        db.add(current)
+    else:
+        # Changing the server could invalidate every stored user ID; require explicit reset instead.
+        if current.base_url.rstrip("/") != url and db.query(JellyfinAccount).filter_by(integration_id=current.id).first():
+            return _jf_redirect("error", "Cannot change Jellyfin server while imported accounts exist; unlink/clear them first")
+        current.base_url, current.secret = url, key
+    db.add(AuditLog(actor=settings.admin_username, action="jellyfin.connection", target_type="integration", target_id="jellyfin", detail="Saved and tested read-only Jellyfin connection"))
+    db.commit()
+    return _jf_redirect("notice", "Jellyfin connection saved and tested")
+
+
+@app.post("/integrations/jellyfin/sync")
+def jellyfin_sync(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    integration = db.query(Integration).filter(Integration.kind == "jellyfin").first()
+    if not integration:
+        return _jf_redirect("error", "Configure Jellyfin first")
+    try:
+        users = JellyfinIntegration(integration.base_url, integration.secret).users()
+    except JellyfinError as exc:
+        return _jf_redirect("error", str(exc))
+    now = datetime.utcnow()
+    existing = {a.jellyfin_user_id: a for a in db.query(JellyfinAccount).filter_by(integration_id=integration.id).all()}
+    new_count = 0
+    for user in users:
+        account = existing.get(user["id"])
+        if account is None:
+            account = JellyfinAccount(integration_id=integration.id, jellyfin_user_id=user["id"])
+            db.add(account)
+            new_count += 1
+        account.username = user["name"]
+        account.is_administrator = user["admin"]
+        account.is_disabled = user["disabled"]
+        account.last_seen_at = now
+    db.add(AuditLog(actor=settings.admin_username, action="jellyfin.sync", target_type="integration", target_id=str(integration.id), detail=f"Discovered {len(users)} users; {new_count} new; preserved existing links"))
+    db.commit()
+    return _jf_redirect("notice", f"Discovered {len(users)} Jellyfin users ({new_count} new); saved existing links")
+
+
+@app.post("/integrations/jellyfin/link")
+def jellyfin_link(request: Request, account_id: int = Form(...), customer_id: str = Form(""), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    account = db.get(JellyfinAccount, account_id)
+    if account is None:
+        return _jf_redirect("error", "Jellyfin account not found")
+    selected = customer_id.strip()
+    if selected:
+        try:
+            cid = int(selected)
+        except ValueError:
+            return _jf_redirect("error", "Invalid customer ID")
+        customer = db.get(Customer, cid)
+        if customer is None or customer.archived:
+            return _jf_redirect("error", "Customer not found or archived")
+        other = db.query(JellyfinAccount).filter(JellyfinAccount.id != account.id, JellyfinAccount.customer_id == cid).first()
+        if other:
+            return _jf_redirect("error", f"Customer already linked to Jellyfin account {other.username}; unlink first")
+        account.customer_id = cid
+    else:
+        account.customer_id = None
+    db.add(AuditLog(actor=settings.admin_username, action="jellyfin.link", target_type="jellyfin_account", target_id=str(account.id), detail=f"{account.username} linked to customer {account.customer_id or 'none'}"))
+    db.commit()
+    return _jf_redirect("notice", f"Saved Jellyfin link for {account.username}")
 
 
 @app.post("/integrations/plex")
