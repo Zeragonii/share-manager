@@ -1,3 +1,11 @@
+## v0.14.0 — Jellyfin user provisioning
+
+- Bulk-create local Jellyfin users for non-archived customers who have no linked account, using initial password `Changeme!` (must be changed promptly).
+- Preserve existing Jellyfin accounts: username collisions are skipped for manual linking, rather than claimed or overwritten.
+- Automatically link each newly created Jellyfin user to the correct Share Manager customer by returned Jellyfin ID.
+- Separate per-customer commits and audit entries; no automatic library/suspension enforcement.
+- Version jumps from v0.13.4c to v0.14.0 reflecting Jellyfin integration milestone.
+
 ## v0.13.4c — Collapsible Integrations dashboard
 
 - Every major Integrations category (Plex, Jellyfin, Requests/Seerr, Tautulli, Notifications, notification deliveries) is collapsed by default on desktop and mobile.

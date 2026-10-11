@@ -595,3 +595,7 @@ v0.10.7 adds privacy-light portal adoption metrics: successful logins, 30-minute
 Share Manager can run a simple referral-credit programme without requiring public signup or payment automation. Every customer gets a random five-digit code. Admins may assign that code as another customer's referrer, after which future qualifying payments award the configured number of credits from that customer's billing tier.
 
 Credits are ledger-backed and auditable. Payment voids reverse the original award, historical rewards do not change when tier settings change, and old payments are never rewarded retroactively when a referral relationship is added. Customers can see their code/balance in Portal → Referrals and redeem the configured number of credits for complimentary billing periods. Admins can review balances and redeem on a customer's behalf from the Referrals page.
+
+### Jellyfin bulk provisioning (v0.14.0)
+
+Integrations → Jellyfin → Manage Jellyfin user links → Create Jellyfin accounts for unlinked customers. Explicit confirmation required. New local accounts use `Changeme!`; ensure customers change this shared password immediately. Existing users with conflicting usernames are skipped, and existing mappings preserved. Jellyfin default library access is not currently managed by Share Manager; verify user permissions before distributing credentials.

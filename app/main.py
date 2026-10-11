@@ -2974,6 +2974,77 @@ def jellyfin_sync(request: Request, db: Session = Depends(get_db)):
     return _jf_redirect("notice", f"Discovered {len(users)} Jellyfin users ({new_count} new); saved existing links")
 
 
+@app.post("/integrations/jellyfin/create-missing")
+def jellyfin_create_missing(request: Request, confirm: str = Form(""), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    if confirm != "yes":
+        return _jf_redirect("error", "Confirm bulk Jellyfin user creation first")
+    integration = db.query(Integration).filter(Integration.kind == "jellyfin").first()
+    if not integration or not integration.enabled:
+        return _jf_redirect("error", "Configure and enable Jellyfin first")
+    client = JellyfinIntegration(integration.base_url, integration.secret)
+    try:
+        remote_users = client.users()
+    except JellyfinError as exc:
+        return _jf_redirect("error", str(exc))
+    remote_names = {u["name"].strip().casefold() for u in remote_users}
+    remote_ids = {u["id"] for u in remote_users}
+    known = {a.jellyfin_user_id: a for a in db.query(JellyfinAccount).filter_by(integration_id=integration.id).all()}
+    linked_ids = {a.customer_id for a in known.values() if a.customer_id is not None}
+    customers = db.query(Customer).filter(Customer.archived.is_(False)).order_by(Customer.id).all()
+    made, existing, failed = [], [], []
+    for customer in customers:
+        if customer.id in linked_ids:
+            continue
+        # Prefer existing media identity. Do not overwrite unrelated remote accounts.
+        username = (customer.plex_username or customer.portal_username or customer.name or "").strip()
+        if not username or len(username) > 120 or any(c in username for c in "\r\n\t"):
+            failed.append(f"Customer #{customer.id}: no usable username")
+            continue
+        if username.casefold() in remote_names:
+            existing.append(username)
+            continue
+        try:
+            created = client.create_user(username, "Changeme!")
+        except JellyfinError as exc:
+            failed.append(str(exc))
+            # The call may have completed remotely: refresh next run rather than blindly retry.
+            try:
+                remote_users = client.users()
+                remote_names = {u["name"].strip().casefold() for u in remote_users}
+            except JellyfinError:
+                pass
+            continue
+        if created["id"] in remote_ids or created["id"] in known:
+            failed.append(f"Customer #{customer.id}: duplicate Jellyfin identity returned")
+            continue
+        account = JellyfinAccount(integration_id=integration.id, jellyfin_user_id=created["id"],
+                                 username=created["name"], customer_id=customer.id,
+                                 is_administrator=False, is_disabled=False,
+                                 last_seen_at=datetime.utcnow())
+        db.add(account)
+        # Commit each successful link so a later Jellyfin error cannot orphan them.
+        db.add(AuditLog(actor=settings.admin_username, action="jellyfin.user.create",
+                        target_type="customer", target_id=str(customer.id),
+                        detail=f"Created and linked Jellyfin user {created['name']} (ID {created['id']})"))
+        db.commit()
+        linked_ids.add(customer.id)
+        remote_ids.add(created["id"])
+        remote_names.add(created["name"].strip().casefold())
+        made.append(username)
+    db.add(AuditLog(actor=settings.admin_username, action="jellyfin.bulk_create",
+                    target_type="integration", target_id=str(integration.id),
+                    detail=f"Created {len(made)}; existing usernames {len(existing)}; errors {len(failed)}"))
+    db.commit()
+    summary = f"Created and linked {len(made)} Jellyfin users; skipped {len(existing)} existing usernames"
+    if failed:
+        summary += f"; {len(failed)} errors (first: {failed[0]})"
+        return _jf_redirect("error", summary)
+    return _jf_redirect("notice", summary)
+
+
 @app.post("/integrations/jellyfin/link")
 def jellyfin_link(request: Request, account_id: int = Form(...), customer_id: str = Form(""), db: Session = Depends(get_db)):
     gate = auth(request)

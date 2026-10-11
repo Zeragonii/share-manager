@@ -45,10 +45,10 @@
 
 <section class="integration-section" id="jellyfin">
   <details class="integration-section-details">
-    <summary class="integration-section-summary"><span class="integration-section-label"><strong>Jellyfin</strong><small>Account discovery and linking</small></span><span class="integration-section-status">{% if jellyfin %}<span class="integration-section-meta">{{ jellyfin_accounts|selectattr("customer_id")|list|length }} linked / {{ jellyfin_accounts|length }} discovered</span>{% endif %}<span class="integration-section-chevron" aria-hidden="true">⌄</span></span></summary>
+    <summary class="integration-section-summary"><span class="integration-section-label"><strong>Jellyfin</strong><small>Account discovery, linking and provisioning</small></span><span class="integration-section-status">{% if jellyfin %}<span class="integration-section-meta">{{ jellyfin_accounts|selectattr("customer_id")|list|length }} linked / {{ jellyfin_accounts|length }} discovered</span>{% endif %}<span class="integration-section-chevron" aria-hidden="true">⌄</span></span></summary>
     <div class="integration-section-content">
 
-  <p class="muted">Read-only user discovery. Linking accounts does not change Jellyfin passwords, library access, playback, or customer billing.</p>
+  <p class="muted">Discover and link existing accounts, or explicitly create missing accounts. Linking alone does not modify Jellyfin.</p>
   <form method="post" action="/integrations/jellyfin/save" class="grid-form">
     <label>Jellyfin server URL<input name="base_url" type="url" placeholder="http://jellyfin:8096" value="{{ jellyfin.base_url if jellyfin else '' }}" required></label>
     <label>Jellyfin API key <span class="muted">{% if jellyfin %}(leave blank to retain existing key){% endif %}</span><input name="api_key" type="password" {% if not jellyfin %}required{% endif %}></label>
@@ -60,6 +60,17 @@
     <div class="jellyfin-linking-body">
       <p class="muted">Expand to discover users, search for customers, or edit existing links. Refreshing does not delete previous links.</p>
       <form method="post" action="/integrations/jellyfin/sync" class="jellyfin-refresh-form"><button type="submit" class="secondary">Discover / refresh Jellyfin users</button></form>
+      <details class="integration-add" id="jellyfin-bulk-create">
+        <summary>Create Jellyfin accounts for unlinked customers</summary>
+        <div class="jellyfin-linking-body">
+          <p class="muted">Creates local Jellyfin users for every non-archived customer without a linked Jellyfin account, and links the new IDs automatically. Existing usernames in Jellyfin are skipped for manual linking. The initial password for every created user is <code>Changeme!</code>.</p>
+          <p class="muted"><strong>Security:</strong> All new accounts share this password. Have customers change it immediately. Jellyfin may grant new users access to all libraries by default; this action does not enforce package limits or suspension.</p>
+          <form method="post" action="/integrations/jellyfin/create-missing">
+            <label><input type="checkbox" name="confirm" value="yes" required> I understand new accounts use a shared default password and may have default Jellyfin library access.</label>
+            <button type="submit">Create missing Jellyfin users</button>
+          </form>
+        </div>
+      </details>
       <div class="jellyfin-user-list">
     {% for account in jellyfin_accounts %}
     <form method="post" action="/integrations/jellyfin/link" class="jellyfin-link-row">
