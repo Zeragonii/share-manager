@@ -1,3 +1,8 @@
+## v0.14.1a — Payment history notes
+
+- Show the existing payment note next to the payment reference in the admin Payment history table.
+- Update empty-table colspan. UI-only; no database or billing changes.
+
 ## v0.14.1 — Jellyfin package library entitlements
 
 - Packages now show selectable Jellyfin libraries alongside Plex integration entitlements.
