@@ -1,3 +1,10 @@
+## v0.14.2a — Plex suspension UI polish
+
+- Rework the soft-suspension policy editor into a dedicated stacked layout.
+- Keep the placeholder-library selector and retention field aligned while moving the explanatory warning below them.
+- Right-align the save action on desktop and make it full-width on smaller screens.
+- UI-only hotfix; no logic, API or database changes.
+
 ## v0.14.2 — Plex soft suspension
 
 - Per-Plex-integration placeholder library and calendar-month retention.

@@ -1014,3 +1014,16 @@ a.button-link, .button-link{white-space:nowrap}
 .integration-section-content > :first-child{margin-top:0}
 .integration-section-actions{display:flex;justify-content:flex-end;margin-bottom:14px}
 @media(max-width:700px){.integration-section-summary{padding:12px;gap:8px}.integration-section-content{padding:12px}.integration-section-status{gap:5px}.integration-section-label strong{font-size:15px}.integration-section-label small,.integration-section-meta{font-size:11px}.integration-section-status .badge{font-size:10px}}
+
+/* v0.14.2a — plex suspension policy layout cleanup */
+.suspension-policy-panel{margin-top:14px}
+.suspension-policy-form{display:grid;gap:12px;align-items:start}
+.suspension-policy-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(180px,.8fr);gap:12px;align-items:end}
+.suspension-policy-help{margin:0;line-height:1.5}
+.suspension-policy-actions{display:flex;justify-content:flex-end;align-items:center}
+.suspension-policy-actions button{min-width:220px}
+@media(max-width:900px){
+  .suspension-policy-grid{grid-template-columns:1fr}
+  .suspension-policy-actions{justify-content:stretch}
+  .suspension-policy-actions button{width:100%;min-width:0}
+}
