@@ -323,6 +323,9 @@ def run_billing_cycle() -> int:
                 reconcile_customer(db, customer)
             except Exception as exc:
                 _notify_reconcile_failure(db, customer, exc)
+        # Expired soft suspensions must be removed even if billing status has not changed.
+        from .services.reconcile import enqueue_expired_soft_suspensions
+        enqueue_expired_soft_suspensions(db, now=now)
         retry_pending_reconciliations(db, now=now, on_error=_notify_reconcile_failure)
         # Check established playback immediately on billing suspension, without
         # waiting for the ordinary Tautulli polling interval. A failed Tautulli
@@ -2038,6 +2041,7 @@ def restore_onboard_customer(
     customer.archived = False
     customer.archived_at = None
     customer.status = "active"
+    customer.suspended_at = None
     customer.exempt = False
     db.add(subscription)
     db.add(AuditLog(
@@ -2106,6 +2110,10 @@ def bulk_customers(
             else:
                 customer.exempt = False
                 customer.status = status
+                if status == "suspended" and previous_status != "suspended":
+                    customer.suspended_at = now
+                elif status in {"active", "grace", "cancelled"}:
+                    customer.suspended_at = None
                 detail = status
                 current = db.query(Subscription).filter(
                     Subscription.customer_id == customer.id,
@@ -2172,6 +2180,7 @@ def bulk_customers(
             sub.billing_tier = tier
             initialize_subscription_period(sub, start)
             customer.status = "active"
+            customer.suspended_at = None
             db.add(sub)
             db.add(AuditLog(
                 actor=settings.admin_username,
@@ -2255,6 +2264,10 @@ def customer_status(request: Request, customer_id: int, status: str = Form(...),
     else:
         c.exempt = False
         c.status = status
+        if status == "suspended" and previous_status != "suspended":
+            c.suspended_at = datetime.utcnow()
+        elif status in {"active", "grace", "cancelled"}:
+            c.suspended_at = None
         detail = status
         current = db.query(Subscription).filter(
             Subscription.customer_id == c.id,
@@ -2315,6 +2328,7 @@ def subscribe(
     sub.billing_tier = tier
     initialize_subscription_period(sub, start)
     c.status = "active"
+    c.suspended_at = None
     db.add(sub)
     db.add(AuditLog(
         actor=settings.admin_username,
@@ -2358,6 +2372,10 @@ def edit_subscription_dates(
     sub.status = desired
     if not sub.customer.exempt:
         sub.customer.status = desired
+        if desired == "suspended" and sub.customer.suspended_at is None:
+            sub.customer.suspended_at = sub.grace_until or datetime.utcnow()
+        elif desired in {"active", "grace"}:
+            sub.customer.suspended_at = None
     db.add(AuditLog(
         actor=settings.admin_username,
         action="subscription.dates",
@@ -3126,6 +3144,39 @@ def add_plex(request: Request, name: str = Form(...), base_url: str = Form(...),
     db.add(AuditLog(actor=settings.admin_username, action="integration.create", target_type="integration", target_id=str(integration.id), detail=f"Plex: {info['server_name']}"))
     db.commit()
     return RedirectResponse("/integrations", status_code=303)
+
+
+@app.post("/integrations/{integration_id}/suspension-policy")
+def save_plex_suspension_policy(request: Request, integration_id: int,
+                                suspension_library: str = Form(""),
+                                retention_months: int = Form(3),
+                                db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    integration = db.get(Integration, integration_id)
+    if integration is None or integration.kind != "plex":
+        raise HTTPException(status_code=404, detail="Plex integration not found")
+    if not 0 <= retention_months <= 120:
+        return RedirectResponse("/integrations?error=Retention+must+be+between+0+and+120+months", status_code=303)
+    selected = suspension_library.strip()
+    if selected:
+        try:
+            library_names = {lib["name"] for lib in PlexIntegration(integration.base_url, integration.secret).libraries()}
+        except Exception:
+            return RedirectResponse("/integrations?error=Unable+to+verify+Plex+suspension+library", status_code=303)
+        if selected not in library_names:
+            return RedirectResponse("/integrations?error=Selected+Plex+library+no+longer+exists", status_code=303)
+    integration.suspension_library = selected or None
+    integration.suspension_retention_months = retention_months
+    db.add(AuditLog(actor=settings.admin_username, action="plex.suspension_policy", target_type="integration", target_id=str(integration_id), detail=f"library={selected or 'disabled'}; retention_months={retention_months}"))
+    db.commit()
+    # Reconcile currently suspended users without inviting accounts already removed.
+    from .services.reconcile import enqueue_reconciliation
+    for c in db.query(Customer).filter(Customer.status == "suspended", Customer.archived.is_(False), Customer.exempt.is_(False)).all():
+        enqueue_reconciliation(db, c, integration_ids=[integration_id])
+    db.commit()
+    return RedirectResponse("/integrations?notice=Plex+suspension+policy+saved", status_code=303)
 
 
 @app.post("/integrations/{integration_id}/import-users")

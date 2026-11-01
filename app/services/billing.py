@@ -139,6 +139,7 @@ def apply_payment(
         sub.cancelled_at = None
         if not customer.exempt:
             customer.status = "active"
+            customer.suspended_at = None
 
     db.add(payment)
     db.flush()
@@ -261,6 +262,10 @@ def process_billing(db: Session, now: datetime | None = None, *, customer_id: in
         sub.status = desired
         if not customer.exempt:
             customer.status = desired
+            if desired == "suspended" and customer.suspended_at is None:
+                customer.suspended_at = sub.grace_until or now
+            elif desired in {"active", "grace"}:
+                customer.suspended_at = None
             changed_customers[customer.id] = customer
         db.add(AuditLog(
             action="billing.status",

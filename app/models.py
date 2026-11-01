@@ -15,6 +15,7 @@ class Customer(Base):
     exempt: Mapped[bool] = mapped_column(Boolean, default=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     portal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     portal_username: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
@@ -151,6 +152,8 @@ class Integration(Base):
     base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     machine_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    suspension_library: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    suspension_retention_months: Mapped[int] = mapped_column(Integer, default=3)
     __table_args__ = (UniqueConstraint("kind", "name"),)
 
 

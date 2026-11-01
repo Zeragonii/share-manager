@@ -1,3 +1,7 @@
+## Plex soft suspension (v0.14.2)
+
+Per Plex server, choose an empty placeholder library and a retention in calendar months under Integrations → Plex. Active/grace shares keep their package libraries. Suspended customers with existing accepted shares retain only the placeholder until retention expiry, then have their server share removed. Existing Tautulli suspended-stream enforcement remains active. 0 months means retain indefinitely. Older suspended customers with no recorded timestamp are not invited back.
+
 ## v0.13.4c — Collapsible Integrations dashboard
 
 - Every major Integrations category (Plex, Jellyfin, Requests/Seerr, Tautulli, Notifications, notification deliveries) is collapsed by default on desktop and mobile.

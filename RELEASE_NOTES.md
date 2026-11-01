@@ -1,3 +1,10 @@
+## v0.14.2 — Plex soft suspension
+
+- Per-Plex-integration placeholder library and calendar-month retention.
+- Retain accepted shares through soft suspension; automatically remove after expiry.
+- Preserve Tautulli active-stream suspension enforcement; do not reinvite previously removed users.
+- Additive PostgreSQL columns for timestamps and per-server settings.
+
 ## v0.14.1a — Payment history notes
 
 - Show the existing payment note next to the payment reference in the admin Payment history table.

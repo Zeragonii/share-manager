@@ -1,3 +1,7 @@
+## v0.14.2 Plex soft suspension
+
+Customer.suspended_at records the billing transition cutoff; Integration.suspension_library and suspension_retention_months hold independent per-server settings. The Plex durable queue recalculates desired library access at execution time; scheduled billing enqueues hard-removal cleanup after the exact calendar-month deadline. The placeholder path never creates a new share or invite. Jellyfin and Tautulli entitlement/activity behaviour is unchanged.
+
 ## v0.13.4c — Collapsible Integrations dashboard
 
 - Every major Integrations category (Plex, Jellyfin, Requests/Seerr, Tautulli, Notifications, notification deliveries) is collapsed by default on desktop and mobile.

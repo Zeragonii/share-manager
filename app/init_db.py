@@ -19,6 +19,9 @@ def add_column_if_missing(table: str, column: str, ddl: str):
 
 add_column_if_missing("customers", "archived", "BOOLEAN NOT NULL DEFAULT FALSE")
 add_column_if_missing("customers", "archived_at", "TIMESTAMP NULL")
+add_column_if_missing("customers", "suspended_at", "TIMESTAMP NULL")
+add_column_if_missing("integrations", "suspension_library", "VARCHAR(255) NULL")
+add_column_if_missing("integrations", "suspension_retention_months", "INTEGER NOT NULL DEFAULT 3")
 add_column_if_missing("customers", "portal_enabled", "BOOLEAN NOT NULL DEFAULT FALSE")
 add_column_if_missing("customers", "portal_username", "VARCHAR(120) NULL")
 add_column_if_missing("customers", "portal_password_hash", "TEXT NULL")

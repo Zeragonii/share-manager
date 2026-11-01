@@ -262,6 +262,7 @@ class PlexIntegration:
         library_names: list[str],
         plex_user_id: str | None = None,
         email: str | None = None,
+        existing_share_only: bool = False,
     ) -> dict:
         """Apply desired Plex access and return a truthful reconciliation state.
 
@@ -287,6 +288,11 @@ class PlexIntegration:
 
         sections = [server.library.section(name) for name in library_names]
         share = self._server_share(user, server.machineIdentifier) if user is not None else None
+
+        if existing_share_only and (share is None or getattr(share, "pending", False)):
+            # Previously removed or unaccepted share: do not re-invite a
+            # suspended customer merely to show the placeholder library.
+            return {"state": "not_shared", "libraries": []}
 
         if share is None and pending_invite is not None:
             # A pending invitation is entitlement state too. Recreate this server's

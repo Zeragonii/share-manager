@@ -34,6 +34,22 @@
         <div class="row between"><h3>{{ i.name }}</h3><span class="badge">{{ i.kind }}</span></div>
         <div class="muted">{{ i.base_url }}</div>
         {% if plex_error %}<div class="alert error">{{ plex_error }}</div>{% else %}<p>{{ libs|length }} libraries discovered.</p>{% endif %}
+        <details class="integration-add">
+          <summary>Soft suspension settings{% if i.suspension_library %} — {{ i.suspension_library }}{% else %} — off{% endif %}</summary>
+          <form method="post" action="/integrations/{{ i.id }}/suspension-policy" class="grid-form integration-add-body">
+            <label>Placeholder library
+              <select name="suspension_library">
+                <option value="">Disabled — remove server access immediately</option>
+                {% for lib in libs %}<option value="{{ lib.name }}" {% if i.suspension_library == lib.name %}selected{% endif %}>{{ lib.name }}</option>{% endfor %}
+              </select>
+            </label>
+            <label>Hard removal after (calendar months; 0 = never)
+              <input name="retention_months" type="number" min="0" max="120" value="{{ i.suspension_retention_months if i.suspension_retention_months is not none else 3 }}" required>
+            </label>
+            <p class="muted">Only updates existing accepted shares during suspension. Previously removed accounts are not reinvited. Ensure the placeholder library contains no playable media.</p>
+            <button>Save suspension policy</button>
+          </form>
+        </details>
         <form method="post" action="/integrations/{{ i.id }}/import-users"><button>Import Plex users</button></form>
       </article>
     {% else %}<p class="muted">No Plex integrations connected.</p>{% endfor %}

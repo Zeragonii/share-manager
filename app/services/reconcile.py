@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from threading import RLock
 from typing import Callable
 
@@ -29,6 +30,8 @@ def _result_detail(integration_name: str, result: dict) -> tuple[str, str]:
             "plex.invite.pending",
             f"Plex invitation via {integration_name} is awaiting acceptance with {count} libraries: {names}",
         )
+    if state == "not_shared":
+        return ("plex.suspension.skipped", f"No existing Plex share to retain via {integration_name}; no invitation sent")
     if state == "removed":
         return (
             "plex.reconcile",
@@ -157,6 +160,19 @@ def _reconcile_customer(db, customer, *, integration_ids, retry_only, now):
                 if entitlement.integration_id == integration.id and entitlement.resource_type == "library":
                     desired.add(entitlement.resource_name)
 
+        # Soft suspension retains an existing share with only the configured empty
+        # library. Never create a share solely to display the placeholder.
+        soft_suspend = False
+        if customer.status == "suspended" and not customer.archived and integration.suspension_library:
+            cutoff = customer.suspended_at
+            if cutoff is None:
+                # Legacy suspended customers have no persisted transition timestamp.
+                # Never re-invite them; leave previously revoked shares untouched.
+                cutoff = None
+            months = max(0, int(integration.suspension_retention_months if integration.suspension_retention_months is not None else 3))
+            if cutoff is not None and (months == 0 or now < cutoff + relativedelta(months=months)):
+                desired = {integration.suspension_library}
+                soft_suspend = True
         try:
             client = PlexIntegration(integration.base_url, integration.secret)
             result = client.apply_libraries(
@@ -164,6 +180,7 @@ def _reconcile_customer(db, customer, *, integration_ids, retry_only, now):
                 sorted(desired),
                 plex_user_id=customer.plex_user_id,
                 email=customer.email,
+                existing_share_only=soft_suspend,
             )
         except Exception as exc:
             job.attempts += 1
@@ -175,6 +192,13 @@ def _reconcile_customer(db, customer, *, integration_ids, retry_only, now):
             errors.append(f"{integration.name}: {exc}")
             continue
         action, detail = _result_detail(integration.name, result)
+        if soft_suspend and result.get("state") == "applied":
+            action = "plex.suspension.soft"
+            detail = f"Retained existing Plex share via {integration.name} with suspension library: {integration.suspension_library}"
+        if customer.status == "suspended" and result.get("state") == "removed" and customer.suspended_at and integration.suspension_library:
+            months = int(integration.suspension_retention_months if integration.suspension_retention_months is not None else 3)
+            if months > 0 and now >= customer.suspended_at + relativedelta(months=months):
+                db.add(AuditLog(action="plex.suspension.expired", target_type="customer", target_id=str(customer.id), detail=f"soft-suspension-expired:{integration.id}:{customer.id}:{customer.suspended_at.isoformat()}"))
         db.add(AuditLog(action=action, target_type="customer", target_id=str(customer.id), detail=detail))
         db.delete(job)
         db.commit()
@@ -193,6 +217,33 @@ def _reconcile_customer(db, customer, *, integration_ids, retry_only, now):
     if errors:
         raise RuntimeError("; ".join(errors))
     return messages
+
+
+def enqueue_expired_soft_suspensions(db: Session, *, now: datetime | None = None) -> int:
+    """Schedule removal for retained shares once their retention deadline passes."""
+    now = now or datetime.utcnow()
+    count = 0
+    integrations = db.query(Integration).filter(Integration.kind == "plex", Integration.enabled.is_(True), Integration.suspension_library.is_not(None)).all()
+    if not integrations:
+        return 0
+    customers = db.query(Customer).filter(Customer.status == "suspended", Customer.exempt.is_(False), Customer.archived.is_(False), Customer.suspended_at.is_not(None)).all()
+    for integration in integrations:
+        months = int(integration.suspension_retention_months if integration.suspension_retention_months is not None else 3)
+        if months == 0:
+            continue
+        for customer in customers:
+            if customer.plex_username and customer.suspended_at + relativedelta(months=max(0, months)) <= now:
+                # A completed removal should not be repeated every cycle. A single
+                # durable marker records the last hard cleanup for this suspension.
+                marker = f"soft-suspension-expired:{integration.id}:{customer.id}:{customer.suspended_at.isoformat()}"
+                done = db.query(AuditLog).filter(AuditLog.action == "plex.suspension.expired", AuditLog.target_type == "customer", AuditLog.target_id == str(customer.id), AuditLog.detail == marker).first()
+                if done is None:
+                    enqueue_reconciliation(db, customer, integration_ids=[integration.id], now=now)
+                    # Only commit marker once reconciliation actually completes;
+                    # retry jobs handle transient Plex outages.
+                    count += 1
+    db.commit()
+    return count
 
 
 def retry_pending_reconciliations(
