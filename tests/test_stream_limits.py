@@ -57,5 +57,5 @@ def test_stream_limit_device_context():
     assert "Living Room TV" in message and "Bedroom Apple TV" in message
     assert "Phone" not in message
     assert "Unknown device" == stream_device_name({})
-    assert stream_device_name({"device": "  A\\n  B  "}) == "A B"
+    assert stream_device_name({"device": "  A\n  B  "}) == "A B"
     assert len(concurrency_stop_message(1, ["X" * 900])) <= 211
