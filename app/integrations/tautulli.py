@@ -237,6 +237,7 @@ class TautulliIntegration:
                 "state": row.get("state") or "playing",
                 "media_type": row.get("media_type"),
                 "player": row.get("player"),
+                "device": row.get("device") or row.get("player") or row.get("product"),
                 "ip_address": row.get("ip_address") or row.get("ip"),
                 "started_at": self._dt(row.get("started")),
             })

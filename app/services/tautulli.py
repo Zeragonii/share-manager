@@ -523,6 +523,40 @@ def dashboard_usage(db: Session, *, now: datetime | None = None) -> dict[str, in
     return {"active_7d": active_7d, "active_30d": active_30d, "inactive_90d": inactive_90d, "never": never, "watch_time_30d": total_30d, "average_30d": average_30d}
 
 
+
+def stream_device_name(session: dict[str, Any]) -> str:
+    """Prefer Tautulli's device name, falling back to player/client; never expose IPs."""
+    for field in ("device", "player", "product"):
+        value = session.get(field)
+        if value is None:
+            continue
+        clean = " ".join(str(value).split()).strip()
+        clean = "".join(ch for ch in clean if ch.isprintable())
+        if clean:
+            return clean[:72]
+    return "Unknown device"
+
+
+def active_stream_devices(sessions: list[dict[str, Any]], limit: int) -> list[str]:
+    """Return device names from the oldest sessions occupying the allowed slots."""
+    result: list[str] = []
+    for session in sessions[:limit]:
+        label = stream_device_name(session)
+        if label not in result:
+            result.append(label)
+    return result
+
+
+def concurrency_stop_message(limit: int, devices: list[str]) -> str:
+    """Short client-facing message; some Plex clients truncate termination messages."""
+    message = f"Concurrent stream limit reached ({limit} allowed)."
+    if devices:
+        names = ", ".join(devices)
+        max_names = max(0, 210 - len(message) - len(" Already streaming on: ."))
+        message += f" Already streaming on: {names[:max_names].rstrip(', ')}."
+    return message
+
+
 def enforce_stream_limits(db: Session, *, now: datetime | None = None, force_refresh: bool = False) -> dict[str, int]:
     """Enforce per-tier concurrent stream limits from the shared Tautulli live sample.
 
@@ -658,6 +692,8 @@ def enforce_stream_limits(db: Session, *, now: datetime | None = None, force_ref
 
         ordered = sorted(sessions, key=started_value)
         excess = ordered[limit:]  # newest sessions beyond the allowance
+        occupied_devices = active_stream_devices(ordered, limit)
+        occupied_label = ", ".join(occupied_devices) or "Unknown device"
         signature = tuple(sorted(str(x.get("session_key") or "") for x in excess))
         obs = _stream_observations.get(customer_id)
         if obs and obs.get("sampled_at") == sampled_at:
@@ -679,17 +715,19 @@ def enforce_stream_limits(db: Session, *, now: datetime | None = None, force_ref
             title = str(session.get("title") or "Unknown title")
             player = str(session.get("player") or "") or None
             ip_address = str(session.get("ip_address") or "") or None
+            blocked_device = stream_device_name(session)
+            device_context = f"Blocked device: {blocked_device}; already streaming on: {occupied_label}"
             success = False
             detail = None
             try:
-                client.terminate_session(session_key, f"Concurrent stream limit reached. Your account allows {limit} concurrent stream{'s' if limit != 1 else ''}.")
+                client.terminate_session(session_key, concurrency_stop_message(limit, occupied_devices))
                 success = True
                 enforced += 1
                 _recent_terminations[session_key] = now
-                detail = "Newest excess session terminated"
+                detail = f"Newest excess session terminated; {device_context}"
             except Exception as exc:
                 failed += 1
-                detail = f"{type(exc).__name__}: {exc}"[:1000]
+                detail = f"{type(exc).__name__}: {exc}; {device_context}"[:1000]
 
             event = StreamLimitEvent(
                 customer_id=customer.id, billing_tier_id=tier.id if tier else None,
@@ -704,11 +742,13 @@ def enforce_stream_limits(db: Session, *, now: datetime | None = None, force_ref
                 db,
                 event="stream.limit_enforced" if success else "stream.limit_enforcement_failed",
                 title="Concurrent stream limit enforced" if success else "Concurrent stream limit enforcement failed",
-                message=(f"{customer.name} had {len(sessions)} concurrent streams with a limit of {limit}. " + (f"Terminated {title}." if success else f"Could not terminate {title}.")),
+                message=(f"{customer.name} had {len(sessions)} concurrent streams with a limit of {limit}. "
+                         + (f"Terminated {title} on {blocked_device}." if success else f"Could not terminate {title} on {blocked_device}.")
+                         + f" Already streaming on: {occupied_label}."),
                 severity="warning" if success else "critical",
                 target_type="customer", target_id=str(customer.id),
                 event_key=f"stream-limit:{'ok' if success else 'failed'}:{customer.id}:{session_key}:{int(now.timestamp())}",
-                data={"customer": customer.name, "allowed": limit, "detected": len(sessions), "title": title, "player": player, "success": success},
+                data={"customer": customer.name, "allowed": limit, "detected": len(sessions), "title": title, "player": player, "blocked_device": blocked_device, "active_devices": occupied_devices, "success": success},
             )
         _stream_observations.pop(customer_id, None)
 

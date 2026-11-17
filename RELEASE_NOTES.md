@@ -1,3 +1,11 @@
+## v0.14.2b — Stream limit device context
+
+- Include the violating player's device and already-active devices in stream-cap notifications.
+- Show the same device context in stream-enforcement history and audit entries.
+- Tell the blocked Plex client which device(s) already occupy their allowance, using Tautulli's device/player data.
+- Preserve the two-sample enforcement guard, newest-stream policy, and billing/suspension behaviour.
+- No database migration.
+
 ## v0.14.2a — Plex suspension UI polish
 
 - Rework the soft-suspension policy editor into a dedicated stacked layout.
