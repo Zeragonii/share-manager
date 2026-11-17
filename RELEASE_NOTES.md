@@ -1,3 +1,10 @@
+## v0.14.2c — Prefer named Plex player in stream limit messages
+
+- Prioritize Tautulli's Player value (e.g. "Ste's Fire TV") over generic Device/Platform labels in stream-cap notifications, client termination messages, and audit history.
+- Fall back to Device and Product when Player is missing.
+- Preserve separate raw player/device/product values in Tautulli activity normalization.
+- No schema, entitlement or enforcement-rule changes.
+
 ## v0.14.2b — Stream limit device context
 
 - Include the violating player's device and already-active devices in stream-cap notifications.

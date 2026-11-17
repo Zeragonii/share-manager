@@ -525,8 +525,8 @@ def dashboard_usage(db: Session, *, now: datetime | None = None) -> dict[str, in
 
 
 def stream_device_name(session: dict[str, Any]) -> str:
-    """Prefer Tautulli's device name, falling back to player/client; never expose IPs."""
-    for field in ("device", "player", "product"):
+    """Prefer Tautulli's named player, then device/product; never expose IPs."""
+    for field in ("player", "device", "product"):
         value = session.get(field)
         if value is None:
             continue
