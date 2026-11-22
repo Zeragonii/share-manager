@@ -200,11 +200,56 @@ class NexaAccount(Base):
     template_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     template_confirmed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     automation_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    automation_approved_package_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    automation_approved_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    automation_approved_policy_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    automation_armed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    replacement_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    replacement_password_recorded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    replacement_password_ack_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     linked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     customer: Mapped["Customer"] = relationship()
     integration: Mapped["Integration"] = relationship()
     __table_args__ = (UniqueConstraint("integration_id", "provider_account_id", name="uq_nexa_provider_account"),)
 
+
+
+
+class NexaExtensionJob(Base):
+    """One immutable NEXA extension intention per new applied customer payment.
+
+    An uncertain outcome ALWAYS retries the same provider account, payload
+    and idempotency key; jobs are never re-created using a new key on timeout.
+    """
+    __tablename__ = "nexa_extension_jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("nexa_accounts.id", ondelete="RESTRICT"), index=True)
+    payment_id: Mapped[int] = mapped_column(ForeignKey("payments.id", ondelete="RESTRICT"), index=True)
+    provider_account_id: Mapped[str] = mapped_column(String(128))
+    provider_package_id: Mapped[str] = mapped_column(String(64))
+    months: Mapped[int] = mapped_column(Integer)
+    paid_through_at: Mapped[datetime] = mapped_column(DateTime)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    post_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    previous_expiry_ts: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    new_expiry_ts: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    credits_charged: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credits_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    replayed: Mapped[bool] = mapped_column(Boolean, default=False)
+    password_changed: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    account: Mapped["NexaAccount"] = relationship()
+    payment: Mapped["Payment"] = relationship()
+    __table_args__ = (
+        UniqueConstraint("account_id", "payment_id", name="uq_nexa_account_payment"),
+    )
 
 
 class JellyfinAccount(Base):

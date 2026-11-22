@@ -1,6 +1,6 @@
-"""Read-only NEXA reseller API integration (Phase 1).
+"""NEXA reseller API client: read-only discovery and strictly idempotent paid extensions.
 
-Only GET operations are intentionally exposed; no account creation or extensions.
+The extension method is only called by the opt-in Phase 3 renewal worker.
 """
 
 from __future__ import annotations
@@ -42,6 +42,16 @@ def decrypt_api_key(value: str, app_secret: str) -> str:
         return Fernet(key).decrypt(value[len(SECRET_PREFIX):].encode()).decode()
     except (InvalidToken, ValueError):
         raise NexaError("Unable to decrypt the NEXA key; verify APP_SECRET or enter a new key") from None
+
+
+class NexaExtensionError(NexaError):
+    """Provider extension failure with explicit retry/ambiguous-outcome semantics."""
+
+    def __init__(self, message: str, *, retryable: bool = False, uncertain: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
+        self.uncertain = uncertain
+
 
 
 class NexaIntegration:
@@ -159,3 +169,88 @@ class NexaIntegration:
             "exp_date": raw_expiry,
             "expiry_label": expiry or "Unavailable",
         }
+
+
+    def extend(self, *, account_id: str, package_id: str, months: int, idempotency_key: str) -> dict:
+        """Submit exactly one immutable paid extension with a persistent idempotency key.
+
+        Never generate keys in the client or automatically choose a provider package.
+        """
+        account_id, package_id, idempotency_key = str(account_id), str(package_id), str(idempotency_key)
+        if not re.fullmatch(r"[0-9]{1,18}", account_id):
+            raise NexaExtensionError("Unsupported NEXA account ID")
+        if not re.fullmatch(r"[0-9]{1,18}", package_id) or months not in (6, 12):
+            raise NexaExtensionError("Unsupported NEXA paid package or duration")
+        if not re.fullmatch(r"[a-zA-Z0-9._:-]{8,128}", idempotency_key):
+            raise NexaExtensionError("Invalid NEXA idempotency key")
+        try:
+            response = httpx.post(
+                f"{BASE_URL}/api/reseller/v1/accounts/{account_id}/extend",
+                json={"package_id": int(package_id), "months": months},
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Accept": "application/json", "Content-Type": "application/json",
+                    "Idempotency-Key": idempotency_key,
+                },
+                timeout=self.timeout, follow_redirects=False,
+            )
+        except httpx.TimeoutException:
+            raise NexaExtensionError(
+                "NEXA extension timed out; outcome is uncertain, retrying the same idempotency key",
+                retryable=True, uncertain=True,
+            ) from None
+        except httpx.RequestError:
+            raise NexaExtensionError(
+                "NEXA extension connection failed; retrying the same idempotency key",
+                retryable=True, uncertain=True,
+            ) from None
+
+        if response.status_code != 200:
+            retryable = response.status_code in (429, 500, 502, 503, 504)
+            messages = {
+                400: "NEXA rejected the extension package or duration",
+                401: "NEXA API key is invalid or revoked",
+                402: "NEXA has insufficient credits to extend this account",
+                403: "NEXA denied extension (possibly disabled or blocked line)",
+                404: "NEXA account no longer belongs to the reseller",
+                409: "NEXA rejected the extension (idempotency conflict or unlimited expiry)",
+                429: "NEXA API rate limit reached",
+                503: "NEXA is temporarily unavailable",
+            }
+            raise NexaExtensionError(
+                messages.get(response.status_code, f"NEXA extension returned HTTP {response.status_code}"),
+                retryable=retryable, uncertain=retryable,
+            )
+        if len(response.content) > MAX_RESPONSE_BYTES:
+            raise NexaExtensionError("NEXA returned an oversized extension response", retryable=True, uncertain=True)
+        try:
+            payload = response.json()
+        except ValueError:
+            raise NexaExtensionError("NEXA extension returned invalid JSON", retryable=True, uncertain=True) from None
+        if not isinstance(payload, dict) or payload.get("success") is not True:
+            raise NexaExtensionError("NEXA extension was not confirmed; manual review required", uncertain=True)
+        account = payload.get("account")
+        if (not isinstance(account, dict) or str(account.get("id")) != account_id
+                or payload.get("new_expiry") is None):
+            raise NexaExtensionError("NEXA extension response lacks verified identity or expiry", uncertain=True)
+        try:
+            new_expiry = int(payload["new_expiry"])
+            account_expiry = int(account.get("exp_date", new_expiry))
+            if new_expiry <= 0 or account_expiry <= 0:
+                raise ValueError
+            credits = int(payload["credits_charged"])
+        except (ValueError, TypeError, KeyError):
+            raise NexaExtensionError("NEXA extension response lacks valid charged credits or expiry", uncertain=True) from None
+        changed = bool(payload.get("password_changed"))
+        password = account.get("password") if changed else None
+        return {
+            "previous_expiry": payload.get("previous_expiry"),
+            "new_expiry": new_expiry,
+            "account_expiry": account_expiry,
+            "credits_charged": credits,
+            "credits_remaining": payload.get("credits_remaining"),
+            "replayed": bool(payload.get("replayed")),
+            "password_changed": changed,
+            "replacement_password": password if isinstance(password, str) and password else None,
+        }
+
