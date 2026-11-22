@@ -75,7 +75,9 @@ def test_safe_http_errors(monkeypatch, status, fragment):
 
 
 def test_no_non_get_operations_exposed():
-    assert not hasattr(NexaIntegration, "extend")
+    # Account creation remains unsupported. Paid extensions are isolated to an
+    # explicitly approved, payment-backed queue in Phase 3.
+    assert hasattr(NexaIntegration, "extend")
     assert not hasattr(NexaIntegration, "create")
     with pytest.raises(NexaError, match="Unsupported"):
         NexaIntegration("key")._get("/accounts/123/extend")
