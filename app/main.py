@@ -67,6 +67,7 @@ from .integrations.plex import PlexIntegration
 from .integrations.tautulli import TautulliIntegration, TautulliError
 from .integrations.seerr import SeerrIntegration, SeerrError
 from .integrations.jellyfin import JellyfinIntegration, JellyfinError
+from .integrations.nexa import BASE_URL as NEXA_BASE_URL, NexaIntegration, NexaError, encrypt_api_key, decrypt_api_key
 from .security import (
     logged_in, make_session, valid_credentials,
     hash_portal_password, verify_portal_password, make_portal_session, read_portal_session,
@@ -2938,6 +2939,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
     seerr_customers = db.query(Customer).filter(Customer.archived.is_(False), Customer.plex_username.is_not(None)).order_by(Customer.name.asc()).all()
     seerr_policies = {customer.id: seerr_effective_policy(db, customer.id) for customer in seerr_customers}
     jellyfin = db.query(Integration).filter(Integration.kind == "jellyfin").order_by(Integration.id).first()
+    nexa = db.query(Integration).filter(Integration.kind == "nexa").order_by(Integration.id).first()
     jellyfin_accounts = (db.query(JellyfinAccount).filter(JellyfinAccount.integration_id == jellyfin.id)
                          .order_by(JellyfinAccount.username).all()) if jellyfin else []
     jellyfin_customers = db.query(Customer).filter(Customer.archived.is_(False)).order_by(Customer.name).all()
@@ -2946,6 +2948,7 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         "integrations.html",
         integrations=enriched,
         jellyfin=jellyfin,
+        nexa=nexa,
         jellyfin_accounts=jellyfin_accounts,
         jellyfin_customers=jellyfin_customers,
         jellyfin_customer_options=[{"id": c.id, "name": c.name, "email": c.email or "", "plex": c.plex_username or "", "portal": c.portal_username or ""} for c in jellyfin_customers],
@@ -2965,6 +2968,93 @@ def integrations(request: Request, error: str | None = None, notice: str | None 
         error=error,
         notice=notice,
     )
+
+
+
+def _nexa_client(db: Session) -> NexaIntegration:
+    integration = db.query(Integration).filter(Integration.kind == "nexa").order_by(Integration.id).first()
+    if not integration:
+        raise NexaError("Configure and test a NEXA API key first")
+    return NexaIntegration(decrypt_api_key(integration.secret, settings.app_secret))
+
+
+def _nexa_redirect(key: str, detail: str):
+    return RedirectResponse("/integrations?" + urlencode({key: detail}) + "#nexa", status_code=303)
+
+
+@app.post("/integrations/nexa/save")
+def nexa_save(request: Request, api_key: str = Form(""), db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    current = db.query(Integration).filter(Integration.kind == "nexa").order_by(Integration.id).first()
+    try:
+        key = api_key.strip() or (decrypt_api_key(current.secret, settings.app_secret) if current else "")
+        client = NexaIntegration(key)
+        client.packages()  # Read-only authentication and API response check.
+        encrypted = encrypt_api_key(key, settings.app_secret)
+    except NexaError as exc:
+        return _nexa_redirect("error", str(exc))
+    if current is None:
+        # Phase 1 is deliberately not eligible for package entitlements/automation.
+        current = Integration(kind="nexa", name="NEXA IPTV", enabled=False,
+                              base_url=NEXA_BASE_URL, secret=encrypted)
+        db.add(current)
+    else:
+        current.base_url = NEXA_BASE_URL
+        current.secret = encrypted
+    db.add(AuditLog(actor=settings.admin_username, action="nexa.connection",
+                    target_type="integration", target_id="nexa",
+                    detail="Saved and verified read-only NEXA API connection"))
+    db.commit()
+    return _nexa_redirect("notice", "NEXA connection saved and tested; IPTV automation is not enabled")
+
+
+@app.get("/integrations/nexa/catalog", response_class=HTMLResponse)
+def nexa_catalog(request: Request, db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    catalog = None
+    template_items = None
+    package_error = None
+    template_error = None
+    try:
+        client = _nexa_client(db)
+    except NexaError as exc:
+        package_error = str(exc)
+        template_error = str(exc)
+    else:
+        try:
+            catalog = client.packages()
+        except NexaError as exc:
+            package_error = str(exc)
+        try:
+            template_items = client.templates()
+        except NexaError as exc:
+            template_error = str(exc)
+    response = render(request, "nexa_catalog.html", catalog=catalog,
+                      template_items=template_items,
+                      package_error=package_error, template_error=template_error)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.post("/integrations/nexa/lookup", response_class=HTMLResponse)
+def nexa_lookup(request: Request, username: str = Form(""), mac: str = Form(""),
+                db: Session = Depends(get_db)):
+    gate = auth(request)
+    if gate:
+        return gate
+    account = None
+    error = None
+    try:
+        account = _nexa_client(db).lookup(username=username, mac=mac)
+    except NexaError as exc:
+        error = str(exc)
+    response = render(request, "nexa_lookup.html", account=account, error=error)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _jf_redirect(key: str, detail: str):
