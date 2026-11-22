@@ -35,6 +35,7 @@ from .models import (
     Customer,
     JellyfinAccount,
     Integration,
+    NexaPackagePolicy,
     Package,
     PackageEntitlement,
     Payment,
@@ -68,6 +69,7 @@ from .integrations.tautulli import TautulliIntegration, TautulliError
 from .integrations.seerr import SeerrIntegration, SeerrError
 from .integrations.jellyfin import JellyfinIntegration, JellyfinError
 from .integrations.nexa import BASE_URL as NEXA_BASE_URL, NexaIntegration, NexaError, encrypt_api_key, decrypt_api_key
+from .nexa_phase2 import register_nexa_phase2_routes
 from .security import (
     logged_in, make_session, valid_credentials,
     hash_portal_password, verify_portal_password, make_portal_session, read_portal_session,
@@ -2549,7 +2551,10 @@ def packages(request: Request, error: str | None = None, notice: str | None = No
     for package in rows:
         for entitlement in package.entitlements:
             selected.setdefault(f"{package.id}:{entitlement.integration_id}", []).append(entitlement.resource_id)
-    return render(request, "packages.html", packages=rows, integrations=integrations, selected=selected, error=error, notice=notice)
+    nexa_integration = db.query(Integration).filter(Integration.kind == "nexa").first()
+    nexa_policies = {policy.package_id: policy for policy in db.query(NexaPackagePolicy).all()} if nexa_integration else {}
+    return render(request, "packages.html", packages=rows, integrations=integrations, selected=selected,
+                  nexa_integration=nexa_integration, nexa_policies=nexa_policies, error=error, notice=notice)
 
 
 @app.post("/packages")
@@ -4428,3 +4433,6 @@ def api_libraries(request: Request, integration_id: int, db: Session = Depends(g
         return client.libraries()
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=503)
+
+# Read-only NEXA Phase 2 management endpoints. No provider write routes.
+register_nexa_phase2_routes(app, auth, render)
