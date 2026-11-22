@@ -127,7 +127,7 @@
           <td><strong>{{ job.status }}</strong>{% if job.replayed %} · replayed{% endif %}</td>
           <td>{{ job.credits_charged if job.credits_charged is not none else '—' }}</td>
           <td>{{ job.new_expiry_ts if job.new_expiry_ts is not none else '—' }}<small class="muted">Unix seconds</small></td>
-          <td>{{ job.last_error or ('Password rotated — action required' if job.password_changed else '—') }}</td>
+          <td>{{ job.last_error or ('Password rotated — check credentials' if job.password_changed and line.replacement_password_encrypted else ('Password rotated — handled' if job.password_changed and line.replacement_password_ack_at else '—')) }}</td>
           <td>{% if job.status == 'review' %}<form method="post" action="/integrations/nexa/jobs/{{ job.id }}/retry"><button type="submit" class="secondary small-action" title="Retry same provider account/package/key after checking the issue">Retry original request</button></form>{% endif %}</td>
         </tr>
         {% endfor %}
