@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<header><h1>NEXA account lookup</h1><p>Read-only account verification. No changes are made to provider accounts.</p></header>
+<p><a class="button-link secondary" href="/integrations#nexa">← Back to integrations</a></p>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if account %}
+<section class="card"><h2>Provider account</h2>
+  <dl>
+    <dt>Account ID</dt><dd>{{ account.id }}</dd>
+    <dt>Username</dt><dd>{{ account.username or '—' }}</dd>
+    <dt>MAC</dt><dd>{{ account.mac or '—' }}</dd>
+    <dt>Type</dt><dd>{{ account.type }}</dd>
+    <dt>Status</dt><dd>{{ account.status }}</dd>
+    <dt>Trial</dt><dd>{{ 'Yes' if account.is_trial else 'No' }}</dd>
+    <dt>Actual NEXA expiry</dt><dd>{{ account.expiry_label }}</dd>
+    <dt>Raw Unix expiry (seconds)</dt><dd>{{ account.exp_date if account.exp_date is not none else '—' }}</dd>
+  </dl>
+  <p class="muted">This account is not yet linked to a Share Manager customer. Account linking is planned for Phase 2.</p>
+</section>
+{% endif %}
+{% endblock %}
