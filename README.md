@@ -1,3 +1,30 @@
+## v0.19.0 — NEXA IPTV Phase 5: paid new-account provisioning and rollout
+
+**Available in Integrations → NEXA IPTV → Create new IPTV accounts.** Phase 5 supports username/password IPTV lines and MAG/MAC accounts, with a specific channel Template Studio selection per new customer. It uses existing Share Manager Package mappings (6 months for monthly, 12 months for yearly), and NEXA remains authoritative for account ID and actual expiry (Unix seconds). No existing customer accounts or subscriptions are modified during installation.
+
+### Onboarding a new customer
+
+1. Create or select an active Share Manager customer and assign one of your existing Packages that has a valid NEXA IPTV entitlement. A customer who already has a linked NEXA line cannot provision a second one through this flow; use the linked account.
+2. Go to **Integrations → NEXA IPTV → Create new IPTV accounts**. Select the customer, which loads their configured provider product, billing duration and NEXA reseller balance.
+3. Choose **username/password** (enter only the username) or **MAG** (enter only the MAC). Choose this customer's channel template; their Package's default template is preselected if available. NEXA generates passwords for new username accounts.
+4. Choose **Wait for the next qualifying payment** to stage an approved request. This does **not** create an account, spend credits or replay historical payments. A *newly applied* Share Manager payment will release the staged request, which the separate worker then executes.
+5. Alternatively choose **Queue creation now** for an explicitly approved paid purchase. A previously applied, unvoided payment covering the active subscription is required unless you explicitly tick the additional **unpaid purchase override**. All flows require separate credit-spend consent; mere customer creation, Package assignment or receipt of a ledger-only payment does not call NEXA.
+6. Optionally approve **Arm future renewals** on the new account. Only after creation succeeds does this enable Phase 3's existing paid renewal policy; it does not replay the payment that created the account.
+7. Once the worker receives a verified NEXA creation response, the new account appears in **Linked IPTV accounts**, including NEXA's real expiry and applied template snapshot. For username accounts, use the **Reveal new account password** button in the admin interface. Give the password securely to the customer and acknowledge to delete the encrypted copy. MAG accounts have no generated login password to deliver.
+
+### Charge and retry safety
+
+- Each explicitly approved creation is stored as an immutable, persistent request containing the account type, username/MAC, provider product, months, template ID and unique idempotency key. A retry after timeout/restart always sends **the same body and the same idempotency key**. Never submit another order to recover an uncertain request.
+- Before the first POST, the worker rechecks current billing/Package approval, provider package account-type permissions and Template Studio availability. It also looks up the requested username/MAC to prevent accidentally buying an already-existing provider account.
+- The provider's response is validated for account identity, type, expiry, credits and (for username lines) newly generated password. The NEXA account link, initial password encryption, applied template confirmation and successful job state are committed together.
+- Manual **Cancel unsent** is offered only before any POST might have occurred. If NEXA could already have charged the request, the only safe follow-up is a same-key retry or provider-side manual investigation.
+- Credit-spending requests never run merely from application startup, account import, the monitoring scanner, Portal signup or a historic payment. Phase 4 flags provisioning failures and new credentials awaiting administrator delivery.
+- The API's template snapshot is applied at new-account creation only. Existing account template edits still require the NEXA portal.
+- A **strong and stable APP_SECRET** encrypts new credentials at rest. Never rotate it without planning to re-enter API keys and securely recover any encrypted passwords.
+- On existing deployments, the app's startup migration adds three nullable credential columns to \`nexa_accounts\` and creates the new \`nexa_provision_jobs\` table. **No manual SQL or extra environment variables** are required.
+
+Deployment: take your usual Share Manager DB backup, then pull/redeploy \`ghcr.io/zeragonii/share-manager:latest\` (or pin \`0.19.0\`). Before going live, test one new username and one new MAG account using your own NEXA reseller account, as automated tests use a fake provider and never spend real credits.
+
 ## v0.18.0 — NEXA IPTV Phase 4: monitoring, credits and manual actions
 
 Phase 4 adds a **read-only NEXA operations dashboard** under **Integrations → NEXA IPTV → IPTV monitoring, alerts & credits**. It requires no new environment variables, no manual SQL migration and no changes to your existing customer subscriptions. The existing startup routine creates three additive tables for provider polling, monitoring settings and durable action items.

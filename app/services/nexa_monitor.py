@@ -17,7 +17,7 @@ from ..config import settings
 from ..integrations.nexa import NexaError, NexaIntegration, decrypt_api_key
 from ..models import (
     ASSIGNED_SUBSCRIPTION_STATES, AuditLog, BillingTier, Customer, Integration,
-    NexaAccount, NexaAccountProbe, NexaActionItem, NexaExtensionJob,
+    NexaAccount, NexaAccountProbe, NexaActionItem, NexaExtensionJob, NexaProvisionJob,
     NexaMonitorState, NexaPackagePolicy, Subscription,
 )
 from .billing import add_billing_interval
@@ -251,6 +251,9 @@ def build_findings(db: Session, state: NexaMonitorState, now: datetime) -> list[
         if account.replacement_password_encrypted:
             add("password_rotated", account, "critical",
                 "NEXA rotated the IPTV password. Retrieve it securely from the linked-account page, update the client and acknowledge it.")
+        if account.initial_password_encrypted:
+            add("initial_credentials_pending", account, "critical",
+                "New IPTV credentials need secure delivery. Reveal the generated password in the linked-account page and acknowledge after delivery.")
         if account.automation_enabled:
             try:
                 approved_policy(db, account)
@@ -268,6 +271,18 @@ def build_findings(db: Session, state: NexaMonitorState, now: datetime) -> list[
             elif job.status == "completed" and job.last_error:
                 add("extension_warning", account, "warning",
                     f"Completed extension #{job.id} needs attention: {job.last_error}")
+
+    for job in db.query(NexaProvisionJob).filter(
+            NexaProvisionJob.status.in_(("review", "retry"))).all():
+        if job.status == "review" or (job.status == "retry" and job.attempts >= 3):
+            customer = db.get(Customer, job.customer_id)
+            label = customer.name if customer else f"Customer #{job.customer_id}"
+            findings.append(Finding(
+                f"provision_{job.status}:{job.id}", None,
+                "critical" if job.status == "review" else "warning",
+                label,
+                f"IPTV creation #{job.id} needs attention: {job.last_error or 'Check original account request and provider status.'} Retry with the original idempotency key only.",
+            ))
 
     if state.credit_balance is not None and state.credit_balance <= state.low_credit_threshold:
         findings.append(Finding("credits_low", None,
@@ -322,6 +337,7 @@ EVENT_FOR_CODE = {
     "extension_warning": "nexa.extension_failed",
     "credits_low": "nexa.credits_low",
     "password_rotated": "nexa.password_rotated",
+    "initial_credentials_pending": "nexa.credentials_pending",
 }
 
 
@@ -336,7 +352,8 @@ def _dispatch_new_notifications(db: Session, state: NexaMonitorState) -> None:
         key = f"nexa-monitor:{item.id}:{item.generation}"
         try:
             notify_event(
-                db, event=EVENT_FOR_CODE.get(item.code, "nexa.attention_required"),
+                db, event=("nexa.provision_failed" if item.code.startswith("provision_")
+                           else EVENT_FOR_CODE.get(item.code, "nexa.attention_required")),
                 title=f"NEXA: {item.subject} — {item.code.replace('_', ' ')}",
                 message=item.message, severity=item.severity,
                 target_type="nexa_action", target_id=str(item.id),
@@ -428,6 +445,7 @@ def dashboard_data(db: Session, *, days: int = 30) -> dict:
     actions = (db.query(NexaActionItem)
                .order_by(NexaActionItem.status.asc(), NexaActionItem.id.desc()).all())
     jobs = db.query(NexaExtensionJob).all()
+    provision_jobs = db.query(NexaProvisionJob).all()
     stats = {
         "accounts": len(accounts),
         "armed": sum(1 for a in accounts if a.automation_enabled),
@@ -435,6 +453,8 @@ def dashboard_data(db: Session, *, days: int = 30) -> dict:
         "acknowledged": sum(1 for a in actions if a.status == "acknowledged"),
         "critical": sum(1 for a in actions if a.status != "resolved" and a.severity == "critical"),
         "review_jobs": sum(1 for j in jobs if j.status == "review"),
+        "provision_pending": sum(1 for j in provision_jobs if j.status in ("awaiting_payment", "queued", "retry", "in_flight")),
+        "provision_review": sum(1 for j in provision_jobs if j.status == "review"),
         "spent_credits": sum(int(j.credits_charged or 0) for j in jobs if j.status == "completed"),
         "expiring": sum(1 for a in accounts if (
             (exp := _expiry_datetime(a.provider_expiry_ts)) is not None

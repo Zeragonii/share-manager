@@ -29,6 +29,12 @@ add_column_if_missing("nexa_accounts", "automation_armed_at", "TIMESTAMP NULL")
 add_column_if_missing("nexa_accounts", "replacement_password_encrypted", "TEXT NULL")
 add_column_if_missing("nexa_accounts", "replacement_password_recorded_at", "TIMESTAMP NULL")
 add_column_if_missing("nexa_accounts", "replacement_password_ack_at", "TIMESTAMP NULL")
+# v0.19.0: one-time initial credentials are encrypted at rest. The new
+# nexa_provision_jobs table is created by metadata.create_all on startup.
+add_column_if_missing("nexa_accounts", "initial_password_encrypted", "TEXT NULL")
+add_column_if_missing("nexa_accounts", "initial_password_recorded_at", "TIMESTAMP NULL")
+add_column_if_missing("nexa_accounts", "initial_password_ack_at", "TIMESTAMP NULL")
+
 
 add_column_if_missing("integrations", "suspension_library", "VARCHAR(255) NULL")
 add_column_if_missing("integrations", "suspension_retention_months", "INTEGER NOT NULL DEFAULT 3")

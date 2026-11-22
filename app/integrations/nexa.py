@@ -53,6 +53,16 @@ class NexaExtensionError(NexaError):
         self.uncertain = uncertain
 
 
+class NexaProvisionError(NexaError):
+    """Safe error classification for a chargeable, idempotent creation request."""
+
+    def __init__(self, message: str, *, retryable: bool = False, uncertain: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
+        self.uncertain = uncertain
+
+
+
 
 class NexaIntegration:
     """Minimal, fixed-origin, read-only client for the documented reseller API."""
@@ -252,5 +262,117 @@ class NexaIntegration:
             "replayed": bool(payload.get("replayed")),
             "password_changed": changed,
             "replacement_password": password if isinstance(password, str) and password else None,
+        }
+
+    def create_account(
+        self, *, package_id: str, months: int, account_type: str,
+        username: str = "", mac: str = "", template_id: str = "",
+        idempotency_key: str,
+    ) -> dict:
+        """Create one paid account, using a caller-owned, persisted intent key.
+
+        No fallback, redirect, automatic key generation or changed retry payload.
+        """
+        account_type = account_type.strip().lower()
+        username, mac, template_id = username.strip(), mac.strip().upper(), template_id.strip()
+        if not re.fullmatch(r"[0-9]{1,18}", str(package_id)) or months not in (6, 12):
+            raise NexaProvisionError("Unsupported paid NEXA package or duration")
+        if not re.fullmatch(r"[a-zA-Z0-9._:-]{8,128}", str(idempotency_key)):
+            raise NexaProvisionError("Invalid NEXA creation idempotency key")
+        if account_type == "username":
+            if not username or len(username) > 120 or any(c.isspace() for c in username) or mac:
+                raise NexaProvisionError("Specify only a valid IPTV username (no spaces, 120 characters maximum)")
+        elif account_type == "mag":
+            if username or not re.fullmatch(r"[0-9A-F]{2}(?::[0-9A-F]{2}){5}", mac):
+                raise NexaProvisionError("Specify only a MAG MAC in the format 00:1A:79:42:56:78")
+        else:
+            raise NexaProvisionError("Unsupported NEXA account type; use username or mag")
+        if template_id and (len(template_id) > 128 or any(c.isspace() for c in template_id)):
+            raise NexaProvisionError("Invalid NEXA Template Studio identifier")
+        body = {"package_id": int(package_id), "months": months, "type": account_type}
+        if account_type == "username":
+            body["username"] = username
+        else:
+            body["mac"] = mac
+        if template_id:
+            body["template_id"] = template_id
+        try:
+            response = httpx.post(
+                f"{BASE_URL}/api/reseller/v1/accounts",
+                json=body,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}", "Accept": "application/json",
+                    "Content-Type": "application/json", "Idempotency-Key": idempotency_key,
+                },
+                timeout=self.timeout, follow_redirects=False,
+            )
+        except httpx.TimeoutException:
+            raise NexaProvisionError(
+                "NEXA creation timed out; outcome uncertain. Retry only the original request and key",
+                retryable=True, uncertain=True,
+            ) from None
+        except httpx.RequestError:
+            raise NexaProvisionError(
+                "NEXA creation connection failed; outcome uncertain. Retry only the original request and key",
+                retryable=True, uncertain=True,
+            ) from None
+        if response.status_code not in (200, 201):
+            retryable = response.status_code in (429, 500, 502, 503, 504)
+            messages = {
+                400: "NEXA rejected the account creation fields or package",
+                401: "NEXA API key is invalid or revoked",
+                402: "Not enough NEXA reseller credits to create this account",
+                403: "NEXA rejected account or template permissions",
+                409: "NEXA duplicate account or conflicting creation idempotency key; manual review required",
+                429: "NEXA API rate limit reached",
+                503: "NEXA is temporarily unavailable",
+            }
+            raise NexaProvisionError(
+                messages.get(response.status_code, f"NEXA account creation returned HTTP {response.status_code}"),
+                retryable=retryable, uncertain=retryable,
+            )
+        if len(response.content) > MAX_RESPONSE_BYTES:
+            raise NexaProvisionError("NEXA creation response too large; outcome uncertain", retryable=True, uncertain=True)
+        try:
+            payload = response.json()
+        except ValueError:
+            raise NexaProvisionError("NEXA creation response was invalid JSON; outcome uncertain", retryable=True, uncertain=True) from None
+        if not isinstance(payload, dict) or payload.get("success") is not True:
+            raise NexaProvisionError("NEXA did not confirm account creation; review original purchase", uncertain=True)
+        account = payload.get("account")
+        if not isinstance(account, dict):
+            raise NexaProvisionError("NEXA did not return a created account; review original purchase", uncertain=True)
+        provider_id = account.get("id")
+        if provider_id is None or not re.fullmatch(r"[0-9]{1,18}", str(provider_id)):
+            raise NexaProvisionError("NEXA omitted a valid account ID; review original purchase", uncertain=True)
+        created_type = str(account.get("type") or "").lower()
+        if created_type != account_type:
+            raise NexaProvisionError("NEXA returned a different account type; review purchase", uncertain=True)
+        returned_username = str(account.get("username") or "")
+        returned_mac = str(account.get("mac") or "").upper()
+        if account_type == "username" and returned_username != username:
+            raise NexaProvisionError("NEXA created a different username; manual review required", uncertain=True)
+        if account_type == "mag" and returned_mac and returned_mac != mac:
+            raise NexaProvisionError("NEXA created a different MAC account; manual review required", uncertain=True)
+        # NEXA documents MAC as optional in the returned account object.
+        if account_type == "mag" and not returned_mac:
+            returned_mac = mac
+        try:
+            expiry = int(account["exp_date"])
+            charged = int(payload["credits_charged"])
+            if not 0 < expiry <= 253402300799 or charged < 0:
+                raise ValueError
+        except (KeyError, ValueError, TypeError, OverflowError):
+            raise NexaProvisionError("NEXA omitted a valid expiry or credit charge; review purchase", uncertain=True) from None
+        password = account.get("password")
+        if account_type == "username" and (not isinstance(password, str) or not password):
+            raise NexaProvisionError("NEXA did not return the newly generated password; retry original creation key", retryable=True, uncertain=True)
+        return {
+            "id": str(provider_id), "username": returned_username, "mac": returned_mac,
+            "type": account_type, "exp_date": expiry,
+            "password": password if account_type == "username" else None,
+            "credits_charged": charged,
+            "credits_remaining": payload.get("credits_remaining"),
+            "replayed": bool(payload.get("replayed")),
         }
 

@@ -1,3 +1,16 @@
+## 0.19.0 — NEXA IPTV Phase 5: new-customer provisioning
+
+- Add paid username/password and MAG/MAC IPTV account creation from existing Share Manager Package billing tiers.
+- Apply a selected per-customer Template Studio snapshot on creation; defaults follow the Package when available.
+- Stage new customers pending their **next newly applied payment**, or allow an immediately queued purchase with explicit approval (plus unpaid override when needed).
+- Add a durable, immutable creation intent ledger; reuse the same account, package, duration, template and idempotency key across provider timeouts/retries.
+- Use fresh NEXA lookup to detect already-existing usernames/MACs before first purchase; prevent duplicate orders, stale Package permissions and missing provider templates.
+- Link created accounts with actual provider expiry and credit charge; encrypted generated password handoff and admin-only acknowledgement/erasure.
+- Optional explicit approval to arm future Phase 3 payment-triggered renewals once account creation succeeds.
+- Extend Phase 4 monitoring with provisioning-failure and undelivered-password alerts.
+- Preserve all existing IPTV, Plex, Jellyfin and billing records; no automatic account creation during upgrade.
+- Additive schema migration through existing startup; no manual SQL or extra environment variables.
+
 ## 0.18.0 — NEXA IPTV Phase 4: read-only health monitoring and alerting
 
 - Added a dedicated NEXA monitoring dashboard showing account health, overdue billing, provider expiry, extension failures, credit balance and action queue.

@@ -207,6 +207,9 @@ class NexaAccount(Base):
     replacement_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     replacement_password_recorded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     replacement_password_ack_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    initial_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    initial_password_recorded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    initial_password_ack_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     linked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     customer: Mapped["Customer"] = relationship()
     integration: Mapped["Integration"] = relationship()
@@ -251,6 +254,49 @@ class NexaExtensionJob(Base):
         UniqueConstraint("account_id", "payment_id", name="uq_nexa_account_payment"),
     )
 
+
+
+
+class NexaProvisionJob(Base):
+    """One immutable account-creation intention with a stable idempotency key.
+
+    A staged request can be released by a *new* applied payment. No account
+    creation occurs on migration, Customer/Package assignment, or old payments.
+    """
+    __tablename__ = "nexa_provision_jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="RESTRICT"), index=True)
+    integration_id: Mapped[int] = mapped_column(ForeignKey("integrations.id", ondelete="RESTRICT"))
+    billing_subscription_id: Mapped[int] = mapped_column(ForeignKey("subscriptions.id", ondelete="RESTRICT"))
+    payment_id: Mapped[int | None] = mapped_column(ForeignKey("payments.id", ondelete="SET NULL"), nullable=True)
+    provider_package_id: Mapped[str] = mapped_column(String(64))
+    months: Mapped[int] = mapped_column(Integer)
+    account_type: Mapped[str] = mapped_column(String(16))
+    provider_username: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_mac: Mapped[str | None] = mapped_column(String(17), nullable=True)
+    template_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    approved_credit_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    approved_policy_at: Mapped[datetime] = mapped_column(DateTime)
+    approval_mode: Mapped[str] = mapped_column(String(24))  # manual | payment
+    allow_unpaid_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    arm_future_renewals: Mapped[bool] = mapped_column(Boolean, default=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
+    status: Mapped[str] = mapped_column(String(24), default="awaiting_payment", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    post_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    provider_account_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_nexa_account_id: Mapped[int | None] = mapped_column(ForeignKey("nexa_accounts.id", ondelete="SET NULL"), nullable=True)
+    credits_charged: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credits_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    replayed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    customer: Mapped["Customer"] = relationship()
+    __table_args__ = (UniqueConstraint("integration_id", "idempotency_key", name="uq_nexa_provision_integration_key"),)
 
 
 class NexaMonitorState(Base):

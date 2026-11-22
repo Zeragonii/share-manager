@@ -71,6 +71,12 @@ from .integrations.jellyfin import JellyfinIntegration, JellyfinError
 from .integrations.nexa import BASE_URL as NEXA_BASE_URL, NexaIntegration, NexaError, encrypt_api_key, decrypt_api_key
 from .nexa_phase2 import register_nexa_phase2_routes
 from .nexa_monitor_routes import register_nexa_monitor_routes
+from .nexa_provision_routes import register_nexa_provision_routes
+from .services.nexa_provisioning import (
+    activate_for_payment as activate_nexa_provision,
+    on_payment_changed as nexa_provision_payment_changed,
+    process_one_provision,
+)
 from .services.nexa_monitor import monitor_cycle
 from .services.nexa_renewals import enqueue_for_payment as enqueue_nexa_for_payment, on_payment_changed as nexa_payment_changed, process_one_extension
 from .security import (
@@ -470,6 +476,14 @@ def run_nexa_cycle() -> bool:
     return process_one_extension()
 
 
+def run_nexa_provision_cycle() -> bool:
+    # Provider account creation is only allowed by an administrator-approved
+    # immutable intent, not by user signup or historic payments.
+    if RESTORE_IN_PROGRESS.is_set():
+        return False
+    return process_one_provision()
+
+
 @serialized_db_worker
 def run_nexa_monitor_cycle() -> dict:
     # Only NEXA GETs; never authorises or executes paid provider actions.
@@ -499,6 +513,15 @@ async def lifespan(_app: FastAPI):
             except Exception:
                 logger.exception("NEXA extension worker cycle failed")
             await asyncio.sleep(40)
+
+    async def nexa_provision_loop():
+        await asyncio.sleep(24)
+        while True:
+            try:
+                await asyncio.to_thread(run_nexa_provision_cycle)
+            except Exception:
+                logger.exception("NEXA account creation worker failed")
+            await asyncio.sleep(45)
 
     async def nexa_monitor_loop():
         await asyncio.sleep(65)
@@ -601,6 +624,7 @@ async def lifespan(_app: FastAPI):
             await asyncio.sleep(max(10, int(interval or 10)))
 
     nexa_task = asyncio.create_task(nexa_loop())
+    nexa_provision_task = asyncio.create_task(nexa_provision_loop())
     nexa_monitor_task = asyncio.create_task(nexa_monitor_loop())
     billing_task = asyncio.create_task(billing_loop())
     backup_task = asyncio.create_task(backup_loop())
@@ -615,6 +639,7 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         nexa_task.cancel()
+        nexa_provision_task.cancel()
         nexa_monitor_task.cancel()
         billing_task.cancel()
         backup_task.cancel()
@@ -627,6 +652,8 @@ async def lifespan(_app: FastAPI):
         attachment_cleanup_task.cancel()
         with suppress(asyncio.CancelledError):
             await nexa_task
+        with suppress(asyncio.CancelledError):
+            await nexa_provision_task
         with suppress(asyncio.CancelledError):
             await nexa_monitor_task
         with suppress(asyncio.CancelledError):
@@ -3941,6 +3968,7 @@ def add_payment(
     # Transactional outbox: this payment must commit alongside any approved IPTV
     # extension intention, never trigger one from historical data or notifications.
     enqueue_nexa_for_payment(db, payment)
+    activate_nexa_provision(db, payment)
     referral_award = award_for_payment(db, payment)
     if referral_award:
         db.add(AuditLog(actor="system", action="referral.credit.earned", target_type="customer", target_id=str(referral_award.customer_id), detail=f"+{referral_award.credits} credits from payment {payment.id}"))
@@ -4004,6 +4032,7 @@ def edit_payment(
             recalculate_after_latest_payment_change(db, payment)
         db.add(AuditLog(actor=settings.admin_username, action="payment.edit", target_type="payment", target_id=str(payment.id), detail=f"{old} -> £{amount} {source} {payment.paid_at:%Y-%m-%d}; periods={payment.billing_periods or '-'}"))
         nexa_payment_changed(db, payment)
+        nexa_provision_payment_changed(db, payment)
         db.commit()
     except (ValueError, TypeError) as exc:
         db.rollback()
@@ -4041,6 +4070,7 @@ def delete_payment(request: Request, payment_id: int, db: Session = Depends(get_
         db.add(AuditLog(actor="system", action="referral.credit.reversed", target_type="customer", target_id=str(reversal.customer_id), detail=f"{reversal.credits} credits from voided payment {payment.id}"))
     db.add(AuditLog(actor=settings.admin_username, action="payment.delete", target_type="payment", target_id=str(payment.id), detail=f"Voided £{payment.amount} via {payment.source} received {payment.paid_at:%Y-%m-%d}"))
     nexa_payment_changed(db, payment)
+    nexa_provision_payment_changed(db, payment)
     db.commit()
     if payment.subscription_id:
         process_billing(db, customer_id=payment.customer_id)
@@ -4486,3 +4516,4 @@ def api_libraries(request: Request, integration_id: int, db: Session = Depends(g
 # Read-only NEXA Phase 2 management endpoints. No provider write routes.
 register_nexa_phase2_routes(app, auth, render)
 register_nexa_monitor_routes(app, auth, render)
+register_nexa_provision_routes(app, auth, render)

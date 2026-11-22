@@ -7,6 +7,7 @@
 <p>
   <a class="button-link secondary" href="/integrations#nexa">← NEXA integration</a>
   <a class="button-link secondary" href="/integrations/nexa/accounts">Linked IPTV accounts</a>
+  <a class="button-link secondary" href="/integrations/nexa/provision">New account provisioning</a>
 </p>
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
@@ -26,6 +27,8 @@
     <div><span>Acknowledged actions</span><strong>{{ stats.acknowledged }}</strong></div>
     <div><span>Critical issues</span><strong>{{ stats.critical }}</strong></div>
     <div><span>Extension jobs needing review</span><strong>{{ stats.review_jobs }}</strong></div>
+    <div><span>Pending account creations</span><strong>{{ stats.provision_pending }}</strong></div>
+    <div><span>Provisioning jobs needing review</span><strong>{{ stats.provision_review }}</strong></div>
     <div><span>Provider expiries within {{ days }} days</span><strong>{{ stats.expiring }}</strong></div>
     <div><span>Confirmed credits spent since Phase 3</span><strong>{{ stats.spent_credits }}</strong></div>
   </div>

@@ -94,6 +94,8 @@ EVENT_DEFINITIONS = {
     "nexa.extension_failed": {"label": "IPTV extension needs attention", "severity": "critical", "customer": False},
     "nexa.credits_low": {"label": "NEXA credit balance low", "severity": "warning", "customer": False},
     "nexa.password_rotated": {"label": "IPTV password changed", "severity": "critical", "customer": False},
+    "nexa.credentials_pending": {"label": "New IPTV credentials awaiting delivery", "severity": "critical", "customer": False},
+    "nexa.provision_failed": {"label": "NEXA IPTV creation needs review", "severity": "critical", "customer": False},
     "nexa.attention_required": {"label": "IPTV monitoring action required", "severity": "warning", "customer": False},
     "backup.created": {"label": "Database backup created", "severity": "info", "customer": False},
     "backup.failed": {"label": "Database backup failed", "severity": "critical", "customer": False},
