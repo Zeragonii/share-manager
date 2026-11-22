@@ -82,7 +82,8 @@ def enqueue_for_payment(db: Session, payment: Payment) -> int:
 
     Never scan historical payments; no provider network calls occur here.
     """
-    if not payment.subscription_id or payment.voided_at or not payment.coverage_end:
+    if (not payment.subscription_id or payment.voided_at or not payment.coverage_end
+            or payment.amount is None or payment.amount <= 0):
         return 0
     added = 0
     accounts = (db.query(NexaAccount)
@@ -104,6 +105,9 @@ def enqueue_for_payment(db: Session, payment: Payment) -> int:
                 status="queued", attempts=0, post_attempted=False,
                 next_attempt_at=datetime.utcnow(),
             ))
+            # autoflush=False is used by Share Manager's DB sessions; flush
+            # the immutable job so a second enqueue in this transaction sees it.
+            db.flush()
             added += 1
         except ValueError as exc:
             # Do not block unrelated Plex/Jellyfin payments on an IPTV mapping error.
@@ -234,6 +238,10 @@ def process_one_extension() -> bool:
                 or sub.status != "active"):
             _finish(db, job, "review", "Payment coverage or active subscription no longer validates")
             return True
+        customer = db.get(Customer, account.customer_id)
+        if not customer or customer.status != "active":
+            _finish(db, job, "review", "Customer is not active; no paid extension permitted")
+            return True
         if package_id != job.provider_package_id or months != job.months:
             _finish(db, job, "review", "Provider package mapping changed since the job was queued")
             return True
@@ -251,6 +259,17 @@ def process_one_extension() -> bool:
             if account.account_type.lower() not in ("username", "mag", "mac"):
                 _finish(db, job, "review", "Unrecognised IPTV account type")
                 return True
+            valid_types = product.get("account_types")
+            if valid_types:
+                if not isinstance(valid_types, (list, tuple, set)):
+                    _finish(db, job, "review", "NEXA product account types could not be verified")
+                    return True
+                compatible = {str(v).lower() for v in valid_types}
+                actual = account.account_type.lower()
+                actual = "mag" if actual == "mac" else actual
+                if actual not in compatible and not (actual == "mag" and "mac" in compatible):
+                    _finish(db, job, "review", "Mapped NEXA product does not support this account type")
+                    return True
             provider = (
                 client.lookup(mac=account.provider_mac)
                 if account.account_type.lower() in ("mag", "mac") and account.provider_mac
@@ -265,10 +284,14 @@ def process_one_extension() -> bool:
             if provider["status"].lower() not in ("active", "expired") or provider["is_trial"]:
                 _finish(db, job, "review", "Account is blocked, disabled, trial or otherwise ineligible")
                 return True
-            if provider["exp_date"] is None:
-                _finish(db, job, "review", "NEXA returned no finite expiry; manual review required")
+            try:
+                expiry = int(provider["exp_date"])
+                if not 0 < expiry <= 253402300799:
+                    raise ValueError
+            except (ValueError, TypeError):
+                _finish(db, job, "review", "NEXA returned no valid finite expiry; manual review required")
                 return True
-            if int(provider["exp_date"]) >= _epoch(job.paid_through_at):
+            if expiry >= _epoch(job.paid_through_at):
                 _finish(db, job, "not_needed", "NEXA expiry already covers the paid-through date")
                 return True
             # Commit the fact that a paid POST *may* be about to occur.
