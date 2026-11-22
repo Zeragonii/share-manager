@@ -102,7 +102,7 @@ def register_nexa_phase2_routes(app, auth, render):
     """Register admin-only Phase 2 forms without a dependency on app.main."""
 
     @app.get("/packages/{package_id}/nexa", response_class=HTMLResponse)
-    def nexa_package_config(request: Request, package_id: int, db: Session = Depends(get_db)):
+    def nexa_package_config(request: Request, package_id: int, error: str | None = None, notice: str | None = None, db: Session = Depends(get_db)):
         gate = auth(request)
         if gate:
             return gate
@@ -118,7 +118,7 @@ def register_nexa_phase2_routes(app, auth, render):
         except NexaError as exc:
             api_error = str(exc)
         response = render(request, "nexa_package.html", package=package, policy=policy,
-                          catalog=catalog, nexa_templates=templates, api_error=api_error)
+                          catalog=catalog, nexa_templates=templates, api_error=api_error, error=error, notice=notice)
         response.headers["Cache-Control"] = "no-store"
         return response
 
