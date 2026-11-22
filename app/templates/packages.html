@@ -189,6 +189,23 @@
       {% else %}
       <div class="package-empty-state">Add an integration first.</div>
       {% endfor %}
+      {% if nexa_integration %}
+      {% set nexa_policy = nexa_policies.get(p.id) %}
+      <details class="entitlement-details">
+        <summary>
+          <span class="entitlement-summary-title"><strong>NEXA IPTV</strong><span class="integration-type">nexa</span></span>
+          <span class="entitlement-chevron">⌄</span>
+        </summary>
+        <div class="entitlement-details-body">
+          <p class="muted entitlement-description">Map this Package to the appropriate NEXA 6-month and 12-month products. This only stores entitlement settings locally; no customer accounts or billing are changed.</p>
+          <p>{% if nexa_policy and nexa_policy.enabled %}<span class="badge active">IPTV configured</span>{% else %}<span class="badge">Not included</span>{% endif %}</p>
+          {% if nexa_policy and nexa_policy.enabled %}
+          <p class="muted">Monthly: {{ nexa_policy.monthly_provider_package_id or 'Not configured' }} · Yearly: {{ nexa_policy.yearly_provider_package_id or 'Not configured' }}</p>
+          {% endif %}
+          <a class="button-link secondary" href="/packages/{{ p.id }}/nexa">Configure NEXA IPTV entitlement</a>
+        </div>
+      </details>
+      {% endif %}
     </div>
   </div>
 </section>

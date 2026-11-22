@@ -152,14 +152,14 @@
 <section class="integration-section" id="nexa">
   <details class="integration-section-details">
     <summary class="integration-section-summary">
-      <span class="integration-section-label"><strong>NEXA IPTV</strong><small>Read-only API discovery · Phase 1</small></span>
+      <span class="integration-section-label"><strong>NEXA IPTV</strong><small>Package mapping &amp; account linking · Phase 2</small></span>
       <span class="integration-section-status">
         <span class="integration-section-meta">{{ 'API key configured' if nexa else 'Not connected' }}</span>
         <span class="integration-section-chevron" aria-hidden="true">⌄</span>
       </span>
     </summary>
     <div class="integration-section-content">
-      <p class="muted">Discover provider packages, credit balance, Template Studio templates and existing accounts. Phase 1 does not change or extend provider accounts or alter Share Manager entitlements.</p>
+      <p class="muted">Read-only provider discovery, existing-account linking, customer-specific template records and Package mappings. No NEXA account changes or extensions are made.</p>
       <form method="post" action="/integrations/nexa/save" class="grid-form">
         <label>Provider API endpoint<input type="url" value="https://neva.yabadabado.store" readonly></label>
         <label>NEXA Bearer API key <span class="muted">{% if nexa %}(leave blank to retain existing key){% endif %}</span>
@@ -170,6 +170,8 @@
       {% if nexa %}
       <div class="integration-section-actions">
         <a href="/integrations/nexa/catalog" class="button-link secondary">View live packages, credits &amp; templates</a>
+        <a href="/integrations/nexa/accounts" class="button-link secondary">Manage existing IPTV accounts</a>
+        <a href="/packages" class="button-link secondary">Configure Package IPTV entitlements</a>
       </div>
       <details class="integration-add">
         <summary>Look up an existing IPTV account (read-only)</summary>
@@ -180,7 +182,7 @@
           <button type="submit">Look up account</button>
         </form>
       </details>
-      <p class="muted">The NEXA connection is intentionally not enabled for Package entitlements until Phase 2. Your existing Plex, Jellyfin and billing configuration remains unchanged.</p>
+      <p class="muted">Package-to-provider mappings and account links are stored locally only. Automatic IPTV renewals remain disabled until Phase 3; Plex, Jellyfin and billing are unchanged.</p>
       {% endif %}
     </div>
   </details>

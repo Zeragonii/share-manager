@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block content %}
+<header><h1>NEXA entitlement — {{ package.name }}</h1><p>Map this existing Share Manager Package to allowed NEXA renewal products.</p></header>
+<p><a class="button-link secondary" href="/packages">← Back to Packages</a> <a class="button-link secondary" href="/integrations/nexa/accounts">Linked IPTV accounts</a></p>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
+{% if api_error %}<div class="alert error">NEXA catalogue unavailable: {{ api_error }}. Existing mapping is shown, but cannot be modified until discovery succeeds.</div>{% endif %}
+<section class="card">
+  <h2>Provider package mapping</h2>
+  <p class="muted">This is an opt-in entitlement on the existing Package, not a new billing tier. It does not create or extend IPTV accounts in Phase 2.</p>
+  <form method="post" action="/packages/{{ package.id }}/nexa" class="grid-form">
+    <label class="toggle-choice">
+      <input type="checkbox" name="enabled" value="yes" {% if policy and policy.enabled %}checked{% endif %} {% if api_error %}disabled{% endif %}>
+      <span><strong>This Package includes NEXA IPTV</strong><small class="muted">Required for future IPTV automation. Currently mapping-only; no provider writes.</small></span>
+    </label>
+    <div class="package-fields-grid-v2">
+      <label>Monthly customers — 6-month provider product
+        <select name="monthly_provider_package_id" {% if api_error %}disabled{% endif %}>
+          <option value="">Not offered / not configured</option>
+          {% for item in catalog if item.months|int == 6 %}
+          <option value="{{ item.id }}" {% if policy and policy.monthly_provider_package_id == item.id %}selected{% endif %}>{{ item.name }} (ID {{ item.id }}, {{ item.credits }} credits)</option>
+          {% endfor %}
+          {% if policy and policy.monthly_provider_package_id and policy.monthly_provider_package_id not in (catalog|map(attribute='id')|list) %}
+          <option value="{{ policy.monthly_provider_package_id }}" selected>Saved ID {{ policy.monthly_provider_package_id }} (not currently in API catalogue)</option>
+          {% endif %}
+        </select>
+      </label>
+      <label>Yearly customers — 12-month provider product
+        <select name="yearly_provider_package_id" {% if api_error %}disabled{% endif %}>
+          <option value="">Not offered / not configured</option>
+          {% for item in catalog if item.months|int == 12 %}
+          <option value="{{ item.id }}" {% if policy and policy.yearly_provider_package_id == item.id %}selected{% endif %}>{{ item.name }} (ID {{ item.id }}, {{ item.credits }} credits)</option>
+          {% endfor %}
+          {% if policy and policy.yearly_provider_package_id and policy.yearly_provider_package_id not in (catalog|map(attribute='id')|list) %}
+          <option value="{{ policy.yearly_provider_package_id }}" selected>Saved ID {{ policy.yearly_provider_package_id }} (not currently in API catalogue)</option>
+          {% endif %}
+        </select>
+      </label>
+    </div>
+    <label>Default template for future newly created IPTV accounts
+      <select name="default_template_id" {% if api_error %}disabled{% endif %}>
+        <option value="">No default template</option>
+        {% for item in nexa_templates %}
+        <option value="{{ item.id }}" {% if policy and policy.default_template_id == item.id %}selected{% endif %}>{{ item.name }} ({{ item.source }})</option>
+        {% endfor %}
+        {% if policy and policy.default_template_id and policy.default_template_id not in (nexa_templates|map(attribute='id')|list) %}
+        <option value="{{ policy.default_template_id }}" selected>Saved ID {{ policy.default_template_id }} (not currently available)</option>
+        {% endif %}
+      </select>
+    </label>
+    <p class="muted">The NEXA lookup API does not report which package is currently on an existing account. Mapping here defines what Share Manager would use for future six- or twelve-month extensions, not what it has verified is installed today.</p>
+    <button type="submit" {% if api_error %}disabled{% endif %}>Save IPTV entitlement mapping</button>
+  </form>
+</section>
+<section class="card">
+  <h2>Safety and compatibility</h2>
+  <p>Monthly billing buys the lowest supported six-month NEXA duration when an extension is due; yearly billing buys twelve months. These mappings do not affect existing Share Manager payment dates or customer access.</p>
+  <p class="muted">The provider package determines channel entitlements. Choose matching variants (including adult-content preferences and 4K access) before enabling the future renewal engine. Missing six-month variants must remain unmapped for monthly tiers.</p>
+</section>
+{% endblock %}

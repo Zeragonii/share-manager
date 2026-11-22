@@ -1,3 +1,13 @@
+## v0.16.0 — NEXA IPTV integration, Phase 2 (read-only account linking)
+
+- Existing Share Manager **Packages** now have an opt-in NEXA entitlement mapping under **Packages → Integration entitlements → NEXA IPTV**. Map the six-month product for monthly tiers, the twelve-month product for yearly tiers, and a default channel template for future account creation. All IDs are checked against the live NEXA catalogue; unsupported durations cannot be selected.
+- **Integrations → NEXA IPTV → Manage existing IPTV accounts** lets an administrator link existing reseller-owned username or MAG accounts to a Share Manager customer. Lookup retrieves the provider's immutable account ID, status and actual Unix-seconds expiry. Accounts are refreshed individually, on demand.
+- Existing-account package selections are **administrator-recorded**, because the NEXA lookup API does not report an installed package ID. Likewise, desired templates are local selections: NEXA cannot report or change the template on an existing account. An explicit manual-confirmation action records that an administrator checked/applied the desired template through NEXA's portal; it is never described as API-verified.
+- Every linked account starts with \`automation_enabled=False\`. No provider extensions, account creation, account changes, payment hooks or automatic scans have been introduced. Existing Plex/Jellyfin entitlements, billing, package pricing and expiry dates are unchanged.
+- Two additive PostgreSQL tables (\`nexa_accounts\`, \`nexa_package_policies\`) are created by the existing startup database initialisation. **No manual SQL command or additional environment variables are required.** Make an ordinary database backup before upgrading, and ensure \`APP_SECRET\` stays unchanged.
+
+Phase 3 will add explicitly armed billing-triggered renewal jobs. Enabling a Package mapping in Phase 2 does not itself authorise NEXA credit spending.
+
 ## v0.15.0 — NEXA IPTV integration, Phase 1 (read-only)
 
 NEXA reseller API support is available under **Integrations → NEXA IPTV**. An admin can save and verify a Bearer API key, browse live provider packages, credit balance and Template Studio templates, and look up a reseller-owned IPTV account by exact username or MAG MAC address. Account lookup displays the provider's actual \`exp_date\` (Unix seconds, formatted in UTC) without changing provider data.
