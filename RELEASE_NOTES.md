@@ -1,3 +1,12 @@
+## 0.15.0 — NEXA read-only integration (Phase 1)
+
+- Added a fixed-origin HTTPS NEXA reseller API client (GET packages, GET templates, GET account lookup only).
+- Added encrypted API-key storage in the existing Integrations record, derived from APP_SECRET.
+- Added a collapsible NEXA section in the administrator Integrations UI, with save/test, catalog discovery and read-only lookup.
+- Added safe API errors, timeout handling, no redirects, input validation and dedicated tests.
+- New NEXA integration is deliberately disabled for Package entitlements; no account writes or extension jobs are possible.
+- No schema migrations, new environment variables or changes to existing Plex/Jellyfin/billing data.
+
 ## v0.14.2c — Prefer named Plex player in stream limit messages
 
 - Prioritize Tautulli's Player value (e.g. "Ste's Fire TV") over generic Device/Platform labels in stream-cap notifications, client termination messages, and audit history.
