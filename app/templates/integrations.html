@@ -149,6 +149,43 @@
 })();
 </script>
 
+<section class="integration-section" id="nexa">
+  <details class="integration-section-details">
+    <summary class="integration-section-summary">
+      <span class="integration-section-label"><strong>NEXA IPTV</strong><small>Read-only API discovery · Phase 1</small></span>
+      <span class="integration-section-status">
+        <span class="integration-section-meta">{{ 'API key configured' if nexa else 'Not connected' }}</span>
+        <span class="integration-section-chevron" aria-hidden="true">⌄</span>
+      </span>
+    </summary>
+    <div class="integration-section-content">
+      <p class="muted">Discover provider packages, credit balance, Template Studio templates and existing accounts. Phase 1 does not change or extend provider accounts or alter Share Manager entitlements.</p>
+      <form method="post" action="/integrations/nexa/save" class="grid-form">
+        <label>Provider API endpoint<input type="url" value="https://neva.yabadabado.store" readonly></label>
+        <label>NEXA Bearer API key <span class="muted">{% if nexa %}(leave blank to retain existing key){% endif %}</span>
+          <input name="api_key" type="password" autocomplete="new-password" placeholder="{{ 'Key saved (hidden)' if nexa else 'Paste reseller API key' }}" {% if not nexa %}required{% endif %}>
+        </label>
+        <button type="submit">Save &amp; test connection</button>
+      </form>
+      {% if nexa %}
+      <div class="integration-section-actions">
+        <a href="/integrations/nexa/catalog" class="button-link secondary">View live packages, credits &amp; templates</a>
+      </div>
+      <details class="integration-add">
+        <summary>Look up an existing IPTV account (read-only)</summary>
+        <form method="post" action="/integrations/nexa/lookup" class="grid-form integration-add-body">
+          <p class="muted">Enter exactly one identifier. Username lookup is case-sensitive; MAC lookup is case-insensitive.</p>
+          <label>IPTV username<input name="username" maxlength="120" autocomplete="off" placeholder="client_q7m4"></label>
+          <label>MAG MAC address<input name="mac" maxlength="17" autocomplete="off" placeholder="00:1A:79:42:56:78"></label>
+          <button type="submit">Look up account</button>
+        </form>
+      </details>
+      <p class="muted">The NEXA connection is intentionally not enabled for Package entitlements until Phase 2. Your existing Plex, Jellyfin and billing configuration remains unchanged.</p>
+      {% endif %}
+    </div>
+  </details>
+</section>
+
 <section class="integration-section requests-platform-integration">
   <details class="integration-section-details">
     <summary class="integration-section-summary"><span class="integration-section-label"><strong>Seerr / Requests platform</strong><small>Content requests and quotas</small></span><span class="integration-section-status">{% if requests_platform and requests_platform.enabled and requests_platform.base_url %}<span class="badge active">enabled</span>{% endif %}<span class="integration-section-chevron" aria-hidden="true">⌄</span></span></summary>
