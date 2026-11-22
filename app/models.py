@@ -232,6 +232,7 @@ class NexaExtensionJob(Base):
     idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+    post_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(240), nullable=True)
