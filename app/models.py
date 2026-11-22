@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -155,6 +155,56 @@ class Integration(Base):
     suspension_library: Mapped[str | None] = mapped_column(String(255), nullable=True)
     suspension_retention_months: Mapped[int] = mapped_column(Integer, default=3)
     __table_args__ = (UniqueConstraint("kind", "name"),)
+
+
+
+class NexaPackagePolicy(Base):
+    """Opt-in IPTV entitlement mapping on an existing Share Manager Package.
+
+    These provider IDs are advisory until the Phase 3 renewal engine exists.
+    """
+    __tablename__ = "nexa_package_policies"
+    package_id: Mapped[int] = mapped_column(ForeignKey("packages.id", ondelete="CASCADE"), primary_key=True)
+    integration_id: Mapped[int] = mapped_column(ForeignKey("integrations.id", ondelete="CASCADE"))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    monthly_provider_package_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    yearly_provider_package_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    default_template_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    package: Mapped["Package"] = relationship()
+    integration: Mapped["Integration"] = relationship()
+
+
+class NexaAccount(Base):
+    """Existing reseller-owned line linked locally to a Share Manager customer.
+
+    provider_expiry_ts mirrors the Unix-seconds value returned by NEXA.
+    Template and existing package selections are administrator-supplied metadata,
+    not claims of API verification. No automatic operations are enabled in Phase 2.
+    """
+    __tablename__ = "nexa_accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    integration_id: Mapped[int] = mapped_column(ForeignKey("integrations.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    provider_account_id: Mapped[str] = mapped_column(String(128))
+    provider_username: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_mac: Mapped[str | None] = mapped_column(String(17), nullable=True)
+    account_type: Mapped[str] = mapped_column(String(32), default="unknown")
+    provider_status: Mapped[str] = mapped_column(String(32), default="unknown")
+    is_trial: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider_expiry_ts: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    recorded_package_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    desired_template_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    confirmed_template_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    template_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    template_confirmed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    automation_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    linked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    customer: Mapped["Customer"] = relationship()
+    integration: Mapped["Integration"] = relationship()
+    __table_args__ = (UniqueConstraint("integration_id", "provider_account_id", name="uq_nexa_provider_account"),)
+
 
 
 class JellyfinAccount(Base):
