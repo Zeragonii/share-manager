@@ -1,3 +1,16 @@
+## 0.17.0 — NEXA Phase 3: safe payment-triggered paid renewals
+
+- Opt-in six-month (monthly) and twelve-month (yearly) provider extensions from actual applied new payments only.
+- Actual provider expiry lookup before first extension; never infer or replay historical payments.
+- Transactional extension outbox, immutable purchase data, unique idempotency keys and database worker locks/retries.
+- Prevent purchases on expired/voided payments, stale package mappings, disabled/blocked/trial accounts and manual-only billing changes.
+- Record NEXA-confirmed expiry, charged/remaining credits and whether a response was a safe replay.
+- Encrypt rotated IPTV passwords and provide admin-only reveal and acknowledgement; never include passwords in audit logs.
+- Per-account enable/disable, immutable-job manual retry and extension history in the existing NEXA account interface.
+- Reuse existing Packages, subscriptions, payments and NEXA links; add an extension-job ledger and additive account columns via startup schema migration.
+- No account changes on installation, import or merely arming an account; first real purchase requires the next newly applied payment after opt-in.
+- Add automated Phase 3 regression coverage.
+
 ## 0.16.0 — NEXA IPTV Phase 2: Package mapping and existing-account linking
 
 - Opt-in 6-month and 12-month NEXA product mapping within the existing Share Manager Packages UI, with an optional default template.
