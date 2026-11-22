@@ -407,6 +407,14 @@ def register_nexa_phase2_routes(app, auth, render):
                 raise NexaError("Mapped provider product is missing or has an incompatible duration")
             if line.account_type.lower() not in ("username", "mag", "mac"):
                 raise NexaError("Unsupported NEXA account type")
+            valid_types = product.get("account_types")
+            if valid_types:
+                if not isinstance(valid_types, (list, tuple, set)):
+                    raise NexaError("NEXA product account types could not be verified")
+                types = {str(value).lower() for value in valid_types}
+                actual = "mag" if line.account_type.lower() == "mac" else line.account_type.lower()
+                if actual not in types and not (actual == "mag" and "mac" in types):
+                    raise NexaError("Selected provider product is incompatible with the IPTV account type")
             lookup = (client.lookup(mac=line.provider_mac)
                       if line.account_type.lower() in ("mag", "mac") and line.provider_mac
                       else client.lookup(username=line.provider_username or ""))
