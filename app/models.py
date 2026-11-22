@@ -252,6 +252,56 @@ class NexaExtensionJob(Base):
     )
 
 
+
+class NexaMonitorState(Base):
+    """Global read-only NEXA monitoring cache and admin policy (single row)."""
+    __tablename__ = "nexa_monitor_state"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    expiry_warning_days: Mapped[int] = mapped_column(Integer, default=30)
+    stale_after_hours: Mapped[int] = mapped_column(Integer, default=48)
+    low_credit_threshold: Mapped[int] = mapped_column(Integer, default=12)
+    poll_interval_hours: Mapped[int] = mapped_column(Integer, default=6)
+    credit_balance: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    catalog_json: Mapped[str] = mapped_column(Text, default="[]")
+    catalog_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    catalog_error: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    scanned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class NexaAccountProbe(Base):
+    """Track the result of periodic read-only lookups independently of account expiry."""
+    __tablename__ = "nexa_account_probes"
+    account_id: Mapped[int] = mapped_column(ForeignKey("nexa_accounts.id", ondelete="CASCADE"), primary_key=True)
+    attempted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class NexaActionItem(Base):
+    """Durable, deduplicated admin work queue. Does not change any provider account."""
+    __tablename__ = "nexa_action_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_key: Mapped[str] = mapped_column(String(200), unique=True)
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("nexa_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    code: Mapped[str] = mapped_column(String(50), index=True)
+    severity: Mapped[str] = mapped_column(String(16), default="warning")
+    status: Mapped[str] = mapped_column(String(24), default="open", index=True)
+    subject: Mapped[str] = mapped_column(String(200))
+    message: Mapped[str] = mapped_column(Text)
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    notified_generation: Mapped[int] = mapped_column(Integer, default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class JellyfinAccount(Base):
     """Discovered Jellyfin identity. No Jellyfin permissions are written."""
     __tablename__ = "jellyfin_accounts"

@@ -1,3 +1,14 @@
+## 0.18.0 — NEXA IPTV Phase 4: read-only health monitoring and alerting
+
+- Added a dedicated NEXA monitoring dashboard showing account health, overdue billing, provider expiry, extension failures, credit balance and action queue.
+- Added an automatically reconciled manual-intervention ledger with acknowledgement, resolution, re-opening and audit history.
+- Added bounded provider GET-only monitoring for linked accounts and NEXA reseller package/credit balance, with rate-friendly polling and failure tracking.
+- Added 30/90-day forecast for hypothetical next paid renewals (never an automatic spend signal).
+- Added NEXA-specific admin notification events and event-key deduplication; configured notification channels and admin Web Push can subscribe.
+- Added adjustable stale-account, expiry-warning, low-credit and polling thresholds.
+- Phase 3 renewal engine, Packages, existing Plex/Jellyfin access and all provider-side NEXA account state are left unchanged.
+- Database creates three additive monitoring tables on startup; no migration commands or new environment variables are required.
+
 ## 0.17.0 — NEXA Phase 3: safe payment-triggered paid renewals
 
 - Opt-in six-month (monthly) and twelve-month (yearly) provider extensions from actual applied new payments only.

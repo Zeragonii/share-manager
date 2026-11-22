@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <header><h1>NEXA IPTV — linked accounts</h1><p>Manage linked IPTV accounts, opt-in payment-backed extensions and their provider expiry.</p></header>
-<p><a class="button-link secondary" href="/integrations#nexa">← Back to integrations</a> <a class="button-link secondary" href="/packages">Package entitlements</a></p>
+<p><a class="button-link secondary" href="/integrations#nexa">← Back to integrations</a> <a class="button-link secondary" href="/packages">Package entitlements</a> <a class="button-link secondary" href="/integrations/nexa/monitor">Monitoring &amp; manual actions</a></p>
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
 {% if api_error %}<div class="alert error">NEXA catalog/template discovery failed: {{ api_error }}. Existing linked accounts are shown. New template/package selections are disabled until the API is available.</div>{% endif %}

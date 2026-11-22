@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% block content %}
+<header>
+  <h1>NEXA IPTV — monitoring</h1>
+  <p>Provider expiry, billing risk, reseller credits and manual intervention. Provider checks are read-only; nothing here purchases access or disconnects a customer.</p>
+</header>
+<p>
+  <a class="button-link secondary" href="/integrations#nexa">← NEXA integration</a>
+  <a class="button-link secondary" href="/integrations/nexa/accounts">Linked IPTV accounts</a>
+</p>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
+<section class="card">
+  <div class="package-section-heading">
+    <div><h2>IPTV operations overview</h2>
+      <p class="muted">Last evaluated: {{ state.scanned_at.strftime('%d %b %Y %H:%M UTC') if state.scanned_at else 'Not scanned yet' }} · Account polling: {{ 'Enabled' if state.enabled else 'Paused' }}</p>
+    </div>
+    <form method="post" action="/integrations/nexa/monitor/refresh">
+      <button type="submit" class="secondary">Refresh provider data (read-only)</button>
+    </form>
+  </div>
+  <div class="tautulli-status-grid">
+    <div><span>Linked IPTV accounts</span><strong>{{ stats.accounts }}</strong></div>
+    <div><span>Armed for renewals</span><strong>{{ stats.armed }}</strong></div>
+    <div><span>Open actions</span><strong>{{ stats.open }}</strong></div>
+    <div><span>Acknowledged actions</span><strong>{{ stats.acknowledged }}</strong></div>
+    <div><span>Critical issues</span><strong>{{ stats.critical }}</strong></div>
+    <div><span>Extension jobs needing review</span><strong>{{ stats.review_jobs }}</strong></div>
+    <div><span>Provider expiries within {{ days }} days</span><strong>{{ stats.expiring }}</strong></div>
+    <div><span>Confirmed credits spent since Phase 3</span><strong>{{ stats.spent_credits }}</strong></div>
+  </div>
+  <p class="muted">Counts reflect locally recorded facts and most recent provider lookups. A pending or failed NEXA lookup will not invent a new expiry.</p>
+</section>
+
+<section class="card">
+  <div class="package-section-heading">
+    <div>
+      <h2>Reseller credits &amp; renewal forecast</h2>
+      <p class="muted">Provider credit balance is read from NEXA. Forecast assumes a customer's next future payment arrives on time; it does not trigger purchases.</p>
+    </div>
+    <div>
+      <a class="button-link secondary" href="/integrations/nexa/monitor?days=30">Next 30 days</a>
+      <a class="button-link secondary" href="/integrations/nexa/monitor?days=90">Next 90 days</a>
+    </div>
+  </div>
+  <div class="tautulli-status-grid">
+    <div><span>Last known NEXA credit balance</span><strong>{{ state.credit_balance if state.credit_balance is not none else 'Unknown' }}</strong></div>
+    <div><span>Estimated {{ days }}-day credits (priced accounts)</span><strong>{{ forecast.total }}</strong></div>
+    <div><span>Estimated purchase events</span><strong>{{ forecast.known + forecast.unknown }}</strong></div>
+    <div><span>Projected shortfall (known prices only)</span><strong>{{ forecast.shortfall if forecast.shortfall is not none else 'Unknown' }}</strong></div>
+  </div>
+  <p class="muted">Credits last checked: {{ state.catalog_checked_at.strftime('%d %b %Y %H:%M UTC') if state.catalog_checked_at else 'Never' }}. {{ forecast.unknown }} prospective purchases have unavailable prices. The forecast considers one next payment per armed account; customer payments and future provider expiries cannot be guaranteed.</p>
+  {% if state.catalog_error %}<div class="alert error">Provider catalogue unavailable: {{ state.catalog_error }}</div>{% endif %}
+  {% if forecast.upcoming %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Customer</th><th>Next Share Manager renewal</th><th>NEXA product</th><th>Extension</th><th>Estimated credits</th></tr></thead>
+    <tbody>{% for item in forecast.upcoming %}
+      <tr>
+        <td><a href="/integrations/nexa/accounts#nexa-account-{{ item.account_id }}">{{ item.customer }}</a></td>
+        <td>{{ item.due.strftime('%d %b %Y') }}</td>
+        <td>{{ item.product_id }}</td><td>{{ item.months }} months</td>
+        <td>{{ item.credits if item.credits is not none else 'Price unavailable' }}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">No qualifying next-payment renewal is currently forecast within this window. This does not mean every provider account is guaranteed to remain active.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Manual action queue</h2>
+  <p class="muted">Issues are deduplicated by account and type. Acknowledge to retain visibility without repeat alerts; resolve after taking action. If the underlying condition remains, the next scan reopens it. No action here disables NEXA accounts.</p>
+  {% set outstanding = actions|selectattr('status', 'ne', 'resolved')|list %}
+  {% if outstanding %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Priority</th><th>Customer / subject</th><th>Issue</th><th>Status</th><th>Last seen (UTC)</th><th>Manual action</th></tr></thead>
+    <tbody>
+    {% for item in outstanding|sort(attribute='id', reverse=true) %}
+    <tr>
+      <td><span class="badge {{ 'suspended' if item.severity == 'critical' else '' }}">{{ item.severity }}</span></td>
+      <td>{% if item.account_id %}<a href="/integrations/nexa/accounts#nexa-account-{{ item.account_id }}">{{ item.subject }}</a>{% else %}{{ item.subject }}{% endif %}</td>
+      <td><strong>{{ item.code.replace('_', ' ')|title }}</strong><p class="muted">{{ item.message }}</p></td>
+      <td>{{ item.status }}{% if item.acknowledged_by %}<small class="muted"> by {{ item.acknowledged_by }}</small>{% endif %}</td>
+      <td>{{ item.last_seen_at.strftime('%d %b %Y %H:%M') }}</td>
+      <td>
+        {% if item.status == 'open' %}
+        <form method="post" action="/integrations/nexa/monitor/actions/{{ item.id }}/ack">
+          <button type="submit" class="secondary small-action">Acknowledge</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/integrations/nexa/monitor/actions/{{ item.id }}/resolve" class="grid-form">
+          <label>Resolution note<input name="note" maxlength="1000" placeholder="What was done?"></label>
+          <button type="submit" class="secondary small-action">Mark resolved</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">No outstanding NEXA monitoring actions. The background checker continues to watch for changes.</p>
+  {% endif %}
+  <details class="integration-add">
+    <summary>Resolved action history ({{ actions|selectattr('status', 'equalto', 'resolved')|list|length }})</summary>
+    <div class="integration-add-body">
+      <div class="table-wrap"><table>
+        <thead><tr><th>Subject</th><th>Issue</th><th>Resolution</th><th>Resolved (UTC)</th><th></th></tr></thead>
+        <tbody>
+          {% for item in actions if item.status == 'resolved' %}
+          <tr>
+            <td>{{ item.subject }}</td><td>{{ item.code.replace('_', ' ')|title }}</td>
+            <td>{{ item.resolution_note or '—' }}</td>
+            <td>{{ item.resolved_at.strftime('%d %b %Y %H:%M') if item.resolved_at else '—' }}</td>
+            <td><form method="post" action="/integrations/nexa/monitor/actions/{{ item.id }}/reopen"><button type="submit" class="secondary small-action">Reopen</button></form></td>
+          </tr>
+          {% else %}<tr><td colspan="5">No resolved actions yet.</td></tr>{% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+  </details>
+</section>
+
+<section class="card">
+  <h2>Latest NEXA extension jobs</h2>
+  <p class="muted">Provider credits are only charged by Phase 3's separately approved, payment-triggered extension worker.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Job</th><th>Account</th><th>Payment</th><th>Status</th><th>Credits</th><th>Last result</th></tr></thead>
+    <tbody>
+    {% for job in history %}
+    <tr>
+      <td>#{{ job.id }}</td><td><a href="/integrations/nexa/accounts#nexa-account-{{ job.account_id }}">#{{ job.account_id }}</a></td>
+      <td>#{{ job.payment_id }}</td><td>{{ job.status }}</td>
+      <td>{{ job.credits_charged if job.credits_charged is not none else '—' }}</td>
+      <td>{{ job.last_error or ('Provider confirmed' if job.status == 'completed' else '—') }}</td>
+    </tr>
+    {% else %}<tr><td colspan="6">No NEXA extensions have been queued.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>Monitoring settings</h2>
+  <p class="muted">These settings affect monitoring and administrator alerts only. They cannot arm IPTV automation, create accounts, change templates or spend credits.</p>
+  <form method="post" action="/integrations/nexa/monitor/settings" class="grid-form">
+    <label class="toggle-choice">
+      <input type="checkbox" name="monitor_enabled" value="yes" {% if state.enabled %}checked{% endif %}>
+      <span><strong>Enable read-only NEXA background monitoring</strong><small>Checks real provider expiry and credits; never purchases access.</small></span>
+    </label>
+    <label class="toggle-choice">
+      <input type="checkbox" name="notifications_enabled" value="yes" {% if state.notifications_enabled %}checked{% endif %}>
+      <span><strong>Send new and escalated NEXA issues through existing admin notifications</strong><small>Endpoint event filters and admin push preferences still apply.</small></span>
+    </label>
+    <div class="package-fields-grid-v2">
+      <label>Expiry warning window (days)
+        <input name="expiry_warning_days" type="number" min="1" max="180" value="{{ state.expiry_warning_days }}" required>
+      </label>
+      <label>Data stale after (hours)
+        <input name="stale_after_hours" type="number" min="1" max="720" value="{{ state.stale_after_hours }}" required>
+      </label>
+      <label>Low credit alert threshold
+        <input name="low_credit_threshold" type="number" min="0" max="100000" value="{{ state.low_credit_threshold }}" required>
+      </label>
+      <label>Per-account read-only polling interval (hours)
+        <input name="poll_interval_hours" type="number" min="1" max="168" value="{{ state.poll_interval_hours }}" required>
+      </label>
+    </div>
+    <p class="muted">Each monitoring cycle polls at most four NEXA accounts and refreshes the package/credit catalogue at most every six hours, respecting the provider's rate limits. A manual refresh is similarly bounded.</p>
+    <button type="submit">Save monitoring settings</button>
+  </form>
+</section>
+{% endblock %}

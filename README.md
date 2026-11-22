@@ -1,3 +1,16 @@
+## v0.18.0 — NEXA IPTV Phase 4: monitoring, credits and manual actions
+
+Phase 4 adds a **read-only NEXA operations dashboard** under **Integrations → NEXA IPTV → IPTV monitoring, alerts & credits**. It requires no new environment variables, no manual SQL migration and no changes to your existing customer subscriptions. The existing startup routine creates three additive tables for provider polling, monitoring settings and durable action items.
+
+- **Read-only periodic checks:** A new background worker polls at most four linked NEXA accounts every five minutes, with a configurable minimum time between checks of each account (default six hours). Package/credit discovery is refreshed at most every six hours. Manually refreshing also limits calls to the provider and never sends an extension request. All actual NEXA expiry dates come from API responses, never local time arithmetic.
+- **At-risk customers:** Detect expired/expiring NEXA accounts, overdue Share Manager payment coverage, billing past grace, provider expiry before customer paid-through, blocked/disabled provider lines, stale or failing account lookups, unmapped Packages and invalidated automation approval.
+- **Extension monitoring:** Highlight provider extension jobs in manual-review state, repeated retries, completed jobs with coverage warnings and credentials rotated by NEXA.
+- **Credits:** Show last-known provider balance, a configurable low-credit threshold (default 12), and an **informational** 30-day/90-day estimate of credits that would be required if each armed customer makes their next future payment. Only one prospective payment per account is forecast, and unknown package prices are marked unknown. Forecasting never authorises purchases.
+- **Manual action queue:** Durable deduplicated issues with severity, acknowledgement, resolution notes and audit trail. Issues are automatically closed when fixed and reopen if a manually resolved issue still exists at the next check. Critical escalations reopen acknowledged issues.
+- **Admin alerts:** Register NEXA-specific notification event types (overdue payment, expiry/coverage, failed extension, low credits, password rotation, general attention). New/escalated issues are dispatched using Share Manager's existing notification integrations and admin Web Push, respecting event subscriptions. For existing Discord/HA/webhook endpoints, explicitly enable the new NEXA events in the endpoint event filters if you want them delivered. Notifications are capped at four newly observed conditions per scan to avoid flooding.
+
+**Operational safety:** Phase 4 itself never creates NEXA accounts, changes customer templates, suspends IPTV, queues renewals or spends credits. The existing Phase 3 payment-backed extension worker is unchanged. A low balance or imminent expiry can only notify an administrator; no automatic provider action is taken. Normal Portainer pull/redeploy suffices after taking your usual backup.
+
 ## v0.17.0 — NEXA IPTV Phase 3: payment-backed renewal engine
 
 Phase 3 adds a **durable, explicitly approved** extension engine to the linked NEXA accounts from Phase 2. Every existing account remains disarmed after upgrading; linking, package selection, template selection and arming an account **never** trigger a purchase or replay historical payments.

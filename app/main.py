@@ -70,6 +70,8 @@ from .integrations.seerr import SeerrIntegration, SeerrError
 from .integrations.jellyfin import JellyfinIntegration, JellyfinError
 from .integrations.nexa import BASE_URL as NEXA_BASE_URL, NexaIntegration, NexaError, encrypt_api_key, decrypt_api_key
 from .nexa_phase2 import register_nexa_phase2_routes
+from .nexa_monitor_routes import register_nexa_monitor_routes
+from .services.nexa_monitor import monitor_cycle
 from .services.nexa_renewals import enqueue_for_payment as enqueue_nexa_for_payment, on_payment_changed as nexa_payment_changed, process_one_extension
 from .security import (
     logged_in, make_session, valid_credentials,
@@ -468,6 +470,14 @@ def run_nexa_cycle() -> bool:
     return process_one_extension()
 
 
+@serialized_db_worker
+def run_nexa_monitor_cycle() -> dict:
+    # Only NEXA GETs; never authorises or executes paid provider actions.
+    if RESTORE_IN_PROGRESS.is_set():
+        return {"enabled": False, "checked": 0}
+    return monitor_cycle()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     async def billing_loop():
@@ -489,6 +499,15 @@ async def lifespan(_app: FastAPI):
             except Exception:
                 logger.exception("NEXA extension worker cycle failed")
             await asyncio.sleep(40)
+
+    async def nexa_monitor_loop():
+        await asyncio.sleep(65)
+        while True:
+            try:
+                await asyncio.to_thread(run_nexa_monitor_cycle)
+            except Exception:
+                logger.exception("NEXA read-only monitoring cycle failed")
+            await asyncio.sleep(300)
 
     async def backup_loop():
         await asyncio.sleep(10)
@@ -582,6 +601,7 @@ async def lifespan(_app: FastAPI):
             await asyncio.sleep(max(10, int(interval or 10)))
 
     nexa_task = asyncio.create_task(nexa_loop())
+    nexa_monitor_task = asyncio.create_task(nexa_monitor_loop())
     billing_task = asyncio.create_task(billing_loop())
     backup_task = asyncio.create_task(backup_loop())
     reconcile_task = asyncio.create_task(reconcile_queue_loop())
@@ -595,6 +615,7 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         nexa_task.cancel()
+        nexa_monitor_task.cancel()
         billing_task.cancel()
         backup_task.cancel()
         reconcile_task.cancel()
@@ -606,6 +627,8 @@ async def lifespan(_app: FastAPI):
         attachment_cleanup_task.cancel()
         with suppress(asyncio.CancelledError):
             await nexa_task
+        with suppress(asyncio.CancelledError):
+            await nexa_monitor_task
         with suppress(asyncio.CancelledError):
             await billing_task
         with suppress(asyncio.CancelledError):
@@ -4462,3 +4485,4 @@ def api_libraries(request: Request, integration_id: int, db: Session = Depends(g
 
 # Read-only NEXA Phase 2 management endpoints. No provider write routes.
 register_nexa_phase2_routes(app, auth, render)
+register_nexa_monitor_routes(app, auth, render)
