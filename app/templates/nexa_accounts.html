@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block content %}
+<header><h1>NEXA IPTV — linked accounts</h1><p>Import existing reseller-owned IPTV lines without extending or changing their access.</p></header>
+<p><a class="button-link secondary" href="/integrations#nexa">← Back to integrations</a> <a class="button-link secondary" href="/packages">Package entitlements</a></p>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
+{% if api_error %}<div class="alert error">NEXA catalog/template discovery failed: {{ api_error }}. Existing linked accounts are shown. New template/package selections are disabled until the API is available.</div>{% endif %}
+<section class="card">
+  <h2>Link an existing IPTV account</h2>
+  <p class="muted">Enter exactly one identifier. NEXA verifies ownership and supplies the real account ID, status and expiry. No password is retrieved, and this does not change the provider account.</p>
+  <form method="post" action="/integrations/nexa/accounts/link" class="grid-form">
+    <label>Share Manager customer
+      <select name="customer_id" required>
+        <option value="">Choose customer…</option>
+        {% for customer in customers %}
+        <option value="{{ customer.id }}">{{ customer.name }}{% if customer.email %} — {{ customer.email }}{% endif %}{% if selected_packages.get(customer.id) not in enabled_package_ids %} (no IPTV Package mapped){% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="package-fields-grid-v2">
+      <label>Exact IPTV username<input name="username" maxlength="120" autocomplete="off" placeholder="client_q7m4"></label>
+      <label>Or MAG MAC address<input name="mac" maxlength="17" autocomplete="off" placeholder="00:1A:79:42:56:78"></label>
+    </div>
+    <div class="package-fields-grid-v2">
+      <label>Current NEXA package (admin-recorded, optional)
+        <select name="recorded_package_id" {% if api_error %}disabled{% endif %}>
+          <option value="">Unknown / not verified by API</option>
+          {% for item in catalog %}<option value="{{ item.id }}">{{ item.name }} (ID {{ item.id }})</option>{% endfor %}
+        </select>
+      </label>
+      <label>Desired channel template (optional)
+        <select name="desired_template_id" {% if api_error %}disabled{% endif %}>
+          <option value="">Not selected</option>
+          {% for item in nexa_templates %}<option value="{{ item.id }}">{{ item.name }} ({{ item.source }})</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <button type="submit">Verify &amp; link account (read-only)</button>
+  </form>
+</section>
+<section class="card">
+  <h2>Linked IPTV lines ({{ accounts|length }})</h2>
+  <p class="muted">Expiry and provider status are based on the most recent successful read-only lookup. Refresh a specific line to retrieve a new value. Template verification and package mapping are your manually recorded selections.</p>
+  {% for line in accounts %}
+  <details class="integration-add" id="nexa-account-{{ line.id }}">
+    <summary>
+      <strong>{{ line.customer.name }} — {{ line.provider_username or line.provider_mac or ('NEXA #' ~ line.provider_account_id) }}</strong>
+      <small class="muted"> {{ line.provider_status }} · expires {{ expiry_labels.get(line.id) }} · read-only</small>
+    </summary>
+    <div class="integration-add-body">
+      <div class="tautulli-status-grid">
+        <div><span>Provider account ID</span><strong>{{ line.provider_account_id }}</strong></div>
+        <div><span>Account type</span><strong>{{ line.account_type }}{% if line.is_trial %} (trial){% endif %}</strong></div>
+        <div><span>NEXA expiry (provider-reported)</span><strong>{{ expiry_labels.get(line.id) }}</strong></div>
+        <div><span>Last checked (UTC)</span><strong>{{ line.last_checked_at.strftime('%d %b %Y %H:%M') if line.last_checked_at else 'Never' }}</strong></div>
+      </div>
+      <p class="muted">Current Package: {% if selected_packages.get(line.customer_id) in enabled_package_ids %}<strong>IPTV entitlement mapped</strong>{% else %}<strong>Not mapped for IPTV</strong>{% endif %}. Automation: <strong>Off (Phase 2)</strong>.</p>
+      <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/refresh"><button type="submit" class="secondary">Refresh status &amp; actual expiry</button></form>
+      <h3>Recorded package &amp; desired channel template</h3>
+      <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/settings" class="grid-form">
+        <label>Existing NEXA package (manually identified)
+          <select name="recorded_package_id" {% if api_error %}disabled{% endif %}>
+            <option value="">Unknown</option>
+            {% for item in catalog %}<option value="{{ item.id }}" {% if line.recorded_package_id == item.id %}selected{% endif %}>{{ item.name }} (ID {{ item.id }})</option>{% endfor %}
+            {% if line.recorded_package_id and line.recorded_package_id not in (catalog|map(attribute='id')|list) %}<option value="{{ line.recorded_package_id }}" selected>Previously recorded ID {{ line.recorded_package_id }}</option>{% endif %}
+          </select>
+        </label>
+        <label>Desired channel template
+          <select name="desired_template_id" {% if api_error %}disabled{% endif %}>
+            <option value="">Not selected</option>
+            {% for item in nexa_templates %}<option value="{{ item.id }}" {% if line.desired_template_id == item.id %}selected{% endif %}>{{ item.name }} ({{ item.source }})</option>{% endfor %}
+            {% if line.desired_template_id and line.desired_template_id not in (nexa_templates|map(attribute='id')|list) %}<option value="{{ line.desired_template_id }}" selected>Previously selected ID {{ line.desired_template_id }}</option>{% endif %}
+          </select>
+        </label>
+        <p class="muted">Desired template is local metadata only. Existing IPTV templates cannot be changed via the current NEXA API.</p>
+        <button type="submit" {% if api_error %}disabled{% endif %}>Save local settings</button>
+      </form>
+      {% if line.desired_template_id %}
+        {% if line.confirmed_template_id == line.desired_template_id and line.template_confirmed_at %}
+          <p class="muted"><strong>Manually confirmed:</strong> {{ line.desired_template_id }} by {{ line.template_confirmed_by }} at {{ line.template_confirmed_at.strftime('%d %b %Y %H:%M') }} UTC. Not verified by the API.</p>
+        {% else %}
+          <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/confirm-template" class="grid-form">
+            <label class="toggle-choice"><input type="checkbox" name="confirmed_on_provider" value="yes" required><span><strong>I verified/applied the selected template manually in the NEXA portal</strong><small>Share Manager cannot confirm existing account templates through the API.</small></span></label>
+            <button type="submit" class="secondary">Record manual template confirmation</button>
+          </form>
+        {% endif %}
+      {% endif %}
+      <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/unlink" onsubmit="return confirm('Remove only the Share Manager link? The IPTV account will remain active in NEXA.');">
+        <button type="submit" class="danger">Unlink locally (provider unchanged)</button>
+      </form>
+    </div>
+  </details>
+  {% else %}
+  <p class="muted">No existing NEXA accounts have been linked yet.</p>
+  {% endfor %}
+</section>
+{% endblock %}
