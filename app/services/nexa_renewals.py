@@ -128,6 +128,9 @@ def on_payment_changed(db: Session, payment: Payment) -> None:
             job.completed_at = datetime.utcnow()
             job.last_error = "Original payment was amended or voided; create a new qualifying payment for renewal"
         elif job.status in ("completed", "in_flight") or job.post_attempted:
+            if job.status == "completed":
+                job.last_error = ("Payment edited/voided after NEXA credits were spent; "
+                                  "provider access cannot be refunded")[:240]
             db.add(AuditLog(actor=settings.admin_username, action="nexa.payment_after_extension",
                             target_type="nexa_extension_job", target_id=str(job.id),
                             detail="Original payment edited/voided after extension might have been sent; manual review necessary"))
