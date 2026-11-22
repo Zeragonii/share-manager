@@ -1,3 +1,14 @@
+## 0.16.0 — NEXA IPTV Phase 2: Package mapping and existing-account linking
+
+- Opt-in 6-month and 12-month NEXA product mapping within the existing Share Manager Packages UI, with an optional default template.
+- Manual linking of existing username and MAG IPTV accounts to Share Manager customers, with duplicate account-ID protection.
+- NEXA account refresh uses the live provider's Unix-seconds expiry; never calculates or silently changes the provider expiry.
+- Per-account desired template, manually recorded existing package, and explicit (non-API) template confirmation with audit entries.
+- Unlink locally without deleting or changing the actual IPTV account.
+- Fully read-only NEXA integration; all linked accounts have automation disabled; no changes to Plex, Jellyfin, billing or existing customers.
+- New tables created via existing startup schema initialisation; no manual SQL migration or environment changes.
+- Added NEXA Phase 2 regression tests and a pull-request test workflow.
+
 ## 0.15.0 — NEXA read-only integration (Phase 1)
 
 - Added a fixed-origin HTTPS NEXA reseller API client (GET packages, GET templates, GET account lookup only).
