@@ -153,6 +153,18 @@ def test_payment_outbox_only_queues_applied_new_payments(sandbox):
         assert db.query(NexaExtensionJob).count() == 1
 
 
+
+def test_zero_amount_does_not_buy_provider_credits(sandbox):
+    factory, fake = sandbox
+    with factory() as db:
+        payment = make_payment(db)
+        payment.amount = 0
+        assert renewals.enqueue_for_payment(db, payment) == 0
+        db.commit()
+    assert not renewals.process_one_extension()
+    assert not fake.post_calls
+
+
 def test_payment_extension_uses_provider_expiry_and_immutable_idempotency(sandbox):
     factory, fake = sandbox
     payment_id, count = enqueue(factory)
