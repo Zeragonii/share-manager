@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
-<header><h1>NEXA IPTV — linked accounts</h1><p>Import existing reseller-owned IPTV lines without extending or changing their access.</p></header>
+<header><h1>NEXA IPTV — linked accounts</h1><p>Manage linked IPTV accounts, opt-in payment-backed extensions and their provider expiry.</p></header>
 <p><a class="button-link secondary" href="/integrations#nexa">← Back to integrations</a> <a class="button-link secondary" href="/packages">Package entitlements</a></p>
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="alert success">{{ notice }}</div>{% endif %}
@@ -40,7 +40,7 @@
 </section>
 <section class="card">
   <h2>Linked IPTV lines ({{ accounts|length }})</h2>
-  <p class="muted">Expiry and provider status are based on the most recent successful read-only lookup. Refresh a specific line to retrieve a new value. Template verification and package mapping are your manually recorded selections.</p>
+  <p class="muted">Expiry and provider status are based on the most recent successful lookup or extension response. Refresh a specific line to retrieve a new value. Template verification and package mapping are your manually recorded selections.</p>
   {% for line in accounts %}
   <details class="integration-add" id="nexa-account-{{ line.id }}">
     <summary>
@@ -54,7 +54,7 @@
         <div><span>NEXA expiry (provider-reported)</span><strong>{{ expiry_labels.get(line.id) }}</strong></div>
         <div><span>Last checked (UTC)</span><strong>{{ line.last_checked_at.strftime('%d %b %Y %H:%M') if line.last_checked_at else 'Never' }}</strong></div>
       </div>
-      <p class="muted">Current Package: {% if selected_packages.get(line.customer_id) in enabled_package_ids %}<strong>IPTV entitlement mapped</strong>{% else %}<strong>Not mapped for IPTV</strong>{% endif %}. Automation: <strong>Off (Phase 2)</strong>.</p>
+      <p class="muted">Current Package: {% if selected_packages.get(line.customer_id) in enabled_package_ids %}<strong>IPTV entitlement mapped</strong>{% else %}<strong>Not mapped for IPTV</strong>{% endif %}. Automation: <strong>{{ 'Armed for future payments' if line.automation_enabled and renewal_state[line.id].ready else ('Approval invalid — re-arm' if line.automation_enabled else 'Off') }}</strong>.</p>
       <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/refresh"><button type="submit" class="secondary">Refresh status &amp; actual expiry</button></form>
       <h3>Recorded package &amp; desired channel template</h3>
       <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/settings" class="grid-form">
@@ -84,6 +84,57 @@
             <button type="submit" class="secondary">Record manual template confirmation</button>
           </form>
         {% endif %}
+      {% endif %}
+      <h3>Payment-triggered IPTV extensions</h3>
+      <p class="muted"><strong>Current eligibility:</strong> {{ renewal_state[line.id].message }}. Payment coverage comes from Share Manager; expiry is freshly checked with NEXA before any first extension. Enabling automation never queues historical payments.</p>
+      {% if line.automation_enabled %}
+      <p><span class="badge {{ 'active' if renewal_state[line.id].ready else 'suspended' }}">{{ 'Armed for future paid renewals' if renewal_state[line.id].ready else 'Reapproval required' }}</span></p>
+      {% endif %}
+      <div class="row">
+        {% if not line.automation_enabled or not renewal_state[line.id].ready %}
+        <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/automation" class="grid-form">
+          <input type="hidden" name="action" value="enable">
+          <label class="toggle-choice"><input type="checkbox" name="acknowledge" value="approve-credit-spend" required>
+            <span><strong>I approve automatic NEXA credit spending for this account on future qualifying payments</strong>
+              <small class="muted">Package {{ renewal_state[line.id].package_id or 'not mapped' }} · {{ renewal_state[line.id].months or '—' }} months. NEXA package selection may change channel entitlements and passwords. No existing payments are replayed.</small></span>
+          </label>
+          <button type="submit" {% if not renewal_state[line.id].package_id %}disabled{% endif %}>Verify &amp; arm paid extensions</button>
+        </form>
+        {% endif %}
+        {% if line.automation_enabled %}
+        <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/automation">
+          <input type="hidden" name="action" value="disable">
+          <button type="submit" class="secondary">Disable future extensions</button>
+        </form>
+        {% endif %}
+      </div>
+      <p class="muted">Disabling prevents new provider calls but cannot undo an in-flight or already completed charge. Changed Package mappings require explicit reapproval.</p>
+      {% if line.replacement_password_encrypted %}
+      <div class="alert error"><strong>NEXA rotated this IPTV password.</strong> Copy the new password securely and update the customer's player before acknowledging.</div>
+      <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/reveal-password">
+        <button type="submit" class="secondary">Reveal encrypted replacement password</button>
+      </form>
+      {% endif %}
+      {% if job_map.get(line.id) %}
+      <h3>Extension history</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Payment</th><th>Product / duration</th><th>Result</th><th>Credits</th><th>Provider expiry</th><th>Notes</th><th></th></tr></thead>
+        <tbody>
+        {% for job in job_map[line.id] %}
+        <tr>
+          <td>#{{ job.payment_id }}</td>
+          <td>{{ job.provider_package_id }} / {{ job.months }} months</td>
+          <td><strong>{{ job.status }}</strong>{% if job.replayed %} · replayed{% endif %}</td>
+          <td>{{ job.credits_charged if job.credits_charged is not none else '—' }}</td>
+          <td>{{ job.new_expiry_ts if job.new_expiry_ts is not none else '—' }}<small class="muted">Unix seconds</small></td>
+          <td>{{ job.last_error or ('Password rotated — action required' if job.password_changed else '—') }}</td>
+          <td>{% if job.status == 'review' %}<form method="post" action="/integrations/nexa/jobs/{{ job.id }}/retry"><button type="submit" class="secondary small-action" title="Retry same provider account/package/key after checking the issue">Retry original request</button></form>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+      <p class="muted">No paid extension intentions exist for this account. Linking and arming alone never create them.</p>
       {% endif %}
       <form method="post" action="/integrations/nexa/accounts/{{ line.id }}/unlink" onsubmit="return confirm('Remove only the Share Manager link? The IPTV account will remain active in NEXA.');">
         <button type="submit" class="danger">Unlink locally (provider unchanged)</button>
