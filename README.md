@@ -1,3 +1,25 @@
+## v0.17.0 — NEXA IPTV Phase 3: payment-backed renewal engine
+
+Phase 3 adds a **durable, explicitly approved** extension engine to the linked NEXA accounts from Phase 2. Every existing account remains disarmed after upgrading; linking, package selection, template selection and arming an account **never** trigger a purchase or replay historical payments.
+
+### One-time configuration
+
+1. Make a database backup and deploy the new container using the existing Portainer pull/redeploy flow. Two additive tables/columns are created by the existing startup migration; no manual SQL or new environment variables are required. Retain the same stable \`APP_SECRET\` so encrypted NEXA keys and rotated passwords remain readable.
+2. Under **Packages → Integration entitlements → NEXA IPTV**, verify each package maps to the intended six-month product for monthly billing or twelve-month product for yearly billing. NEXA's 4K products without a six-month option must *not* be assigned to monthly billing. Product selection can modify channel entitlements and connection limits.
+3. Under **Integrations → NEXA IPTV → Manage existing IPTV accounts**, verify each account's current provider package mapping. For each account, explicitly tick the credit-spend approval and select **Verify & arm paid extensions**. Arming performs read-only provider checks, captures the approved package and leaves all historical payments untouched.
+4. On the **next newly recorded, applied payment**, Share Manager inserts a pending extension job in the same DB transaction as the payment. Its worker checks the live NEXA expiry before sending a chargeable request: if the provider already covers the paid-through date, it skips the extension without spending credits. Monthly = 6 months, yearly = 12. No provider GET or POST is made by merely recording a payment until a worker picks its approved job.
+5. Inspect each account's extension history and outcome on the linked accounts page. Use the per-account switch to stop further extension calls. Any completed credit purchase is irreversible; editing or voiding a payment later cannot refund NEXA. For a review state, investigate and use **Retry original request** to reuse the identical saved account/product/months/idempotency key rather than create another charge.
+
+### Important safety properties
+
+- Only newly applied payments on currently assigned, active subscriptions can authorise a paid extension. Ledger-only entries, archive/exempt records, disabled accounts, changed mappings, expired paid coverage and voided payments cannot send a purchase. An external billing notification never triggers a purchase.
+- Provider account ID, product, duration and idempotency key are stored immutably per job. A timeout or worker restart retries with the original key and body, preventing duplicate charges. Database row locks and leases avoid concurrent submissions for one account.
+- The worker always reads live NEXA expiry before the *first* paid POST and persists provider-returned expiries after a successful extension, rather than calculating them. If prepaid Share Manager coverage exceeds a single six/twelve-month extension, it flags a manual follow-up rather than silently buying extra time.
+- NEXA extensions preserve the existing Template Studio preferences. Account template fields are not sent with extensions.
+- A provider-generated replacement password is encrypted using the existing app secret and displayed only through an admin-only, no-cache explicit reveal action. After delivering the new credentials, acknowledge to remove the stored encrypted copy. If NEXA reports a changed password without returning it, the job is flagged for manual provider review.
+- Linked accounts with charge history cannot be unlinked, protecting the payment-to-provider audit trail. Disarm them instead.
+- Phase 4 (overdue monitoring, notifications and low-credit forecasting) remains separate. Phase 3 shows the extension ledger and manual-review reasons in the admin UI.
+
 ## v0.16.0 — NEXA IPTV integration, Phase 2 (read-only account linking)
 
 - Existing Share Manager **Packages** now have an opt-in NEXA entitlement mapping under **Packages → Integration entitlements → NEXA IPTV**. Map the six-month product for monthly tiers, the twelve-month product for yearly tiers, and a default channel template for future account creation. All IDs are checked against the live NEXA catalogue; unsupported durations cannot be selected.
