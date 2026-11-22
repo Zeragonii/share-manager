@@ -1,3 +1,11 @@
+## v0.15.0 — NEXA IPTV integration, Phase 1 (read-only)
+
+NEXA reseller API support is available under **Integrations → NEXA IPTV**. An admin can save and verify a Bearer API key, browse live provider packages, credit balance and Template Studio templates, and look up a reseller-owned IPTV account by exact username or MAG MAC address. Account lookup displays the provider's actual \`exp_date\` (Unix seconds, formatted in UTC) without changing provider data.
+
+The API key is encrypted at rest using a key derived from the application's persistent \`APP_SECRET\`; a strong, stable \`APP_SECRET\` must be configured before NEXA can be connected. Rotating \`APP_SECRET\` requires re-entering the NEXA API key. NEXA's endpoint is fixed to HTTPS and the new client exposes only GET methods. The integration starts disabled for Package entitlements, and this release has **no NEXA account creation, extensions, billing hooks or automatic actions**. Existing customers, packages, Plex/Jellyfin access and payment records are untouched.
+
+To configure: update the container normally, open **Integrations → NEXA IPTV**, paste your NEXA API key and use **Save & test connection**. There is no database migration command or new environment variable provided \`APP_SECRET\` is already configured correctly.
+
 ## Plex soft suspension (v0.14.2)
 
 Per Plex server, choose an empty placeholder library and a retention in calendar months under Integrations → Plex. Active/grace shares keep their package libraries. Suspended customers with existing accepted shares retain only the placeholder until retention expiry, then have their server share removed. Existing Tautulli suspended-stream enforcement remains active. 0 months means retain indefinitely. Older suspended customers with no recorded timestamp are not invited back.
