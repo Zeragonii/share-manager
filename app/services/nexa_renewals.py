@@ -348,7 +348,7 @@ def process_one_extension() -> bool:
         return True
     except Exception:
         # Never log raw exception details from an API response containing credentials.
-        logger.exception("NEXA queue internal error on job %s", job_id)
+        logger.error("NEXA queue encountered an internal error on job %s", job_id)
         db.rollback()
         job = db.get(NexaExtensionJob, job_id)
         _finish(db, job, "review", "Internal processing error; inspect server logs without exposing credentials")
