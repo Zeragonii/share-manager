@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<header><h1>NEXA package &amp; template discovery</h1><p>Live, read-only information from NEXA. No credits are spent.</p></header>
+<p><a class="button-link secondary" href="/integrations#nexa">← Back to integrations</a></p>
+{% if package_error %}<div class="alert error">Package discovery: {{ package_error }}</div>{% endif %}
+{% if template_error %}<div class="alert error">Template discovery: {{ template_error }}</div>{% endif %}
+{% if catalog %}
+<section class="card">
+  <h2>Provider credits</h2>
+  <p><strong>{{ catalog.balance if catalog.balance is not none else 'Not returned by NEXA' }}</strong></p>
+  <h2>Available paid packages</h2>
+  <div class="table-wrap"><table><thead><tr><th>ID</th><th>Package</th><th>Months</th><th>Credits</th><th>Connections</th><th>Account types</th></tr></thead><tbody>
+  {% for item in catalog.packages %}<tr><td>{{ item.id }}</td><td>{{ item.name }}</td><td>{{ item.months if item.months is not none else '—' }}</td><td>{{ item.credits if item.credits is not none else '—' }}</td><td>{{ item.connections if item.connections is not none else '—' }}</td><td>{{ item.account_types|join(', ') if item.account_types is sequence and item.account_types is not string else (item.account_types or '—') }}</td></tr>
+  {% else %}<tr><td colspan="6">No packages returned.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+{% if template_items is not none %}
+<section class="card"><h2>Available Template Studio templates</h2>
+  <p class="muted">These can be selected when new IPTV accounts are created in a later phase. Templates cannot be changed on existing accounts through the documented API.</p>
+  <div class="table-wrap"><table><thead><tr><th>Template ID</th><th>Name</th><th>Source</th></tr></thead><tbody>
+  {% for item in template_items %}<tr><td><code>{{ item.id }}</code></td><td>{{ item.name }}</td><td>{{ item.source }}</td></tr>
+  {% else %}<tr><td colspan="3">No accessible templates found.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+{% endblock %}
