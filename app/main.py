@@ -70,6 +70,7 @@ from .integrations.seerr import SeerrIntegration, SeerrError
 from .integrations.jellyfin import JellyfinIntegration, JellyfinError
 from .integrations.nexa import BASE_URL as NEXA_BASE_URL, NexaIntegration, NexaError, encrypt_api_key, decrypt_api_key
 from .nexa_phase2 import register_nexa_phase2_routes
+from .services.nexa_renewals import enqueue_for_payment as enqueue_nexa_for_payment, on_payment_changed as nexa_payment_changed, process_one_extension
 from .security import (
     logged_in, make_session, valid_credentials,
     hash_portal_password, verify_portal_password, make_portal_session, read_portal_session,
@@ -460,6 +461,13 @@ def run_attachment_cleanup_cycle() -> int:
     finally:
         db.close()
 
+def run_nexa_cycle() -> bool:
+    # NEXA purchase jobs are individually approved and payment-triggered.
+    if RESTORE_IN_PROGRESS.is_set():
+        return False
+    return process_one_extension()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     async def billing_loop():
@@ -472,6 +480,15 @@ async def lifespan(_app: FastAPI):
                 # The next scheduled cycle gets another chance; request handling stays up.
                 logger.exception("Billing worker cycle failed")
             await asyncio.sleep(max(1, settings.billing_check_interval_minutes) * 60)
+
+    async def nexa_loop():
+        await asyncio.sleep(18)
+        while True:
+            try:
+                await asyncio.to_thread(run_nexa_cycle)
+            except Exception:
+                logger.exception("NEXA extension worker cycle failed")
+            await asyncio.sleep(40)
 
     async def backup_loop():
         await asyncio.sleep(10)
@@ -564,6 +581,7 @@ async def lifespan(_app: FastAPI):
                 logger.exception("Stream-limit enforcement worker cycle failed")
             await asyncio.sleep(max(10, int(interval or 10)))
 
+    nexa_task = asyncio.create_task(nexa_loop())
     billing_task = asyncio.create_task(billing_loop())
     backup_task = asyncio.create_task(backup_loop())
     reconcile_task = asyncio.create_task(reconcile_queue_loop())
@@ -576,6 +594,7 @@ async def lifespan(_app: FastAPI):
     try:
         yield
     finally:
+        nexa_task.cancel()
         billing_task.cancel()
         backup_task.cancel()
         reconcile_task.cancel()
@@ -585,6 +604,8 @@ async def lifespan(_app: FastAPI):
         stream_limit_task.cancel()
         notification_task.cancel()
         attachment_cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await nexa_task
         with suppress(asyncio.CancelledError):
             await billing_task
         with suppress(asyncio.CancelledError):
@@ -3894,6 +3915,9 @@ def add_payment(
     if payment.subscription_id:
         detail += f"; {payment.billing_periods or 1} billing period(s); coverage {payment.coverage_start:%Y-%m-%d} -> {payment.coverage_end:%Y-%m-%d}"
     db.add(AuditLog(actor=settings.admin_username, action="payment.record", target_type="payment", target_id=str(payment.id), detail=detail))
+    # Transactional outbox: this payment must commit alongside any approved IPTV
+    # extension intention, never trigger one from historical data or notifications.
+    enqueue_nexa_for_payment(db, payment)
     referral_award = award_for_payment(db, payment)
     if referral_award:
         db.add(AuditLog(actor="system", action="referral.credit.earned", target_type="customer", target_id=str(referral_award.customer_id), detail=f"+{referral_award.credits} credits from payment {payment.id}"))
@@ -3956,6 +3980,7 @@ def edit_payment(
         if coverage_change:
             recalculate_after_latest_payment_change(db, payment)
         db.add(AuditLog(actor=settings.admin_username, action="payment.edit", target_type="payment", target_id=str(payment.id), detail=f"{old} -> £{amount} {source} {payment.paid_at:%Y-%m-%d}; periods={payment.billing_periods or '-'}"))
+        nexa_payment_changed(db, payment)
         db.commit()
     except (ValueError, TypeError) as exc:
         db.rollback()
@@ -3992,6 +4017,7 @@ def delete_payment(request: Request, payment_id: int, db: Session = Depends(get_
     if reversal:
         db.add(AuditLog(actor="system", action="referral.credit.reversed", target_type="customer", target_id=str(reversal.customer_id), detail=f"{reversal.credits} credits from voided payment {payment.id}"))
     db.add(AuditLog(actor=settings.admin_username, action="payment.delete", target_type="payment", target_id=str(payment.id), detail=f"Voided £{payment.amount} via {payment.source} received {payment.paid_at:%Y-%m-%d}"))
+    nexa_payment_changed(db, payment)
     db.commit()
     if payment.subscription_id:
         process_billing(db, customer_id=payment.customer_id)
