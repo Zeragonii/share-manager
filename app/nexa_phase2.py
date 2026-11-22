@@ -15,9 +15,11 @@ from sqlalchemy.orm import Session, joinedload
 from .config import settings
 from .db import get_db
 from .integrations.nexa import NexaError, NexaIntegration, decrypt_api_key
+from .services.nexa_renewals import approved_policy, eligible_policy
+from .integrations.nexa import encrypt_api_key, decrypt_api_key
 from .models import (
     ASSIGNED_SUBSCRIPTION_STATES, AuditLog, BillingTier, Customer,
-    Integration, NexaAccount, NexaPackagePolicy, Package, Subscription,
+    Integration, NexaAccount, NexaExtensionJob, NexaPackagePolicy, Package, Subscription,
 )
 
 
@@ -187,11 +189,33 @@ def register_nexa_phase2_routes(app, auth, render):
             catalog = client.packages()["packages"]
         except NexaError as exc:
             api_error = str(exc)
+        renewal_state = {}
+        for line in accounts:
+            try:
+                sub, policy, product_id, months = eligible_policy(db, line)
+                try:
+                    approved_policy(db, line)
+                    ready = True
+                except ValueError:
+                    ready = False
+                renewal_state[line.id] = {
+                    "message": f"{sub.billing_tier.name}: NEXA product {product_id} ({months} months)",
+                    "ready": ready,
+                    "package_id": product_id, "months": months,
+                }
+            except ValueError as exc:
+                renewal_state[line.id] = {"message": str(exc), "ready": False}
+        jobs = (db.query(NexaExtensionJob)
+                .order_by(NexaExtensionJob.id.desc()).limit(300).all())
+        job_map = {}
+        for job in jobs:
+            job_map.setdefault(job.account_id, []).append(job)
         response = render(
             request, "nexa_accounts.html",
             accounts=accounts, customers=customers, nexa_templates=templates, catalog=catalog,
             expiry_labels={row.id: _expiry_label(row.provider_expiry_ts) for row in accounts},
             selected_packages=selected_packages, enabled_package_ids=enabled_package_ids,
+            renewal_state=renewal_state, job_map=job_map,
             api_error=api_error, error=error, notice=notice,
         )
         response.headers["Cache-Control"] = "no-store"
@@ -292,6 +316,13 @@ def register_nexa_phase2_routes(app, auth, render):
             _require_template(client, desired_template_id)
         except NexaError as exc:
             return _redirect("error", str(exc))
+        if line.recorded_package_id != (recorded_package_id or None):
+            # A change in the manually identified provider package requires
+            # renewed approval of the chargeable extension product.
+            line.automation_enabled = False
+            line.automation_approved_package_id = None
+            line.automation_approved_months = None
+            line.automation_approved_policy_at = None
         line.recorded_package_id = recorded_package_id or None
         if line.desired_template_id != (desired_template_id or None):
             line.desired_template_id = desired_template_id or None
@@ -335,6 +366,8 @@ def register_nexa_phase2_routes(app, auth, render):
         line = db.get(NexaAccount, account_id)
         if line is None:
             return _redirect("error", "Linked account not found")
+        if db.query(NexaExtensionJob.id).filter(NexaExtensionJob.account_id == account_id).first():
+            return _redirect("error", "Extension history exists: disarm the account instead of deleting its audit trail")
         provider_id, customer_id = line.provider_account_id, line.customer_id
         db.add(AuditLog(actor=settings.admin_username, action="nexa.account_unlink",
                         target_type="nexa_account", target_id=str(account_id),
@@ -342,3 +375,110 @@ def register_nexa_phase2_routes(app, auth, render):
         db.delete(line)
         db.commit()
         return _redirect("notice", "Local NEXA account link removed; provider account remains untouched")
+
+    @app.post("/integrations/nexa/accounts/{account_id}/automation")
+    def nexa_automation(
+        request: Request, account_id: int, action: str = Form(...),
+        acknowledge: str = Form(""), db: Session = Depends(get_db),
+    ):
+        gate = auth(request)
+        if gate:
+            return gate
+        line = db.get(NexaAccount, account_id)
+        if line is None:
+            return _redirect("error", "Linked NEXA account not found")
+        if action == "disable":
+            line.automation_enabled = False
+            db.add(AuditLog(actor=settings.admin_username, action="nexa.automation.off",
+                            target_type="nexa_account", target_id=str(account_id),
+                            detail="Administrator disabled payment-triggered extensions; already sent charges cannot be reversed"))
+            db.commit()
+            return _redirect("notice", "IPTV automation disabled; any already in-flight provider action cannot be cancelled")
+        if action != "enable" or acknowledge != "approve-credit-spend":
+            return _redirect("error", "Explicit consent to credit-spending renewal automation is required")
+        if not line.recorded_package_id:
+            return _redirect("error", "Record the current NEXA account package before enabling automation")
+        try:
+            sub, policy, product_id, months = eligible_policy(db, line)
+            integration, client = _client(db)
+            catalog = client.packages()["packages"]
+            product = next((row for row in catalog if row["id"] == product_id), None)
+            if not product or int(product.get("months") or 0) != months:
+                raise NexaError("Mapped provider product is missing or has an incompatible duration")
+            if line.account_type.lower() not in ("username", "mag", "mac"):
+                raise NexaError("Unsupported NEXA account type")
+            lookup = (client.lookup(mac=line.provider_mac)
+                      if line.account_type.lower() in ("mag", "mac") and line.provider_mac
+                      else client.lookup(username=line.provider_username or ""))
+            if lookup["id"] != line.provider_account_id:
+                raise NexaError("NEXA returned a different account ID; automation cannot be enabled")
+            _apply_lookup(line, lookup)
+            if lookup["status"].lower() not in ("active", "expired") or lookup["is_trial"]:
+                raise NexaError("Disabled, blocked, trial or other unsupported accounts require manual review")
+            if _expiry_ts(lookup) is None:
+                raise NexaError("NEXA did not supply a finite expiry")
+            line.automation_enabled = True
+            line.automation_approved_package_id = product_id
+            line.automation_approved_months = months
+            line.automation_approved_policy_at = policy.updated_at
+            line.automation_armed_at = datetime.utcnow()
+            db.add(AuditLog(actor=settings.admin_username, action="nexa.automation.on",
+                            target_type="nexa_account", target_id=str(account_id),
+                            detail=f"Approved {product_id} / {months} months against Package {policy.package_id}; future new applied payments only"))
+            db.commit()
+        except (NexaError, ValueError) as exc:
+            db.rollback()
+            return _redirect("error", str(exc))
+        return _redirect("notice", "NEXA automation armed; NO old payments or account expiries have been queued")
+
+    @app.post("/integrations/nexa/jobs/{job_id}/retry")
+    def nexa_retry_job(request: Request, job_id: int, db: Session = Depends(get_db)):
+        gate = auth(request)
+        if gate:
+            return gate
+        job = db.get(NexaExtensionJob, job_id)
+        if job is None or job.status != "review":
+            return _redirect("error", "Only manually reviewed jobs can be retried")
+        job.status = "retry"
+        job.locked_until = None
+        job.next_attempt_at = datetime.utcnow()
+        db.add(AuditLog(actor=settings.admin_username, action="nexa.extension.retry",
+                        target_type="nexa_extension_job", target_id=str(job.id),
+                        detail="Administrator retried the unchanged account, product, duration and idempotency key"))
+        db.commit()
+        return _redirect("notice", "Original extension queued for retry using its original idempotency key")
+
+    @app.post("/integrations/nexa/accounts/{account_id}/reveal-password", response_class=HTMLResponse)
+    def nexa_reveal_password(request: Request, account_id: int, db: Session = Depends(get_db)):
+        gate = auth(request)
+        if gate:
+            return gate
+        account = db.get(NexaAccount, account_id)
+        if not account or not account.replacement_password_encrypted:
+            return _redirect("error", "No unacknowledged replacement password is available")
+        try:
+            password = decrypt_api_key(account.replacement_password_encrypted, settings.app_secret)
+        except NexaError as exc:
+            return _redirect("error", str(exc))
+        response = render(request, "nexa_password.html", account=account, password=password)
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        return response
+
+    @app.post("/integrations/nexa/accounts/{account_id}/ack-password")
+    def nexa_ack_password(request: Request, account_id: int, db: Session = Depends(get_db)):
+        gate = auth(request)
+        if gate:
+            return gate
+        account = db.get(NexaAccount, account_id)
+        if not account or not account.replacement_password_encrypted:
+            return _redirect("error", "No replacement password remains to acknowledge")
+        account.replacement_password_encrypted = None
+        account.replacement_password_ack_at = datetime.utcnow()
+        db.add(AuditLog(actor=settings.admin_username, action="nexa.password_acknowledged",
+                        target_type="nexa_account", target_id=str(account_id),
+                        detail="Encrypted replacement password cleared after manual handling"))
+        db.commit()
+        return _redirect("notice", "Replacement password cleared from Share Manager")
