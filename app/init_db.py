@@ -20,6 +20,16 @@ def add_column_if_missing(table: str, column: str, ddl: str):
 add_column_if_missing("customers", "archived", "BOOLEAN NOT NULL DEFAULT FALSE")
 add_column_if_missing("customers", "archived_at", "TIMESTAMP NULL")
 add_column_if_missing("customers", "suspended_at", "TIMESTAMP NULL")
+# v0.17.0 NEXA account opt-in, encrypted rotated credentials; new job table
+# is created by Base.metadata.create_all above.
+add_column_if_missing("nexa_accounts", "automation_approved_package_id", "VARCHAR(64) NULL")
+add_column_if_missing("nexa_accounts", "automation_approved_months", "INTEGER NULL")
+add_column_if_missing("nexa_accounts", "automation_approved_policy_at", "TIMESTAMP NULL")
+add_column_if_missing("nexa_accounts", "automation_armed_at", "TIMESTAMP NULL")
+add_column_if_missing("nexa_accounts", "replacement_password_encrypted", "TEXT NULL")
+add_column_if_missing("nexa_accounts", "replacement_password_recorded_at", "TIMESTAMP NULL")
+add_column_if_missing("nexa_accounts", "replacement_password_ack_at", "TIMESTAMP NULL")
+
 add_column_if_missing("integrations", "suspension_library", "VARCHAR(255) NULL")
 add_column_if_missing("integrations", "suspension_retention_months", "INTEGER NOT NULL DEFAULT 3")
 add_column_if_missing("customers", "portal_enabled", "BOOLEAN NOT NULL DEFAULT FALSE")
