@@ -107,6 +107,7 @@ def test_due_soon_reminders_are_per_endpoint_and_deduplicated():
     # Only the endpoint configured for 3 days receives it, and only once.
     assert post.call_count == 1
     assert post.call_args.args[0] == "http://three"
+    assert post.call_args.kwargs["json"]["title"] == "Matt — Subscription due soon"
     delivery = db.query(NotificationDelivery).filter(NotificationDelivery.success.is_(True)).one()
     assert delivery.endpoint_id == three_day.id
     assert delivery.event_key.endswith(":3")
@@ -252,3 +253,67 @@ def test_scheduled_broadcast_requires_future_time():
             db, title="Maintenance", message="Soon", url="/portal",
             scheduled_for=datetime.utcnow() - timedelta(minutes=1), created_by="admin",
         )
+
+
+def test_billing_alerts_identify_customer_only_in_admin_deliveries():
+    import json
+    from app.models import Customer, PushSubscription, NotificationEvent
+
+    db = db_session()
+    customer = Customer(name="Display Name", portal_username="alice", plex_username="plexalice",
+                        status="active", portal_enabled=True)
+    db.add(customer); db.flush()
+    db.add_all([
+        PushSubscription(owner_type="admin", endpoint="https://push/admin-billing", p256dh="a", auth="b", enabled=True),
+        PushSubscription(owner_type="customer", customer_id=customer.id, endpoint="https://push/customer-billing", p256dh="a", auth="b", enabled=True),
+    ])
+    db.commit()
+
+    events = [
+        ("subscription.due_soon", "Subscription due soon", "Your Plex access is due tomorrow."),
+        ("customer.entered_grace", "Customer entered grace", "Display Name has entered their billing grace period."),
+        ("customer.suspended", "Customer suspended", "Display Name has been suspended."),
+        ("customer.reactivated", "Customer reactivated", "Display Name is active again."),
+        ("payment.received", "Payment received", "Your payment was received."),
+    ]
+    with patch("app.services.notifications.webpush", return_value=FakeResponse()) as push:
+        for event, title, message in events:
+            push.reset_mock()
+            deliveries = notify_event(db, event=event, title=title, message=message,
+                                      target_type="customer", target_id=str(customer.id), include_endpoints=False)
+            assert len(deliveries) == 2
+            payloads = {
+                call.kwargs["subscription_info"]["endpoint"]: json.loads(call.kwargs["data"])
+                for call in push.call_args_list
+            }
+            admin = payloads["https://push/admin-billing"]
+            portal = payloads["https://push/customer-billing"]
+            assert admin["title"] == f"alice — {title}"
+            assert "alice" in admin["message"]
+            assert portal["title"] == title
+            assert portal["message"] == message
+            admin_delivery = next(d for d in deliveries if d.recipient_type == "admin")
+            assert admin_delivery.title == admin["title"]
+            assert admin_delivery.message == admin["message"]
+            canonical = db.get(NotificationEvent, admin_delivery.notification_event_id)
+            assert canonical.title == title
+            assert canonical.message == message
+
+
+def test_admin_billing_alert_username_fallback_and_unrelated_events():
+    from app.models import Customer, NotificationEvent
+    from app.services.notifications import _delivery_content
+
+    db = db_session()
+    customer = Customer(name="Display Name", plex_username="plexalice", status="active")
+    db.add(customer); db.flush()
+    event = NotificationEvent(event="customer.entered_grace", title="Grace", message="Grace started",
+                              customer_id=customer.id)
+    assert _delivery_content(db, event, admin=True)[0] == "plexalice — Grace"
+    customer.plex_username = None
+    assert _delivery_content(db, event, admin=True)[0] == "Display Name — Grace"
+    event.event = "backup.failed"
+    assert _delivery_content(db, event, admin=True) == ("Grace", "Grace started")
+    event.event = "customer.entered_grace"
+    event.customer_id = None
+    assert _delivery_content(db, event, admin=True) == ("Grace", "Grace started")
