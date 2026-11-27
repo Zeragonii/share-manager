@@ -1,3 +1,7 @@
+## v0.19.1 — Admin billing notification fix
+
+Admin Web Push and notification integrations now identify the affected customer in billing alert titles, using the portal username, Plex username or customer name. Customer-facing notifications are unchanged. Redeploy the latest image (or pin `0.19.1`); no manual migration or configuration changes are needed.
+
 ## v0.19.0 — NEXA IPTV Phase 5: paid new-account provisioning and rollout
 
 **Available in Integrations → NEXA IPTV → Create new IPTV accounts.** Phase 5 supports username/password IPTV lines and MAG/MAC accounts, with a specific channel Template Studio selection per new customer. It uses existing Share Manager Package mappings (6 months for monthly, 12 months for yearly), and NEXA remains authoritative for account ID and actual expiry (Unix seconds). No existing customer accounts or subscriptions are modified during installation.
