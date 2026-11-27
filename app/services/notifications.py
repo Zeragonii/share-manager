@@ -273,13 +273,42 @@ def _schedule_retry(delivery: NotificationDelivery, event_row: NotificationEvent
         delivery.final_failure = False
 
 
+ADMIN_CUSTOMER_BILLING_EVENTS = {
+    "subscription.due_soon", "customer.entered_grace", "customer.suspended",
+    "customer.reactivated", "payment.received", "nexa.payment_overdue", "nexa.expiry_warning",
+}
+
+
+def _delivery_content(db: Session, event_row: NotificationEvent, *, admin: bool) -> tuple[str, str]:
+    """Identify the affected customer in admin billing alerts, not portal alerts."""
+    title, message = event_row.title, event_row.message
+    if not admin or event_row.event not in ADMIN_CUSTOMER_BILLING_EVENTS or not event_row.customer_id:
+        return title, message
+    customer = db.get(Customer, event_row.customer_id)
+    if not customer:
+        return title, message
+    username = next(
+        (value.strip() for value in (customer.portal_username, customer.plex_username, customer.name)
+         if value and value.strip()),
+        f"Customer #{customer.id}",
+    )
+    # Keep the username first so it is visible in collapsed mobile notifications.
+    # The delivery title is limited to 255 characters; retain the full identity in the body.
+    title = f"{username[:120]} — {title}"[:255]
+    if message.startswith("Your "):
+        message = f"{username}'s {message[5:]}"
+    else:
+        message = f"Customer: {username}\n{message}"
+    return title, message
+
+
 def _attempt_endpoint_delivery(db: Session, delivery: NotificationDelivery, endpoint: NotificationEndpoint, event_row: NotificationEvent) -> NotificationDelivery:
     data = json.loads(event_row.data_json or "{}")
     delivery.attempt_count = max(1, int(delivery.attempt_count or 1))
     delivery.last_attempt_at = datetime.utcnow()
     delivery.next_attempt_at = None
     try:
-        code, detail = _send(endpoint, title=event_row.title, message=event_row.message, event=event_row.event, severity=event_row.severity, data=data)
+        code, detail = _send(endpoint, title=delivery.title, message=delivery.message, event=event_row.event, severity=event_row.severity, data=data)
         delivery.success = True; delivery.response_code = code; delivery.detail = detail; delivery.final_failure = False
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
@@ -297,10 +326,11 @@ def _attempt_endpoint_delivery(db: Session, delivery: NotificationDelivery, endp
 
 
 def _deliver_endpoint(db: Session, endpoint: NotificationEndpoint, event_row: NotificationEvent) -> NotificationDelivery:
+    title, message = _delivery_content(db, event_row, admin=True)
     delivery = NotificationDelivery(
         endpoint_id=endpoint.id, notification_event_id=event_row.id, channel=endpoint.kind,
         event=event_row.event, event_key=event_row.event_key, severity=event_row.severity,
-        title=event_row.title, message=event_row.message, success=False,
+        title=title, message=message, success=False,
         recipient_type="integration", recipient_id=str(endpoint.id), attempt_count=1,
     )
     db.add(delivery); db.flush()
@@ -312,8 +342,8 @@ def _attempt_push_delivery(db: Session, delivery: NotificationDelivery, subscrip
     payload = json.dumps({
         "event": event_row.event,
         "severity": event_row.severity,
-        "title": event_row.title,
-        "message": event_row.message,
+        "title": delivery.title,
+        "message": delivery.message,
         "url": _push_url(event_row, subscription.owner_type),
         "tag": event_row.event_key or f"share-manager-{event_row.id}",
     })
@@ -360,10 +390,11 @@ def _attempt_push_delivery(db: Session, delivery: NotificationDelivery, subscrip
 
 
 def _deliver_push(db: Session, subscription: PushSubscription, event_row: NotificationEvent) -> NotificationDelivery:
+    title, message = _delivery_content(db, event_row, admin=subscription.owner_type == "admin")
     delivery = NotificationDelivery(
         notification_event_id=event_row.id, channel="web_push", push_subscription_id=subscription.id,
         event=event_row.event, event_key=event_row.event_key, severity=event_row.severity,
-        title=event_row.title, message=event_row.message, success=False,
+        title=title, message=message, success=False,
         recipient_type=subscription.owner_type,
         recipient_id=str(subscription.customer_id) if subscription.customer_id else "admin",
         attempt_count=1,
