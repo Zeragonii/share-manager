@@ -1,3 +1,10 @@
+## 0.19.1 — Admin billing notification customer identity
+
+- Identify customers in admin renewal, grace, suspension, reactivation, payment and customer-linked NEXA expiry/overdue alerts.
+- Prefer the portal username, falling back to Plex username or customer name; put the identifier first in admin titles.
+- Preserve customer-facing content, schedules and deduplication; record delivered wording for retries and history.
+- Add regression coverage. No database migration or configuration changes required.
+
 ## 0.19.0 — NEXA IPTV Phase 5: new-customer provisioning
 
 - Add paid username/password and MAG/MAC IPTV account creation from existing Share Manager Package billing tiers.
